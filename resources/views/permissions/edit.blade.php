@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'Editar permiso | Inventario POS')
+@section('title', 'Editar permiso | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Editar permiso')
 @section('content')
     <x-ui.form-panel :action="route('permissions.update', $permission)" method="PUT">

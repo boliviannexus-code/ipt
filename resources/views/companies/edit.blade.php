@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Editar empresa | Inventario POS')
+@section('title', 'Editar empresa | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Editar empresa')
 @section('content')
     <x-ui.form-panel title="Datos de empresa">

@@ -15,24 +15,6 @@ class AuditController extends Controller
     public const AUDITABLE_TYPES = [
         \App\Models\Company::class => 'Empresas',
         \App\Models\User::class => 'Usuarios',
-        \App\Models\Product::class => 'Productos',
-        \App\Models\Category::class => 'Categorias',
-        \App\Models\Supplier::class => 'Proveedores',
-        \App\Models\Customer::class => 'Clientes',
-        \App\Models\Branch::class => 'Sucursales',
-        \App\Models\Warehouse::class => 'Almacenes',
-        \App\Models\PointOfSale::class => 'Puntos de venta',
-        \App\Models\Purchase::class => 'Compras',
-        \App\Models\PurchaseDetail::class => 'Detalle de compra',
-        \App\Models\Sale::class => 'Ventas',
-        \App\Models\SaleDetail::class => 'Detalle de venta',
-        \App\Models\SalePayment::class => 'Pagos de venta',
-        \App\Models\CashRegister::class => 'Cajas',
-        \App\Models\CashRegisterExpense::class => 'Gastos de caja',
-        \App\Models\InventoryMovement::class => 'Inventario',
-        \App\Models\Presentation::class => 'Presentaciones',
-        \App\Models\MeasurementUnit::class => 'Unidades de medida',
-        \App\Models\PaymentMethod::class => 'Metodos de pago',
     ];
 
     public function index(Request $request): View

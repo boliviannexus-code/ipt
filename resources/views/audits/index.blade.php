@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Auditoria | Inventario POS')
+@section('title', 'Auditoria | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Auditoria')
 @section('page-subtitle', 'Registro de acciones y cambios del sistema')
 

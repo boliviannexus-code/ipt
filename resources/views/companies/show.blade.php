@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Empresa | Inventario POS')
+@section('title', 'Empresa | '.config('app.name', 'Base Admin'))
 @section('page-title', $company->name)
 @section('content')
     <x-ui.form-panel title="Detalle de empresa">

@@ -16,11 +16,11 @@ class AssignRolePermissionsTest extends TestCase
     {
         $actor = User::factory()->create();
         Permission::findOrCreate('roles.assign-permissions');
-        Permission::findOrCreate('categories.view');
+        Permission::findOrCreate('companies.view');
         $actor->givePermissionTo('roles.assign-permissions');
 
         $role = Role::findOrCreate('manager');
-        $role->givePermissionTo('categories.view');
+        $role->givePermissionTo('companies.view');
 
         $response = $this
             ->actingAs($actor)
@@ -28,9 +28,9 @@ class AssignRolePermissionsTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Gerente');
-        $response->assertSee('Categorias');
-        $response->assertSee('Categorias: Ver');
-        $response->assertSee('value="categories.view"', false);
+        $response->assertSee('Empresas');
+        $response->assertSee('Empresas: Ver');
+        $response->assertSee('value="companies.view"', false);
     }
 
     public function test_role_permissions_can_be_saved_without_role_name(): void
@@ -40,19 +40,19 @@ class AssignRolePermissionsTest extends TestCase
         $actor->givePermissionTo('roles.assign-permissions');
 
         $role = Role::findOrCreate('manager');
-        Permission::findOrCreate('categories.view');
+        Permission::findOrCreate('companies.view');
 
         $response = $this
             ->actingAs($actor)
             ->patch(route('roles.permissions', $role), [
-                'permissions' => ['categories.view'],
+                'permissions' => ['companies.view'],
             ]);
 
         $response->assertRedirect(route('roles.index'));
-        $this->assertTrue($role->fresh()->hasPermissionTo('categories.view'));
+        $this->assertTrue($role->fresh()->hasPermissionTo('companies.view'));
     }
 
-    public function test_all_category_permissions_can_be_removed_from_super_admin(): void
+    public function test_all_company_permissions_can_be_removed_from_super_admin(): void
     {
         $actor = User::factory()->create();
         $requiredPermissions = [
@@ -60,22 +60,21 @@ class AssignRolePermissionsTest extends TestCase
             'roles.view',
             'roles.edit',
         ];
-        $categoryPermissions = [
-            'categories.view',
-            'categories.create',
-            'categories.edit',
-            'categories.update',
-            'categories.delete',
+        $companyPermissions = [
+            'companies.view',
+            'companies.create',
+            'companies.update',
+            'companies.delete',
         ];
 
-        foreach ([...$requiredPermissions, ...$categoryPermissions] as $permission) {
+        foreach ([...$requiredPermissions, ...$companyPermissions] as $permission) {
             Permission::findOrCreate($permission);
         }
 
         $actor->givePermissionTo('roles.assign-permissions');
 
         $role = Role::findOrCreate('super_admin');
-        $role->syncPermissions([...$requiredPermissions, ...$categoryPermissions]);
+        $role->syncPermissions([...$requiredPermissions, ...$companyPermissions]);
 
         $response = $this
             ->actingAs($actor)
@@ -87,6 +86,6 @@ class AssignRolePermissionsTest extends TestCase
 
         $role->refresh();
         $this->assertTrue($role->hasAllPermissions($requiredPermissions));
-        $this->assertFalse($role->hasAnyPermission($categoryPermissions));
+        $this->assertFalse($role->hasAnyPermission($companyPermissions));
     }
 }

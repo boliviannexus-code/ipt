@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Usuarios | Inventario POS')
+@section('title', 'Usuarios | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Usuarios')
 @section('page-subtitle', 'Administracion de accesos, roles y estado')
 

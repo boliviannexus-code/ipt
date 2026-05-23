@@ -3,14 +3,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login | Inventario POS</title>
+    <title>Login | {{ config('app.name', 'Base Admin') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="d-flex flex-column">
 <main class="page page-center">
     <div class="container container-tight py-4">
         <div class="text-center mb-4">
-            <h1 class="h2">Inventario POS</h1>
+            <h1 class="h2">{{ config('app.name', 'Base Admin') }}</h1>
             <p class="text-muted">Panel administrativo</p>
         </div>
         <div class="card card-md">

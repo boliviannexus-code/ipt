@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'Editar rol | Inventario POS')
+@section('title', 'Editar rol | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Editar rol')
 @section('content')
     <x-ui.form-panel :action="route('roles.update', $role)" method="PUT">

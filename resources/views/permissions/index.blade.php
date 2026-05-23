@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Permisos | Inventario POS')
+@section('title', 'Permisos | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Permisos')
 @section('page-subtitle', 'Administracion de capacidades del sistema')
 

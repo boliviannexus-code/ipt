@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'Nuevo rol | Inventario POS')
+@section('title', 'Nuevo rol | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Nuevo rol')
 @section('content')
     <x-ui.form-panel :action="route('roles.store')">

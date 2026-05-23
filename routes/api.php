@@ -1,9 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
-use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\PermissionController;
-use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -16,10 +14,6 @@ Route::prefix('v1')
         Route::middleware('auth:sanctum')->group(function (): void {
             Route::post('auth/logout', [AuthController::class, 'logout'])->name('api.v1.logout');
 
-            Route::apiResource('categories', CategoryController::class)
-                ->names('api.v1.categories');
-            Route::apiResource('products', ProductController::class)
-                ->names('api.v1.products');
             Route::prefix('users')->name('api.v1.users.')->group(function (): void {
                 Route::get('/', [UserController::class, 'index'])->middleware('permission:users.view')->name('index');
                 Route::post('/', [UserController::class, 'store'])->middleware('permission:users.create')->name('store');

@@ -3,8 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
 
 return new class extends Migration
 {
@@ -36,20 +34,6 @@ return new class extends Migration
             $table->index(['company_id', 'is_active']);
         });
 
-        $permissions = [
-            'companies.view',
-            'companies.create',
-            'companies.update',
-            'companies.delete',
-        ];
-
-        foreach ($permissions as $permission) {
-            Permission::findOrCreate($permission);
-        }
-
-        foreach (['admin', 'super_admin'] as $roleName) {
-            Role::query()->where('name', $roleName)->first()?->givePermissionTo($permissions);
-        }
     }
 
     public function down(): void

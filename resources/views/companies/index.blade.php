@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Empresas | Inventario POS')
+@section('title', 'Empresas | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Empresas')
 @section('page-subtitle', 'Datos base para reportes y asignacion de usuarios')
 

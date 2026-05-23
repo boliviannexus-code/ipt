@@ -6,7 +6,6 @@ use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -48,7 +47,6 @@ class UserService
     {
         $roles = $data['roles'] ?? null;
         unset($data['roles'], $data['password']);
-        $originalCompanyId = $user->company_id ? (int) $user->company_id : null;
 
         $data = $this->applyCompanyAssignmentRules($data);
         $data['is_active'] = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : $user->is_active;
@@ -58,7 +56,6 @@ class UserService
         }
 
         $user = $this->users->update($user, $data);
-        $this->removePointOfSaleAssignmentsOutsideCompany($user, $originalCompanyId);
 
         if (is_array($roles)) {
             $this->syncRoles($user, $roles);
@@ -162,27 +159,5 @@ class UserService
         }
 
         return CompanyContext::applyToData($data, $actor);
-    }
-
-    private function removePointOfSaleAssignmentsOutsideCompany(User $user, ?int $originalCompanyId): void
-    {
-        $currentCompanyId = $user->company_id ? (int) $user->company_id : null;
-
-        if ($originalCompanyId === $currentCompanyId) {
-            return;
-        }
-
-        $invalidPointOfSaleIds = DB::table('point_of_sales')
-            ->select('id')
-            ->when(
-                $currentCompanyId,
-                fn ($query, int $companyId) => $query->where('company_id', '<>', $companyId),
-                fn ($query) => $query->whereNotNull('company_id')
-            );
-
-        DB::table('point_of_sale_user')
-            ->where('point_of_sale_user.user_id', $user->id)
-            ->whereIn('point_of_sale_id', $invalidPointOfSaleIds)
-            ->delete();
     }
 }

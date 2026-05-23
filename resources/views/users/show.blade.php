@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Detalle usuario | Inventario POS')
+@section('title', 'Detalle usuario | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Detalle usuario')
 @section('page-subtitle', 'Consulta de usuario administrativo')
 

@@ -15,18 +15,14 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RolePermissionSeeder::class,
-            UserPermissionSeeder::class,
-            CategorySeeder::class,
-            MeasurementUnitSeeder::class,
-            PresentationSeeder::class,
-            ProductSeeder::class,
         ]);
 
-        $admin = User::firstOrCreate(
-            ['email' => 'admin@example.com'],
+        $admin = User::updateOrCreate(
+            ['email' => 'boliviannexus@gmail.com'],
             [
                 'name' => 'Administrador',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('83249842'),
+                'is_active' => true,
             ]
         );
 

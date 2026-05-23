@@ -14,9 +14,6 @@ if (! function_exists('role_label')) {
             'admin' => 'Administrador',
             'super_admin' => 'Super administrador',
             'manager' => 'Gerente',
-            'cashier' => 'Cajero',
-            'warehouse' => 'Almacen',
-            'inventory_manager' => 'Encargado de inventario',
             'viewer' => 'Visualizador',
         ];
 
@@ -32,20 +29,8 @@ if (! function_exists('permission_module_label')) {
             'users' => 'Usuarios',
             'roles' => 'Roles',
             'permissions' => 'Permisos',
-            'branches' => 'Sucursales',
-            'warehouses' => 'Almacenes',
-            'point-of-sales' => 'Puntos de venta',
-            'suppliers' => 'Proveedores',
-            'products' => 'Productos',
-            'product-presentations' => 'Presentaciones de producto',
-            'categories' => 'Categorias',
-            'measurement-units' => 'Unidades de medida',
-            'payment-methods' => 'Metodos de pago',
-            'inventory' => 'Inventario',
-            'purchases' => 'Compras',
-            'sales' => 'Ventas',
-            'pos' => 'Punto de venta',
-            'reports' => 'Reportes',
+            'companies' => 'Empresas',
+            'audits' => 'Auditoria',
         ];
 
         return $labels[$module] ?? str($module)->replace(['-', '_'], ' ')->headline()->toString();
@@ -65,8 +50,6 @@ if (! function_exists('permission_action_label')) {
             'change-password' => 'Cambiar contrasena',
             'assign-roles' => 'Asignar roles',
             'assign-permissions' => 'Asignar permisos',
-            'movements' => 'Registrar movimientos',
-            'access' => 'Acceder',
             'manage' => 'Administrar',
         ];
 

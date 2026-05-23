@@ -41,56 +41,6 @@ class Company extends Model implements Auditable
         return $this->hasMany(User::class);
     }
 
-    public function branches(): HasMany
-    {
-        return $this->hasMany(Branch::class);
-    }
-
-    public function warehouses(): HasMany
-    {
-        return $this->hasMany(Warehouse::class);
-    }
-
-    public function pointOfSales(): HasMany
-    {
-        return $this->hasMany(PointOfSale::class);
-    }
-
-    public function categories(): HasMany
-    {
-        return $this->hasMany(Category::class);
-    }
-
-    public function products(): HasMany
-    {
-        return $this->hasMany(Product::class);
-    }
-
-    public function suppliers(): HasMany
-    {
-        return $this->hasMany(Supplier::class);
-    }
-
-    public function customers(): HasMany
-    {
-        return $this->hasMany(Customer::class);
-    }
-
-    public function measurementUnits(): HasMany
-    {
-        return $this->hasMany(MeasurementUnit::class);
-    }
-
-    public function presentations(): HasMany
-    {
-        return $this->hasMany(Presentation::class);
-    }
-
-    public function paymentMethods(): HasMany
-    {
-        return $this->hasMany(PaymentMethod::class);
-    }
-
     public function getLogoUrlAttribute(): ?string
     {
         return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
