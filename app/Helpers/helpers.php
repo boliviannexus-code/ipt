@@ -31,6 +31,8 @@ if (! function_exists('permission_module_label')) {
             'permissions' => 'Permisos',
             'companies' => 'Empresas',
             'audits' => 'Auditoria',
+            'accommodation-catalogs' => 'Catalogos de alojamientos',
+            'spaces' => 'Alojamientos',
         ];
 
         return $labels[$module] ?? str($module)->replace(['-', '_'], ' ')->headline()->toString();

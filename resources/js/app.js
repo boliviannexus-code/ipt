@@ -142,6 +142,7 @@ async function refreshContainer(url) {
         current.replaceWith(fresh);
         initTomSelects(fresh);
         initAdminDataTables();
+        initCharacterCounters(fresh);
     }
 }
 
@@ -174,7 +175,7 @@ async function submitAjaxForm(form) {
         }
 
         ajaxModal?.hide();
-        await refreshContainer(form.dataset.refreshUrl);
+        await refreshContainer(payload.refresh_url ?? form.dataset.refreshUrl);
         toast.fire({ icon: 'success', title: payload.message ?? 'Operacion realizada correctamente.' });
     } catch (error) {
         Swal.fire({ icon: 'error', title: 'Error', text: error.message });
@@ -194,8 +195,43 @@ function confirmDelete(form) {
         confirmButtonColor: '#dc3545',
     }).then((result) => {
         if (result.isConfirmed) {
+            if (form.matches('[data-ajax-form]')) {
+                submitAjaxForm(form);
+
+                return;
+            }
+
             form.submit();
         }
+    });
+}
+
+function initCharacterCounters(scope = document) {
+    scope.querySelectorAll('[data-character-counter]').forEach((field) => {
+        if (field.dataset.characterCounterInitialized === '1') {
+            return;
+        }
+
+        const target = scope.querySelector(field.dataset.characterCounter) ?? document.querySelector(field.dataset.characterCounter);
+
+        if (!target) {
+            return;
+        }
+
+        const min = Number(field.getAttribute('minlength') || 0);
+        const max = Number(field.getAttribute('maxlength') || 0);
+        const update = () => {
+            const length = field.value.length;
+            const minimum = min ? ` / minimo ${min}` : '';
+            const maximum = max ? ` / maximo ${max}` : '';
+            target.textContent = `${length} caracteres${minimum}${maximum}`;
+            target.classList.toggle('text-danger', (min && length < min) || (max && length > max));
+            target.classList.toggle('text-success', (!min || length >= min) && (!max || length <= max));
+        };
+
+        field.addEventListener('input', update);
+        field.dataset.characterCounterInitialized = '1';
+        update();
     });
 }
 
@@ -1645,6 +1681,7 @@ initSidebarToggle();
 initCashExpenseModal();
 initCashCloseModal();
 initAdminDataTables();
+initCharacterCounters();
 
 document.addEventListener('click', (event) => {
     const modalTrigger = event.target.closest('[data-modal-url]');
@@ -1660,6 +1697,12 @@ document.addEventListener('click', (event) => {
 document.addEventListener('change', (event) => {
     if (event.target.closest('[data-point-sale-branch]')) {
         syncPointSaleWarehouse(event.target.closest('form') ?? document);
+    }
+
+    const autoSubmitField = event.target.closest('[data-auto-submit-form]');
+
+    if (autoSubmitField) {
+        autoSubmitField.closest('form')?.requestSubmit();
     }
 });
 
@@ -1683,15 +1726,15 @@ document.addEventListener('submit', (event) => {
         return;
     }
 
-    if (ajaxForm) {
+    if (deleteForm) {
         event.preventDefault();
-        submitAjaxForm(ajaxForm);
+        confirmDelete(deleteForm);
 
         return;
     }
 
-    if (deleteForm) {
+    if (ajaxForm) {
         event.preventDefault();
-        confirmDelete(deleteForm);
+        submitAjaxForm(ajaxForm);
     }
 });

@@ -132,6 +132,55 @@ body {
     border-radius: .5rem;
 }
 
+.space-photo-preview,
+.space-photo-review-main,
+.space-photo-thumb {
+    object-fit: cover;
+    border: 1px solid var(--tblr-border-color);
+    background: var(--tblr-bg-surface-secondary);
+}
+
+.space-photo-preview {
+    width: 12rem;
+    height: 8rem;
+    border-radius: .5rem;
+}
+
+.space-photo-review-main {
+    width: 100%;
+    max-height: 18rem;
+    border-radius: .5rem;
+}
+
+.space-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
+    gap: .5rem;
+}
+
+.space-photo-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: .375rem;
+}
+
+.space-photo-item {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.space-photo-item-main {
+    width: auto;
+}
+
+.space-photo-delete {
+    position: absolute;
+    top: .375rem;
+    right: .375rem;
+    box-shadow: var(--tblr-box-shadow-sm);
+}
+
 .purchase-form {
     max-width: 1320px;
 }

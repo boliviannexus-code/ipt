@@ -1,13 +1,20 @@
 @php
     $organizationOpen = request()->routeIs('companies.*');
     $adminOpen = request()->routeIs('users.*', 'roles.*', 'permissions.*', 'audits.*');
+    $globalAdminOpen = request()->routeIs('admin.accommodation-catalogs.*', 'admin.spaces.*');
+    $spacesOpen = request()->routeIs('spaces.*');
 
     $canOrganization = auth()->user()?->can('companies.view');
+    $canSpaces = auth()->user()?->company_id !== null
+        && (auth()->user()?->can('spaces.view') || auth()->user()?->can('spaces.create'));
     $canAdmin = auth()->user()?->can('users.view')
         || auth()->user()?->can('roles.view')
         || auth()->user()?->can('permissions.view')
         || auth()->user()?->can('audits.view');
+    $canGlobalAdmin = \App\Support\CompanyContext::isGlobalAdmin(auth()->user())
+        && (auth()->user()?->can(\App\Support\AccommodationCatalogRegistry::PERMISSION) || auth()->user()?->can('spaces.approve'));
     $sidebarCompany = \App\Support\CompanyContext::activeCompany(auth()->user());
+    $accommodationCatalogs = \App\Support\AccommodationCatalogRegistry::all();
 @endphp
 
 <aside class="navbar navbar-vertical navbar-expand-lg app-sidebar" id="adminSidebar" data-bs-theme="dark">
@@ -49,6 +56,58 @@
                                         </a>
                                     </li>
                                 @endcan
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canSpaces)
+                    <li class="nav-item app-menu-section {{ $spacesOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $spacesOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-spaces" aria-expanded="{{ $spacesOpen ? 'true' : 'false' }}" aria-controls="menu-spaces">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-home-star"></i></span>
+                            <span class="nav-link-title">Alojamientos</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $spacesOpen ? 'show' : '' }}" id="menu-spaces">
+                            <ul class="nav app-submenu">
+                                @can('spaces.view')
+                                    <li class="nav-item {{ request()->routeIs('spaces.index', 'spaces.show') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('spaces.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-list-details"></i></span>
+                                            <span class="nav-link-title">Listado</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canGlobalAdmin)
+                    <li class="nav-item app-menu-section {{ $globalAdminOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $globalAdminOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-global-admin" aria-expanded="{{ $globalAdminOpen ? 'true' : 'false' }}" aria-controls="menu-global-admin">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-world-cog"></i></span>
+                            <span class="nav-link-title">Administracion Global</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $globalAdminOpen ? 'show' : '' }}" id="menu-global-admin">
+                            <ul class="nav app-submenu">
+                                @can('spaces.approve')
+                                    <li class="nav-item {{ request()->routeIs('admin.spaces.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('admin.spaces.approvals') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-home-check"></i></span>
+                                            <span class="nav-link-title">Alojamientos por aprobar</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @foreach ($accommodationCatalogs as $catalogKey => $catalog)
+                                    <li class="nav-item {{ request()->routeIs('admin.accommodation-catalogs.*') && request()->route('catalog') === $catalogKey ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('admin.accommodation-catalogs.index', $catalogKey) }}">
+                                            <span class="nav-link-icon"><i class="ti ti-list-details"></i></span>
+                                            <span class="nav-link-title">{{ $catalog['label'] }}</span>
+                                        </a>
+                                    </li>
+                                @endforeach
                             </ul>
                         </div>
                     </li>

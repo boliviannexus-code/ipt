@@ -36,6 +36,11 @@ class RolePermissionSeeder extends Seeder
             'companies.update',
             'companies.delete',
             'audits.view',
+            'accommodation-catalogs.manage',
+            'spaces.view',
+            'spaces.create',
+            'spaces.edit',
+            'spaces.approve',
         ];
 
         foreach ($permissions as $permission) {
@@ -47,7 +52,7 @@ class RolePermissionSeeder extends Seeder
             ->delete();
 
         Role::findOrCreate('super_admin')->syncPermissions($permissions);
-        Role::findOrCreate('admin')->syncPermissions($permissions);
+        Role::findOrCreate('admin')->syncPermissions(array_diff($permissions, ['accommodation-catalogs.manage', 'spaces.approve']));
 
         Role::findOrCreate('manager')->syncPermissions([
             'dashboard.view',
@@ -58,6 +63,9 @@ class RolePermissionSeeder extends Seeder
             'companies.create',
             'companies.update',
             'audits.view',
+            'spaces.view',
+            'spaces.create',
+            'spaces.edit',
         ]);
 
         Role::findOrCreate('viewer')->syncPermissions([
@@ -67,6 +75,7 @@ class RolePermissionSeeder extends Seeder
             'permissions.view',
             'companies.view',
             'audits.view',
+            'spaces.view',
         ]);
 
         app()[PermissionRegistrar::class]->forgetCachedPermissions();

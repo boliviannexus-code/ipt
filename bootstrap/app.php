@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnsureCompanyUser;
+use App\Http\Middleware\EnsureGlobalSuperAdmin;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -26,6 +28,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            'company_user' => EnsureCompanyUser::class,
+            'global_super_admin' => EnsureGlobalSuperAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -41,6 +41,11 @@ class Company extends Model implements Auditable
         return $this->hasMany(User::class);
     }
 
+    public function spaces(): HasMany
+    {
+        return $this->hasMany(Space::class);
+    }
+
     public function getLogoUrlAttribute(): ?string
     {
         return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
