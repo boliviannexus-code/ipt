@@ -7,6 +7,34 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Desarrollo local con Laravel Sail
+
+Este proyecto usa `compose.yaml` como unica definicion de contenedores. El
+entorno incluye Laravel Sail, PostgreSQL 17, Redis 8 y Mailpit.
+
+```bash
+composer install
+./vendor/bin/sail up -d
+./vendor/bin/sail artisan migrate
+./vendor/bin/sail npm install
+./vendor/bin/sail npm run dev
+```
+
+Los comandos de Laravel deben ejecutarse dentro de Sail. Por ejemplo:
+
+```bash
+./vendor/bin/sail artisan migrate:status
+./vendor/bin/sail artisan test
+```
+
+No se debe usar `php artisan migrate:status` directamente en el host:
+`DB_HOST=pgsql` es el nombre del servicio PostgreSQL dentro de la red Docker.
+
+La aplicacion queda disponible en `http://localhost` y Mailpit en
+`http://localhost:8025`. Los puertos se pueden cambiar mediante las variables
+`APP_PORT`, `VITE_PORT`, `FORWARD_DB_PORT`, `FORWARD_REDIS_PORT`,
+`FORWARD_MAILPIT_PORT` y `FORWARD_MAILPIT_DASHBOARD_PORT`.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
@@ -36,7 +64,7 @@ Laravel's predictable structure and conventions make it ideal for AI coding agen
 ```bash
 composer require laravel/boost --dev
 
-php artisan boost:install
+./vendor/bin/sail artisan boost:install
 ```
 
 Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.

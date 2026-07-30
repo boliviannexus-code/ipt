@@ -4,7 +4,7 @@ services:
             context: ./vendor/laravel/sail/runtimes/8.5
             dockerfile: Dockerfile
             args:
-                WWWGROUP: '${WWWGROUP}'
+                WWWGROUP: '${WWWGROUP:-1000}'
         image: sail-8.5/app
         extra_hosts:
             - 'host.docker.internal:host-gateway'
@@ -12,7 +12,7 @@ services:
             - '${APP_PORT:-80}:80'
             - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
         environment:
-            WWWUSER: '${WWWUSER}'
+            WWWUSER: '${WWWUSER:-1000}'
             LARAVEL_SAIL: 1
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
@@ -22,9 +22,12 @@ services:
         networks:
             - sail
         depends_on:
-            - pgsql
-            - redis
-            - mailpit
+            pgsql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            mailpit:
+                condition: service_started
     pgsql:
         image: 'postgres:17'
         ports:
@@ -48,10 +51,12 @@ services:
                 - '${DB_DATABASE}'
                 - '-U'
                 - '${DB_USERNAME}'
-            retries: 3
+            interval: 5s
+            retries: 5
+            start_period: 10s
             timeout: 5s
     redis:
-        image: 'redis:alpine'
+        image: 'redis:8-alpine'
         ports:
             - '${FORWARD_REDIS_PORT:-6379}:6379'
         volumes:
@@ -63,7 +68,9 @@ services:
                 - CMD
                 - redis-cli
                 - ping
-            retries: 3
+            interval: 5s
+            retries: 5
+            start_period: 5s
             timeout: 5s
     mailpit:
         image: 'axllent/mailpit:latest'

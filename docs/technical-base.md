@@ -1,11 +1,13 @@
-# Inventario POS - Base Tecnica
+# Base Administrativa - Base Tecnica
 
 ## Stack
 
 - PHP 8.3+
 - Laravel 13
-- MySQL 8
-- Docker/Sail
+- Laravel Sail con runtime PHP 8.5
+- PostgreSQL 17
+- Redis 8
+- Docker Compose
 - Blade + Bootstrap 5
 - CoreUI
 - Laravel Sanctum
@@ -38,8 +40,10 @@ resources/views/
 - Autenticacion web inicial.
 - Autenticacion API por token Sanctum.
 - Roles y permisos iniciales.
-- Categorias con CRUD web y API.
-- Productos con CRUD web y API.
+- Empresas con CRUD web.
+- Auditoria basica.
+- Registro y aprobacion de alojamientos.
+- Catalogos globales de alojamientos.
 - Dashboard administrativo base.
 - Layout administrativo CoreUI reutilizable.
 - Componentes Blade para sidebar, header, alerts, cards, stats, tablas y formularios.
@@ -60,8 +64,8 @@ El panel usa CoreUI sobre Bootstrap 5 mediante Vite. La estructura esta preparad
 ## Usuario inicial
 
 ```txt
-Email: admin@example.com
-Password: password
+Email: boliviannexus@gmail.com
+Password: configurado en `DatabaseSeeder`
 Rol: super_admin
 ```
 
@@ -85,39 +89,41 @@ Web:
 - `POST /login`
 - `POST /logout`
 - `GET /`
-- `resource /categories`
-- `resource /products`
+- `resource /companies`
+- `resource /users`
+- `resource /roles`
+- `resource /permissions`
+- `GET /audits`
+- `GET /spaces`
 
 API:
 
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
-- `apiResource /api/v1/categories`
-- `apiResource /api/v1/products`
+- `apiResource /api/v1/users`
+- `apiResource /api/v1/roles`
+- `apiResource /api/v1/permissions`
 
-## Tablas base futuras
+## Modulos retirados para reconstruccion
 
-Se dejaron migraciones iniciales para:
-
-- branches
-- warehouses
-- suppliers
-- customers
-- purchases
-- purchase_details
-- sales
-- sale_details
-- inventory_movements
-- cash_registers
-- payment_methods
+Se retiraron artefactos incompletos de sucursales, almacenes, productos, clientes, ventas, POS, compras, inventario, metodos de pago y reportes para evitar dependencias rotas. Esos dominios deben reingresar mediante migraciones, modelos, servicios, rutas y pruebas nuevas cuando se defina la arquitectura modular de facturacion.
 
 ## Siguiente paso recomendado
 
-Implementar stock por almacen y Kardex real:
+Crear desde cero los modulos comerciales minimos antes de integrar SIAT.
 
-- `stocks`
-- movimientos transaccionales
-- entradas por compra
-- salidas por venta
-- ajustes
-- transferencias entre almacenes
+## Entorno local
+
+La infraestructura de desarrollo se define unicamente en `compose.yaml` y se
+opera mediante Laravel Sail:
+
+```bash
+./vendor/bin/sail up -d
+./vendor/bin/sail artisan migrate
+./vendor/bin/sail artisan test
+```
+
+Los servicios internos se resuelven mediante los hosts `pgsql`, `redis` y
+`mailpit`. El proyecto no usa un `Dockerfile` propio. Los comandos Artisan se
+ejecutan con `./vendor/bin/sail artisan`; la ejecucion directa con `php artisan`
+desde el host no forma parte del entorno soportado.

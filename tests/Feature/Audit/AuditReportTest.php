@@ -3,7 +3,6 @@
 namespace Tests\Feature\Audit;
 
 use App\Models\Company;
-use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use OwenIt\Auditing\Models\Audit;
@@ -27,12 +26,12 @@ class AuditReportTest extends TestCase
         $otherUser->givePermissionTo('audits.view');
 
         $this->actingAs($user);
-        $product = Product::factory()->create(['company_id' => $company->id, 'name' => 'Producto auditado']);
-        $product->update(['name' => 'Producto visible']);
+        $target = User::factory()->create(['company_id' => $company->id, 'name' => 'Usuario auditado']);
+        $target->update(['name' => 'Usuario visible']);
 
         $this->actingAs($otherUser);
-        $foreignProduct = Product::factory()->create(['company_id' => $otherCompany->id, 'name' => 'Producto ajeno']);
-        $foreignProduct->update(['name' => 'Producto oculto']);
+        $foreignTarget = User::factory()->create(['company_id' => $otherCompany->id, 'name' => 'Usuario ajeno']);
+        $foreignTarget->update(['name' => 'Usuario oculto']);
 
         $this
             ->actingAs($user)
@@ -47,10 +46,10 @@ class AuditReportTest extends TestCase
                 'draw' => 1,
                 'start' => 0,
                 'length' => 10,
-                'auditable_type' => Product::class,
+                'auditable_type' => User::class,
             ]))
             ->assertOk()
-            ->assertJsonFragment(['auditable_label' => 'Productos'])
+            ->assertJsonFragment(['auditable_label' => 'Usuarios'])
             ->assertSee('Empresa visible', false)
             ->assertDontSee('Empresa oculta', false);
     }
@@ -68,20 +67,20 @@ class AuditReportTest extends TestCase
         $otherUser->givePermissionTo('audits.view');
 
         $this->actingAs($user);
-        $product = Product::factory()->create(['company_id' => $company->id, 'name' => 'Antes']);
-        $product->update(['name' => 'Despues']);
+        $target = User::factory()->create(['company_id' => $company->id, 'name' => 'Antes']);
+        $target->update(['name' => 'Despues']);
         $ownAudit = Audit::query()
-            ->where('auditable_type', Product::class)
-            ->where('auditable_id', $product->id)
+            ->where('auditable_type', User::class)
+            ->where('auditable_id', $target->id)
             ->where('event', 'updated')
             ->firstOrFail();
 
         $this->actingAs($otherUser);
-        $foreignProduct = Product::factory()->create(['company_id' => $otherCompany->id, 'name' => 'Otro antes']);
-        $foreignProduct->update(['name' => 'Otro despues']);
+        $foreignTarget = User::factory()->create(['company_id' => $otherCompany->id, 'name' => 'Otro antes']);
+        $foreignTarget->update(['name' => 'Otro despues']);
         $foreignAudit = Audit::query()
-            ->where('auditable_type', Product::class)
-            ->where('auditable_id', $foreignProduct->id)
+            ->where('auditable_type', User::class)
+            ->where('auditable_id', $foreignTarget->id)
             ->where('event', 'updated')
             ->firstOrFail();
 
@@ -89,7 +88,7 @@ class AuditReportTest extends TestCase
             ->actingAs($user)
             ->get(route('audits.show', $ownAudit))
             ->assertOk()
-            ->assertSee('Productos')
+            ->assertSee('Usuarios')
             ->assertSee('Antes')
             ->assertSee('Despues');
 

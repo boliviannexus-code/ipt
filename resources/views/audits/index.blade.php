@@ -6,7 +6,7 @@
 
 @section('content')
     <x-ui.table-card title="Auditoria de acciones">
-        <form class="stock-filter-bar" id="audit-filters" autocomplete="off" data-datatable-filters>
+        <form class="admin-filter-bar" id="audit-filters" autocomplete="off" data-datatable-filters>
             @if ($companies->count() > 1)
                 <div>
                     <label class="form-label" for="audit-filter-company">Empresa</label>

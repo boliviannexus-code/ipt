@@ -3,7 +3,6 @@
 namespace Tests\Feature\Audit;
 
 use App\Models\Company;
-use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -22,42 +21,42 @@ class AuditTrailTest extends TestCase
 
         $this->actingAs($user);
 
-        $product = Product::factory()->create([
+        $target = User::factory()->create([
             'company_id' => $company->id,
-            'name' => 'Producto auditable',
+            'name' => 'Usuario auditable',
         ]);
-        $product->update(['name' => 'Producto auditado']);
-        $product->delete();
+        $target->update(['name' => 'Usuario auditado']);
+        $target->delete();
 
         $this->assertDatabaseHas('audits', [
             'company_id' => $company->id,
             'event' => 'created',
-            'auditable_type' => Product::class,
-            'auditable_id' => $product->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $target->id,
             'user_type' => User::class,
             'user_id' => $user->id,
         ]);
         $this->assertDatabaseHas('audits', [
             'company_id' => $company->id,
             'event' => 'updated',
-            'auditable_type' => Product::class,
-            'auditable_id' => $product->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $target->id,
         ]);
         $this->assertDatabaseHas('audits', [
             'company_id' => $company->id,
             'event' => 'deleted',
-            'auditable_type' => Product::class,
-            'auditable_id' => $product->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $target->id,
         ]);
 
         $updateAudit = DB::table('audits')
-            ->where('auditable_type', Product::class)
-            ->where('auditable_id', $product->id)
+            ->where('auditable_type', User::class)
+            ->where('auditable_id', $target->id)
             ->where('event', 'updated')
             ->first();
 
-        $this->assertStringContainsString('Producto auditable', (string) $updateAudit->old_values);
-        $this->assertStringContainsString('Producto auditado', (string) $updateAudit->new_values);
+        $this->assertStringContainsString('Usuario auditable', (string) $updateAudit->old_values);
+        $this->assertStringContainsString('Usuario auditado', (string) $updateAudit->new_values);
     }
 
     public function test_user_password_is_not_written_to_audit_values(): void
