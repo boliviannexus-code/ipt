@@ -20,12 +20,12 @@
                     <div class="col-md-6">
                         <label class="form-label">Foto principal</label>
                         <input class="form-control" name="main_photo" type="file" accept="image/jpeg,image/png,image/webp">
-                        <div class="form-hint">1 foto principal del alojamiento.</div>
+                        <div class="form-hint">1 foto principal. Se previsualizará y optimizará a WebP.</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Galeria complementaria</label>
                         <input class="form-control" name="gallery_photos[]" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-                        <div class="form-hint">Maximo 3 fotografias de galeria.</div>
+                        <div class="form-hint">Máximo 3 fotografías. Puedes quitar cada selección antes de guardar.</div>
                     </div>
                     <div class="col-12">
                         <label class="form-check">
@@ -90,12 +90,12 @@
                         <div class="col-md-6">
                             <label class="form-label">Foto principal de habitacion</label>
                             <input class="form-control" name="main_photo" type="file" accept="image/jpeg,image/png,image/webp">
-                            <div class="form-hint">1 foto principal de la habitacion.</div>
+                            <div class="form-hint">1 foto principal. Se previsualizará y optimizará a WebP.</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Galeria de habitacion</label>
                             <input class="form-control" name="gallery_photos[]" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-                            <div class="form-hint">Maximo 3 fotografias de habitacion.</div>
+                            <div class="form-hint">Máximo 3 fotografías. Puedes quitar cada selección antes de guardar.</div>
                         </div>
                         <div class="col-12">
                             <label class="form-check">

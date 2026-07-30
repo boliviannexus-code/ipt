@@ -29,8 +29,12 @@ class AssignRolePermissionsTest extends TestCase
         $response->assertOk();
         $response->assertSee('Gerente');
         $response->assertSee('Empresas');
-        $response->assertSee('Empresas: Ver');
+        $response->assertSee('Mapa de acceso');
+        $response->assertSee('Buscar permisos');
+        $response->assertSee('Activar todos');
+        $response->assertSee('Puede consultar el listado y el detalle.');
         $response->assertSee('value="companies.view"', false);
+        $response->assertSee('data-permission-matrix', false);
     }
 
     public function test_role_permissions_can_be_saved_without_role_name(): void

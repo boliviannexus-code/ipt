@@ -46,4 +46,17 @@ class User extends Authenticatable implements Auditable
     {
         return $this->belongsTo(Company::class);
     }
+
+    public function hasActiveAccess(): bool
+    {
+        if (! $this->is_active) {
+            return false;
+        }
+
+        if ($this->company_id === null) {
+            return true;
+        }
+
+        return (bool) $this->company()->value('is_active');
+    }
 }

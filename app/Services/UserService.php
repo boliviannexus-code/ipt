@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -50,12 +51,17 @@ class UserService
 
         $data = $this->applyCompanyAssignmentRules($data);
         $data['is_active'] = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : $user->is_active;
+        $isBeingDeactivated = $user->is_active && ! $data['is_active'];
 
-        if ($user->is_active && ! $data['is_active']) {
+        if ($isBeingDeactivated) {
             $this->ensureCanDeactivate($user);
         }
 
         $user = $this->users->update($user, $data);
+
+        if ($isBeingDeactivated) {
+            $this->revokeAccess($user);
+        }
 
         if (is_array($roles)) {
             $this->syncRoles($user, $roles);
@@ -74,6 +80,10 @@ class UserService
             'is_active' => ! $user->is_active,
         ]);
 
+        if (! $user->is_active) {
+            $this->revokeAccess($user);
+        }
+
         Log::warning('User status toggled', ['user_id' => $user->id, 'is_active' => $user->is_active]);
 
         return $user;
@@ -84,6 +94,8 @@ class UserService
         $user = $this->users->update($user, [
             'password' => Hash::make($password),
         ]);
+
+        $this->revokeAccess($user);
 
         Log::warning('User password changed', ['user_id' => $user->id]);
 
@@ -145,6 +157,18 @@ class UserService
                 'user' => 'No puedes desactivar al ultimo admin activo.',
             ]);
         }
+    }
+
+    private function revokeAccess(User $user): void
+    {
+        DB::table(config('session.table', 'sessions'))
+            ->where('user_id', $user->id)
+            ->delete();
+
+        $user->tokens()->delete();
+        $user->forceFill(['remember_token' => null])->saveQuietly();
+
+        Log::warning('User access revoked', ['user_id' => $user->id]);
     }
 
     private function applyCompanyAssignmentRules(array $data): array

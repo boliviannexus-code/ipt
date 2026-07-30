@@ -71,3 +71,24 @@ if (! function_exists('permission_label')) {
         return permission_module_label($module).': '.permission_action_label($action);
     }
 }
+
+if (! function_exists('permission_action_description')) {
+    function permission_action_description(string $action): string
+    {
+        $descriptions = [
+            'view' => 'Puede consultar el listado y el detalle.',
+            'create' => 'Puede registrar nuevos elementos.',
+            'edit' => 'Puede modificar la informacion existente.',
+            'update' => 'Puede modificar la informacion existente.',
+            'delete' => 'Puede eliminar elementos.',
+            'restore' => 'Puede recuperar elementos eliminados.',
+            'change-password' => 'Puede establecer una nueva contrasena.',
+            'assign-roles' => 'Puede cambiar los roles de los usuarios.',
+            'assign-permissions' => 'Puede configurar los accesos de los roles.',
+            'manage' => 'Tiene control completo sobre este modulo.',
+            'approve' => 'Puede revisar y aprobar solicitudes.',
+        ];
+
+        return $descriptions[$action] ?? 'Permite ejecutar la accion '.str($action)->replace(['-', '_'], ' ')->lower()->toString().'.';
+    }
+}

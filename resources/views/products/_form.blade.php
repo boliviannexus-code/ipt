@@ -66,6 +66,7 @@
     <div class="col-md-9">
         <label class="form-label" for="image">Imagen principal</label>
         <input class="form-control @error('image') is-invalid @enderror" id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp">
+        <div class="form-hint">Podrás revisar o quitar la selección antes de guardar. La imagen se optimizará a WebP.</div>
         <div class="form-hint">JPG, PNG o WebP. Maximo 2 MB. Se optimiza automaticamente.</div>
         @error('image')
             <div class="invalid-feedback">{{ $message }}</div>

@@ -21,7 +21,7 @@ Route::middleware('guest')->group(function (): void {
     Route::post('login', [AuthController::class, 'login'])->name('login.store');
 });
 
-Route::middleware('auth')->group(function (): void {
+Route::middleware(['auth', 'active_account'])->group(function (): void {
     Route::post('logout', [AuthController::class, 'logout'])->name('logout');
 
     Route::get('/', DashboardController::class)->name('dashboard');

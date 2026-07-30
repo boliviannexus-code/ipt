@@ -3,12 +3,17 @@
 namespace App\Services;
 
 use App\Models\Company;
+use App\Services\Images\ImageStorageService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 class CompanyService
 {
+    public function __construct(
+        private readonly ImageStorageService $images,
+    ) {}
+
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
         return Company::query()
@@ -22,7 +27,7 @@ class CompanyService
         $data = $this->normalize($data, true);
 
         if (($data['logo'] ?? null) instanceof UploadedFile) {
-            $data['logo_path'] = $data['logo']->store('companies/logos', 'public');
+            $data['logo_path'] = $this->images->store($data['logo'], 'companies/logos', 1200, 1200);
         }
 
         unset($data['logo'], $data['remove_logo']);
@@ -33,18 +38,21 @@ class CompanyService
     public function update(Company $company, array $data): Company
     {
         $data = $this->normalize($data);
-
-        if (! empty($data['remove_logo']) && $company->logo_path) {
-            Storage::disk('public')->delete($company->logo_path);
-            $data['logo_path'] = null;
-        }
+        $newLogoPath = null;
 
         if (($data['logo'] ?? null) instanceof UploadedFile) {
+            $newLogoPath = $this->images->store($data['logo'], 'companies/logos', 1200, 1200);
+        }
+
+        if ($newLogoPath !== null) {
             if ($company->logo_path) {
                 Storage::disk('public')->delete($company->logo_path);
             }
 
-            $data['logo_path'] = $data['logo']->store('companies/logos', 'public');
+            $data['logo_path'] = $newLogoPath;
+        } elseif (! empty($data['remove_logo']) && $company->logo_path) {
+            Storage::disk('public')->delete($company->logo_path);
+            $data['logo_path'] = null;
         }
 
         unset($data['logo'], $data['remove_logo']);

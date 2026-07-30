@@ -42,7 +42,14 @@ class CompanyCrudTest extends TestCase
         $this->assertSame('Empresa Demo', $company->name);
         $this->assertSame('Empresa Demo SRL', $company->legal_name);
         $this->assertNotNull($company->logo_path);
+        $this->assertStringEndsWith('.webp', $company->logo_path);
         Storage::disk('public')->assertExists($company->logo_path);
+
+        $logo = imagecreatefromstring(Storage::disk('public')->get($company->logo_path));
+        $this->assertNotFalse($logo);
+        $this->assertLessThanOrEqual(1200, imagesx($logo));
+        $this->assertLessThanOrEqual(1200, imagesy($logo));
+        imagedestroy($logo);
     }
 
     public function test_user_can_assign_company_to_user(): void

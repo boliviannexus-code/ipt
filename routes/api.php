@@ -11,7 +11,7 @@ Route::prefix('v1')
     ->group(function (): void {
         Route::post('auth/login', [AuthController::class, 'login'])->name('api.v1.login');
 
-        Route::middleware('auth:sanctum')->group(function (): void {
+        Route::middleware(['auth:sanctum', 'active_account'])->group(function (): void {
             Route::post('auth/logout', [AuthController::class, 'logout'])->name('api.v1.logout');
 
             Route::prefix('users')->name('api.v1.users.')->group(function (): void {

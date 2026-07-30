@@ -58,6 +58,7 @@
     <div class="col-md-9">
         <label class="form-label" for="modal-product-image">Imagen principal</label>
         <input class="form-control" id="modal-product-image" name="image" type="file" accept="image/jpeg,image/png,image/webp">
+        <div class="form-hint">Podrás revisar o quitar la selección antes de guardar. La imagen se optimizará a WebP.</div>
         <div class="form-hint">JPG, PNG o WebP. Maximo 2 MB. Se optimiza automaticamente.</div>
         <div class="invalid-feedback" data-error-for="image"></div>
         @if (($product ?? null)?->image_url)

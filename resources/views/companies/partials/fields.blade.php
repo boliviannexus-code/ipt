@@ -42,7 +42,7 @@
     <div class="col-md-12">
         <label class="form-label" for="company-logo">Logo para reportes</label>
         <input class="form-control" id="company-logo" name="logo" type="file" accept="image/jpeg,image/png,image/webp">
-        <div class="form-hint">JPG, PNG o WebP. Maximo 2 MB.</div>
+        <div class="form-hint">JPG, PNG o WebP. Máximo 2 MB. Verás una vista previa y podrás quitarlo antes de guardar; el sistema lo optimizará a WebP.</div>
         <div class="invalid-feedback" data-error-for="logo"></div>
         @if (($company ?? null)?->logo_url)
             <div class="d-flex align-items-center gap-3 mt-2">

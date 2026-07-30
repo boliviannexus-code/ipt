@@ -15,6 +15,7 @@ const ajaxModalElement = document.getElementById('ajaxModal');
 const ajaxModal = ajaxModalElement ? new bootstrap.Modal(ajaxModalElement) : null;
 const ajaxModalTitle = document.getElementById('ajaxModalTitle');
 const ajaxModalBody = ajaxModalElement?.querySelector('[data-modal-body]');
+const ajaxModalDialog = ajaxModalElement?.querySelector('.modal-dialog');
 
 const toast = Swal.mixin({
     toast: true,
@@ -60,6 +61,8 @@ function openAjaxModal(trigger) {
     }
 
     ajaxModalTitle.textContent = trigger.dataset.modalTitle ?? 'Detalle';
+    ajaxModalDialog?.classList.remove('modal-sm', 'modal-lg', 'modal-xl');
+    ajaxModalDialog?.classList.add(`modal-${trigger.dataset.modalSize ?? 'lg'}`);
     ajaxModalBody.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>';
     ajaxModal.show();
 
@@ -72,6 +75,8 @@ function openAjaxModal(trigger) {
             initDefragmentForms(ajaxModalBody);
             initTransferForms(ajaxModalBody);
             initStockAdjustmentForms(ajaxModalBody);
+            initPermissionMatrices(ajaxModalBody);
+            initImagePickers(ajaxModalBody);
         })
         .catch((error) => {
             ajaxModal.hide();
@@ -174,6 +179,12 @@ async function submitAjaxForm(form) {
             throw new Error(payload.message ?? 'No se pudo completar la operacion.');
         }
 
+        if (payload.redirect_url) {
+            window.location.assign(payload.redirect_url);
+
+            return;
+        }
+
         ajaxModal?.hide();
         await refreshContainer(payload.refresh_url ?? form.dataset.refreshUrl);
         toast.fire({ icon: 'success', title: payload.message ?? 'Operacion realizada correctamente.' });
@@ -233,6 +244,217 @@ function initCharacterCounters(scope = document) {
         field.dataset.characterCounterInitialized = '1';
         update();
     });
+}
+
+function initImagePickers(scope = document) {
+    scope.querySelectorAll('input[type="file"][accept*="image"]').forEach((input) => {
+        if (input.dataset.imagePickerInitialized === '1') {
+            return;
+        }
+
+        input.dataset.imagePickerInitialized = '1';
+        const preview = document.createElement('div');
+        preview.className = 'image-picker-preview';
+        preview.setAttribute('aria-live', 'polite');
+        input.insertAdjacentElement('afterend', preview);
+
+        const render = () => {
+            preview.querySelectorAll('img').forEach((image) => URL.revokeObjectURL(image.src));
+            preview.replaceChildren();
+
+            [...input.files].forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'image-picker-item';
+
+                const image = document.createElement('img');
+                image.src = URL.createObjectURL(file);
+                image.alt = `Vista previa de ${file.name}`;
+
+                const details = document.createElement('div');
+                details.className = 'image-picker-details';
+                details.innerHTML = `<span class="image-picker-name"></span><span class="text-body-secondary small">${formatFileSize(file.size)} · se guardará como WebP</span>`;
+                details.querySelector('.image-picker-name').textContent = file.name;
+
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'btn btn-outline-danger btn-icon image-picker-remove';
+                remove.setAttribute('aria-label', `Quitar ${file.name} antes de guardar`);
+                remove.innerHTML = '<i class="ti ti-trash" aria-hidden="true"></i>';
+                remove.addEventListener('click', () => removeSelectedImage(input, index, render));
+
+                item.append(image, details, remove);
+                preview.append(item);
+            });
+        };
+
+        input.addEventListener('change', render);
+        render();
+    });
+}
+
+function removeSelectedImage(input, removedIndex, render) {
+    const transfer = new DataTransfer();
+
+    [...input.files].forEach((file, index) => {
+        if (index !== removedIndex) {
+            transfer.items.add(file);
+        }
+    });
+
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024 * 1024) {
+        return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function initPermissionMatrices(scope = document) {
+    scope.querySelectorAll('[data-permission-matrix]').forEach((matrix) => {
+        if (matrix.dataset.permissionMatrixInitialized === '1') {
+            return;
+        }
+
+        const checkboxes = [...matrix.querySelectorAll('[data-permission-checkbox]')];
+        const modules = [...matrix.querySelectorAll('[data-permission-module]')];
+        const search = matrix.querySelector('[data-permission-search]');
+        const empty = matrix.querySelector('[data-permission-empty]');
+        const selectedCount = matrix.querySelector('[data-permission-selected-count]');
+
+        const visibleOptions = () => checkboxes.filter((checkbox) => !checkbox.closest('[data-permission-option]')?.classList.contains('d-none'));
+
+        const update = () => {
+            if (selectedCount) {
+                selectedCount.textContent = String(checkboxes.filter((checkbox) => checkbox.checked).length);
+            }
+
+            modules.forEach((module) => {
+                const moduleCheckboxes = [...module.querySelectorAll('[data-permission-checkbox]')];
+                const moduleCount = module.querySelector('[data-module-selected-count]');
+                const moduleButton = module.querySelector('[data-permission-select-module]');
+                const checked = moduleCheckboxes.filter((checkbox) => checkbox.checked).length;
+
+                if (moduleCount) {
+                    moduleCount.textContent = String(checked);
+                }
+
+                if (moduleButton) {
+                    const allSelected = checked === moduleCheckboxes.length;
+                    moduleButton.textContent = allSelected ? 'Desactivar todos' : 'Activar todos';
+                    moduleButton.classList.toggle('btn-ghost-danger', allSelected);
+                    moduleButton.classList.toggle('btn-ghost-primary', !allSelected);
+                }
+            });
+        };
+
+        const filter = () => {
+            const query = search?.value.trim().toLocaleLowerCase('es') ?? '';
+            let visibleModules = 0;
+
+            modules.forEach((module) => {
+                const options = [...module.querySelectorAll('[data-permission-option]')];
+                const moduleMatches = module.dataset.searchText?.includes(query) ?? false;
+                let visibleOptionCount = 0;
+
+                options.forEach((option) => {
+                    const matches = !query || moduleMatches || option.dataset.searchText?.includes(query);
+                    option.classList.toggle('d-none', !matches);
+                    visibleOptionCount += matches ? 1 : 0;
+                });
+
+                const visible = visibleOptionCount > 0;
+                module.classList.toggle('d-none', !visible);
+                visibleModules += visible ? 1 : 0;
+
+                if (query && visible) {
+                    bootstrap.Collapse.getOrCreateInstance(module.querySelector('[data-permission-module-panel]'), { toggle: false }).show();
+                }
+            });
+
+            empty?.classList.toggle('d-none', visibleModules > 0);
+        };
+
+        checkboxes.forEach((checkbox) => checkbox.addEventListener('change', update));
+        search?.addEventListener('input', filter);
+
+        matrix.querySelector('[data-permission-select-visible]')?.addEventListener('click', () => {
+            visibleOptions().forEach((checkbox) => {
+                checkbox.checked = true;
+            });
+            update();
+        });
+
+        matrix.querySelector('[data-permission-clear]')?.addEventListener('click', () => {
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = false;
+            });
+            update();
+        });
+
+        modules.forEach((module) => {
+            module.querySelector('[data-permission-select-module]')?.addEventListener('click', () => {
+                const moduleCheckboxes = [...module.querySelectorAll('[data-permission-checkbox]')];
+                const selectAll = moduleCheckboxes.some((checkbox) => !checkbox.checked);
+
+                moduleCheckboxes.forEach((checkbox) => {
+                    checkbox.checked = selectAll;
+                });
+                update();
+            });
+        });
+
+        matrix.dataset.permissionMatrixInitialized = '1';
+        update();
+    });
+}
+
+function initLoginForm(scope = document) {
+    const form = scope.querySelector('[data-login-form]');
+
+    if (!form || form.dataset.loginInitialized === '1') {
+        return;
+    }
+
+    const password = form.querySelector('#password');
+    const passwordToggle = form.querySelector('[data-password-toggle]');
+    const passwordIcon = form.querySelector('[data-password-toggle-icon]');
+    const submit = form.querySelector('[data-login-submit]');
+    const submitLabel = form.querySelector('[data-login-submit-label]');
+    const spinner = form.querySelector('[data-login-spinner]');
+    const arrow = form.querySelector('[data-login-arrow]');
+
+    passwordToggle?.addEventListener('click', () => {
+        const showing = password?.type === 'text';
+
+        if (password) {
+            password.type = showing ? 'password' : 'text';
+            password.focus({ preventScroll: true });
+        }
+
+        passwordToggle.setAttribute('aria-label', showing ? 'Mostrar contraseña' : 'Ocultar contraseña');
+        passwordIcon?.classList.toggle('ti-eye', showing);
+        passwordIcon?.classList.toggle('ti-eye-off', !showing);
+    });
+
+    form.addEventListener('submit', () => {
+        if (submit) {
+            submit.disabled = true;
+        }
+
+        form.setAttribute('aria-busy', 'true');
+        spinner?.classList.remove('d-none');
+        arrow?.classList.add('d-none');
+
+        if (submitLabel) {
+            submitLabel.textContent = 'Verificando acceso...';
+        }
+    });
+
+    form.dataset.loginInitialized = '1';
 }
 
 function confirmVoidPurchase(form) {
@@ -1682,6 +1904,9 @@ initCashExpenseModal();
 initCashCloseModal();
 initAdminDataTables();
 initCharacterCounters();
+initPermissionMatrices();
+initLoginForm();
+initImagePickers();
 
 document.addEventListener('click', (event) => {
     const modalTrigger = event.target.closest('[data-modal-url]');

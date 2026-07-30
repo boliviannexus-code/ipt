@@ -8,7 +8,7 @@
     <x-ui.table-card title="Listado de roles" data-refresh-container>
         <x-slot:actions>
             @can('roles.create')
-                <a class="btn btn-primary btn-sm" href="{{ route('roles.create') }}" data-modal-url="{{ route('roles.create') }}" data-modal-title="Nuevo rol">Nuevo rol</a>
+                <a class="btn btn-primary btn-sm" href="{{ route('roles.create') }}" data-modal-url="{{ route('roles.create') }}" data-modal-title="Nuevo rol" data-modal-size="xl">Nuevo rol</a>
             @endcan
         </x-slot:actions>
         <table class="table table-hover align-middle">
@@ -23,10 +23,12 @@
                         <td class="text-end">
                             <a class="btn btn-outline-secondary btn-sm" href="{{ route('roles.show', $role) }}" data-modal-url="{{ route('roles.show', $role) }}" data-modal-title="Detalle de rol">Ver</a>
                             @can('roles.edit')
-                                <a class="btn btn-outline-primary btn-sm" href="{{ route('roles.edit', $role) }}" data-modal-url="{{ route('roles.edit', $role) }}" data-modal-title="Editar rol">Editar</a>
+                                <a class="btn btn-outline-primary btn-sm" href="{{ route('roles.edit', $role) }}" data-modal-url="{{ route('roles.edit', $role) }}" data-modal-title="Editar rol" data-modal-size="xl">Editar</a>
                             @endcan
                             @can('roles.assign-permissions')
-                                <a class="btn btn-outline-info btn-sm" href="{{ route('roles.permissions.form', $role) }}" data-modal-url="{{ route('roles.permissions.form', $role) }}" data-modal-title="Asignar permisos">Permisos</a>
+                                <a class="btn btn-outline-info btn-sm" href="{{ route('roles.permissions.form', $role) }}" data-modal-url="{{ route('roles.permissions.form', $role) }}" data-modal-title="Configurar permisos" data-modal-size="xl">
+                                    <i class="ti ti-shield-cog me-1" aria-hidden="true"></i>Configurar acceso
+                                </a>
                             @endcan
                             @can('roles.delete')
                                 <form class="d-inline" method="POST" action="{{ route('roles.destroy', $role) }}" data-confirm-delete="Eliminar rol?">

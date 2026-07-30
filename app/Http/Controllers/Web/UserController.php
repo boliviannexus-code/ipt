@@ -13,6 +13,7 @@ use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -153,6 +154,7 @@ class UserController extends Controller
     public function toggleStatus(Request $request, User $user): JsonResponse|RedirectResponse
     {
         $this->authorize('update', $user);
+        $isCurrentUser = $request->user()?->is($user) ?? false;
 
         try {
             $user = $this->users->toggleStatus($user);
@@ -170,6 +172,10 @@ class UserController extends Controller
 
         $message = $user->is_active ? 'Usuario activado correctamente.' : 'Usuario desactivado correctamente.';
 
+        if ($isCurrentUser && ! $user->is_active) {
+            return $this->logoutCurrentUser($request, $message);
+        }
+
         if ($request->ajax()) {
             return response()->json(['success' => true, 'message' => $message, 'data' => ['id' => $user->id]]);
         }
@@ -180,8 +186,13 @@ class UserController extends Controller
     public function changePassword(ChangePasswordRequest $request, User $user): JsonResponse|RedirectResponse
     {
         $this->authorize('changePassword', $user);
+        $isCurrentUser = $request->user()?->is($user) ?? false;
 
         $this->users->changePassword($user, $request->validated('password'));
+
+        if ($isCurrentUser) {
+            return $this->logoutCurrentUser($request, 'Contraseña actualizada correctamente.');
+        }
 
         if ($request->ajax()) {
             return response()->json([
@@ -192,6 +203,24 @@ class UserController extends Controller
         }
 
         return redirect()->route('users.index')->with('success', 'Contraseña actualizada correctamente.');
+    }
+
+    private function logoutCurrentUser(Request $request, string $message): JsonResponse|RedirectResponse
+    {
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        if ($request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => null,
+                'redirect_url' => route('login'),
+            ]);
+        }
+
+        return redirect()->route('login')->with('success', $message);
     }
 
     public function assignRoles(AssignRolesRequest $request, User $user): JsonResponse|RedirectResponse

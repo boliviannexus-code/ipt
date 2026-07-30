@@ -22,13 +22,13 @@
                     <div class="col-md-6">
                         <label class="form-label" for="main-photo">Foto principal</label>
                         <input class="form-control @error('main_photo') is-invalid @enderror" id="main-photo" name="main_photo" type="file" accept="image/jpeg,image/png,image/webp">
-                        <div class="form-hint">1 foto principal. JPG, PNG o WebP. Maximo 4 MB.</div>
+                        <div class="form-hint">1 foto principal. JPG, PNG o WebP. Máximo 4 MB. Se redimensionará y guardará como WebP.</div>
                         <div class="invalid-feedback">{{ $errors->first('main_photo') }}</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" for="gallery-photos">Fotografias complementarias</label>
                         <input class="form-control @error('gallery_photos') is-invalid @enderror @error('gallery_photos.*') is-invalid @enderror" id="gallery-photos" name="gallery_photos[]" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-                        <div class="form-hint">Maximo 5 imagenes complementarias.</div>
+                        <div class="form-hint">Máximo 5 imágenes. Puedes revisar y quitar cada selección antes de guardar.</div>
                         <div class="invalid-feedback">{{ $errors->first('gallery_photos') ?: $errors->first('gallery_photos.*') }}</div>
                     </div>
                     <div class="col-12">

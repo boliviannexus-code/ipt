@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureActiveAccount;
 use App\Http\Middleware\EnsureCompanyUser;
 use App\Http\Middleware\EnsureGlobalSuperAdmin;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             'company_user' => EnsureCompanyUser::class,
             'global_super_admin' => EnsureGlobalSuperAdmin::class,
+            'active_account' => EnsureActiveAccount::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -13,6 +13,7 @@ use App\Services\UserService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class UserController extends Controller
 {
@@ -61,11 +62,16 @@ class UserController extends Controller
         return $this->successResponse(null, 'Usuario eliminado correctamente.');
     }
 
-    public function toggleStatus(User $user): JsonResponse
+    public function toggleStatus(Request $request, User $user): JsonResponse
     {
         $this->authorize('update', $user);
+        $isCurrentUser = $request->user()?->is($user) ?? false;
 
         $user = $this->users->toggleStatus($user);
+
+        if ($isCurrentUser && ! $user->is_active) {
+            $this->logoutCurrentUser($request);
+        }
 
         return $this->successResponse(UserResource::make($user), 'Estado actualizado correctamente.');
     }
@@ -73,8 +79,13 @@ class UserController extends Controller
     public function changePassword(ChangePasswordRequest $request, User $user): JsonResponse
     {
         $this->authorize('changePassword', $user);
+        $isCurrentUser = $request->user()?->is($user) ?? false;
 
         $user = $this->users->changePassword($user, $request->validated('password'));
+
+        if ($isCurrentUser) {
+            $this->logoutCurrentUser($request);
+        }
 
         return $this->successResponse(UserResource::make($user), 'Contraseña actualizada correctamente.');
     }
@@ -86,5 +97,15 @@ class UserController extends Controller
         $user = $this->users->syncRoles($user, $request->validated('roles') ?? []);
 
         return $this->successResponse(UserResource::make($user), 'Roles actualizados correctamente.');
+    }
+
+    private function logoutCurrentUser(Request $request): void
+    {
+        Auth::guard('web')->logout();
+
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
     }
 }
