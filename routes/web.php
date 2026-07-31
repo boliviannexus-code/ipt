@@ -1,19 +1,25 @@
 <?php
 
-use App\Http\Controllers\Web\Admin\AccommodationCatalogController;
-use App\Http\Controllers\Web\Admin\SpaceApprovalController;
 use App\Http\Controllers\Web\AdminDataTableController;
 use App\Http\Controllers\Web\AuditController;
 use App\Http\Controllers\Web\AuthController;
+use App\Http\Controllers\Web\Billing\InvoiceController;
+use App\Http\Controllers\Web\Billing\InvoiceIssueController;
+use App\Http\Controllers\Web\CashRegisterController;
 use App\Http\Controllers\Web\CompanyController;
 use App\Http\Controllers\Web\DashboardController;
+use App\Http\Controllers\Web\Parameters\CustomerController;
+use App\Http\Controllers\Web\Parameters\ProductCategoryController;
+use App\Http\Controllers\Web\Parameters\ProductController;
+use App\Http\Controllers\Web\Parameters\SinAuthorizationController;
 use App\Http\Controllers\Web\PermissionController;
 use App\Http\Controllers\Web\RoleController;
-use App\Http\Controllers\Web\Spaces\SharedSpaceRegistrationStepperController;
-use App\Http\Controllers\Web\Spaces\SpaceController;
-use App\Http\Controllers\Web\Spaces\SpaceRegistrationStepperController;
+use App\Http\Controllers\Web\SiatBranchController;
+use App\Http\Controllers\Web\SiatCatalogController;
+use App\Http\Controllers\Web\SiatCommunicationController;
+use App\Http\Controllers\Web\SiatCuisController;
+use App\Http\Controllers\Web\SinApiTokenController;
 use App\Http\Controllers\Web\UserController;
-use App\Support\AccommodationCatalogRegistry;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function (): void {
@@ -27,89 +33,6 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::get('audits', [AuditController::class, 'index'])->middleware('permission:audits.view')->name('audits.index');
     Route::get('audits/{audit}', [AuditController::class, 'show'])->middleware('permission:audits.view')->name('audits.show');
-    Route::prefix('spaces')
-        ->name('spaces.')
-        ->middleware(['company_user'])
-        ->group(function (): void {
-            Route::get('/', [SpaceController::class, 'index'])->middleware('permission:spaces.view')->name('index');
-            Route::get('{space}', [SpaceController::class, 'show'])->whereNumber('space')->middleware('permission:spaces.view')->name('show');
-            Route::get('{space}/continue', [SpaceController::class, 'continueRegistration'])->whereNumber('space')->middleware('permission:spaces.edit')->name('continue');
-            Route::patch('{space}/activate', [SpaceController::class, 'activate'])->whereNumber('space')->middleware('permission:spaces.edit')->name('activate');
-            Route::patch('{space}/deactivate', [SpaceController::class, 'deactivate'])->whereNumber('space')->middleware('permission:spaces.edit')->name('deactivate');
-        });
-    Route::prefix('spaces/private')
-        ->name('spaces.private.')
-        ->middleware(['company_user', 'permission:spaces.create'])
-        ->group(function (): void {
-            Route::get('create', [SpaceRegistrationStepperController::class, 'create'])->name('create');
-            Route::post('modality', [SpaceRegistrationStepperController::class, 'storeModality'])->name('modality.store');
-            Route::get('{space}/details', [SpaceRegistrationStepperController::class, 'editDetails'])->name('details.edit');
-            Route::put('{space}/details', [SpaceRegistrationStepperController::class, 'storeDetails'])->name('details.store');
-            Route::get('{space}/descriptions', [SpaceRegistrationStepperController::class, 'editDescriptions'])->name('descriptions.edit');
-            Route::put('{space}/descriptions', [SpaceRegistrationStepperController::class, 'storeDescriptions'])->name('descriptions.store');
-            Route::get('{space}/photos', [SpaceRegistrationStepperController::class, 'editPhotos'])->name('photos.edit');
-            Route::put('{space}/photos', [SpaceRegistrationStepperController::class, 'storePhotos'])->name('photos.store');
-            Route::delete('{space}/photos/{photo}', [SpaceRegistrationStepperController::class, 'destroyPhoto'])->name('photos.destroy');
-            Route::get('{space}/services', [SpaceRegistrationStepperController::class, 'editServices'])->name('services.edit');
-            Route::put('{space}/services', [SpaceRegistrationStepperController::class, 'storeServices'])->name('services.store');
-            Route::get('{space}/location', [SpaceRegistrationStepperController::class, 'editLocation'])->name('location.edit');
-            Route::put('{space}/location', [SpaceRegistrationStepperController::class, 'storeLocation'])->name('location.store');
-            Route::get('{space}/review', [SpaceRegistrationStepperController::class, 'review'])->name('review');
-            Route::patch('{space}/draft', [SpaceRegistrationStepperController::class, 'saveDraft'])->name('draft');
-            Route::patch('{space}/publish', [SpaceRegistrationStepperController::class, 'publish'])->name('publish');
-        });
-    Route::prefix('spaces/shared')
-        ->name('spaces.shared.')
-        ->middleware(['company_user', 'permission:spaces.create'])
-        ->group(function (): void {
-            Route::get('create', [SharedSpaceRegistrationStepperController::class, 'create'])->name('create');
-            Route::post('modality', [SharedSpaceRegistrationStepperController::class, 'storeModality'])->name('modality.store');
-            Route::get('{space}/details', [SharedSpaceRegistrationStepperController::class, 'editDetails'])->name('details.edit');
-            Route::put('{space}/details', [SharedSpaceRegistrationStepperController::class, 'storeDetails'])->name('details.store');
-            Route::get('{space}/rooms', [SharedSpaceRegistrationStepperController::class, 'editRooms'])->name('rooms.edit');
-            Route::post('{space}/rooms', [SharedSpaceRegistrationStepperController::class, 'storeRoom'])->name('rooms.store');
-            Route::put('{space}/rooms/{room}', [SharedSpaceRegistrationStepperController::class, 'updateRoom'])->name('rooms.update');
-            Route::delete('{space}/rooms/{room}', [SharedSpaceRegistrationStepperController::class, 'destroyRoom'])->name('rooms.destroy');
-            Route::get('{space}/beds', [SharedSpaceRegistrationStepperController::class, 'editBeds'])->name('beds.edit');
-            Route::post('{space}/rooms/{room}/beds', [SharedSpaceRegistrationStepperController::class, 'storeBed'])->name('beds.store');
-            Route::delete('{space}/rooms/{room}/beds/{bed}', [SharedSpaceRegistrationStepperController::class, 'destroyBed'])->name('beds.destroy');
-            Route::get('{space}/room-services', [SharedSpaceRegistrationStepperController::class, 'editRoomServices'])->name('room-services.edit');
-            Route::put('{space}/rooms/{room}/services', [SharedSpaceRegistrationStepperController::class, 'storeRoomServices'])->name('room-services.store');
-            Route::get('{space}/photos', [SharedSpaceRegistrationStepperController::class, 'editPhotos'])->name('photos.edit');
-            Route::put('{space}/photos', [SharedSpaceRegistrationStepperController::class, 'storePhotos'])->name('photos.store');
-            Route::delete('{space}/photos/{photo}', [SharedSpaceRegistrationStepperController::class, 'destroyPhoto'])->name('photos.destroy');
-            Route::put('{space}/rooms/{room}/photos', [SharedSpaceRegistrationStepperController::class, 'storeRoomPhotos'])->name('room-photos.store');
-            Route::delete('{space}/rooms/{room}/photos/{photo}', [SharedSpaceRegistrationStepperController::class, 'destroyRoomPhoto'])->name('room-photos.destroy');
-            Route::get('{space}/services', [SharedSpaceRegistrationStepperController::class, 'editServices'])->name('services.edit');
-            Route::put('{space}/services', [SharedSpaceRegistrationStepperController::class, 'storeServices'])->name('services.store');
-            Route::get('{space}/location', [SharedSpaceRegistrationStepperController::class, 'editLocation'])->name('location.edit');
-            Route::put('{space}/location', [SharedSpaceRegistrationStepperController::class, 'storeLocation'])->name('location.store');
-            Route::get('{space}/review', [SharedSpaceRegistrationStepperController::class, 'review'])->name('review');
-            Route::patch('{space}/draft', [SharedSpaceRegistrationStepperController::class, 'saveDraft'])->name('draft');
-            Route::patch('{space}/publish', [SharedSpaceRegistrationStepperController::class, 'publish'])->name('publish');
-        });
-    Route::prefix('admin/accommodation-catalogs')
-        ->name('admin.accommodation-catalogs.')
-        ->middleware(['global_super_admin', 'permission:accommodation-catalogs.manage'])
-        ->group(function (): void {
-            Route::get('{catalog}', [AccommodationCatalogController::class, 'index'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('index');
-            Route::get('{catalog}/create', [AccommodationCatalogController::class, 'create'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('create');
-            Route::post('{catalog}', [AccommodationCatalogController::class, 'store'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('store');
-            Route::get('{catalog}/{record}/edit', [AccommodationCatalogController::class, 'edit'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('edit');
-            Route::put('{catalog}/{record}', [AccommodationCatalogController::class, 'update'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('update');
-            Route::patch('{catalog}/{record}/toggle', [AccommodationCatalogController::class, 'toggle'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('toggle');
-            Route::delete('{catalog}/{record}', [AccommodationCatalogController::class, 'destroy'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('destroy');
-            Route::patch('{catalog}/{record}/restore', [AccommodationCatalogController::class, 'restore'])->whereIn('catalog', AccommodationCatalogRegistry::keys())->name('restore');
-        });
-    Route::prefix('admin/spaces')
-        ->name('admin.spaces.')
-        ->middleware(['global_super_admin', 'permission:spaces.approve'])
-        ->group(function (): void {
-            Route::get('approvals', [SpaceApprovalController::class, 'index'])->name('approvals');
-            Route::get('{space}', [SpaceApprovalController::class, 'show'])->whereNumber('space')->name('show');
-            Route::patch('{space}/approve', [SpaceApprovalController::class, 'approve'])->whereNumber('space')->name('approve');
-            Route::patch('{space}/corrections', [SpaceApprovalController::class, 'requestCorrections'])->whereNumber('space')->name('corrections');
-        });
     Route::prefix('companies')->name('companies.')->group(function (): void {
         Route::get('/', [CompanyController::class, 'index'])->middleware('permission:companies.view')->name('index');
         Route::get('create', [CompanyController::class, 'create'])->middleware('permission:companies.create')->name('create');
@@ -119,9 +42,197 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::put('{company}', [CompanyController::class, 'update'])->middleware('permission:companies.update')->name('update');
         Route::delete('{company}', [CompanyController::class, 'destroy'])->middleware('permission:companies.delete')->name('destroy');
     });
+    Route::prefix('cash-registers')
+        ->name('cash-registers.')
+        ->middleware('company_user')
+        ->group(function (): void {
+            Route::get('/', [CashRegisterController::class, 'index'])
+                ->middleware('permission:cash-registers.view')
+                ->name('index');
+            Route::post('/', [CashRegisterController::class, 'store'])
+                ->middleware('permission:cash-registers.open')
+                ->name('store');
+            Route::patch('{cashRegister}/close', [CashRegisterController::class, 'close'])
+                ->whereNumber('cashRegister')
+                ->middleware('permission:cash-registers.close')
+                ->name('close');
+        });
+    Route::prefix('facturacion')
+        ->name('billing.')
+        ->middleware('company_user')
+        ->group(function (): void {
+            Route::get('facturas', [InvoiceController::class, 'index'])
+                ->middleware('permission:invoices.view')
+                ->name('invoices.index');
+            Route::get('emitir', [InvoiceIssueController::class, 'index'])
+                ->middleware('permission:invoices.issue')
+                ->name('invoices.issue.index');
+            Route::post('emitir/cufd/request', [InvoiceIssueController::class, 'requestCufd'])
+                ->middleware('permission:invoices.issue')
+                ->name('invoices.issue.cufd.request');
+            Route::post('emitir/compra-venta', [InvoiceIssueController::class, 'issuePurchaseSale'])
+                ->middleware('permission:invoices.issue')
+                ->name('invoices.issue.purchase-sale.store');
+            Route::get('emitir/{documentSectorCode}', [InvoiceIssueController::class, 'show'])
+                ->whereNumber('documentSectorCode')
+                ->middleware('permission:invoices.issue')
+                ->name('invoices.issue.show');
+        });
+    Route::prefix('api-token')
+        ->name('sin-api-token.')
+        ->middleware('company_user')
+        ->group(function (): void {
+            Route::get('/', [SinApiTokenController::class, 'index'])
+                ->middleware('permission:sin-api-tokens.view')
+                ->name('index');
+            Route::post('/', [SinApiTokenController::class, 'store'])
+                ->middleware('permission:sin-api-tokens.manage')
+                ->name('store');
+            Route::put('/', [SinApiTokenController::class, 'update'])
+                ->middleware('permission:sin-api-tokens.manage')
+                ->name('update');
+        });
+    Route::prefix('siat')
+        ->name('siat.')
+        ->middleware('company_user')
+        ->group(function (): void {
+            Route::get('communication', [SiatCommunicationController::class, 'index'])
+                ->middleware('permission:siat-communication.view')
+                ->name('communication.index');
+            Route::post('communication/verify', [SiatCommunicationController::class, 'verify'])
+                ->middleware('permission:siat-communication.verify')
+                ->name('communication.verify');
+            Route::get('cuis', [SiatCuisController::class, 'index'])
+                ->middleware('permission:siat-cuis.view')
+                ->name('cuis.index');
+            Route::post('cuis/request', [SiatCuisController::class, 'request'])
+                ->middleware('permission:siat-cuis.request')
+                ->name('cuis.request');
+            Route::get('catalogs', [SiatCatalogController::class, 'index'])
+                ->middleware('permission:siat-catalogs.view')
+                ->name('catalogs.index');
+            Route::get('catalogs/{catalog}', [SiatCatalogController::class, 'show'])
+                ->middleware('permission:siat-catalogs.view')
+                ->name('catalogs.show');
+            Route::post('catalogs/{catalog}/sync', [SiatCatalogController::class, 'sync'])
+                ->middleware('permission:siat-catalogs.sync')
+                ->name('catalogs.sync');
+            Route::patch('catalogs/{catalog}/items/status', [SiatCatalogController::class, 'updateItemsStatus'])
+                ->middleware('permission:siat-catalogs.sync')
+                ->name('catalogs.items.status');
+            Route::patch('catalogs/{catalog}/items/{item}/status', [SiatCatalogController::class, 'updateItemStatus'])
+                ->whereNumber('item')
+                ->middleware('permission:siat-catalogs.sync')
+                ->name('catalogs.items.update-status');
+            Route::get('branches', [SiatBranchController::class, 'index'])
+                ->middleware('permission:siat-branches.view')
+                ->name('branches.index');
+            Route::post('branches', [SiatBranchController::class, 'store'])
+                ->middleware('permission:siat-branches.manage')
+                ->name('branches.store');
+            Route::post('branches/{branch}/points', [SiatBranchController::class, 'storePoint'])
+                ->whereNumber('branch')
+                ->middleware('permission:siat-branches.manage')
+                ->name('branches.points.store');
+        });
+    Route::prefix('parameters')
+        ->name('parameters.')
+        ->middleware('company_user')
+        ->group(function (): void {
+            Route::prefix('products')
+                ->name('products.')
+                ->group(function (): void {
+                    Route::get('/', [ProductController::class, 'index'])
+                        ->middleware('permission:products.view')
+                        ->name('index');
+                    Route::get('create', [ProductController::class, 'create'])
+                        ->middleware('permission:products.create')
+                        ->name('create');
+                    Route::post('/', [ProductController::class, 'store'])
+                        ->middleware('permission:products.create')
+                        ->name('store');
+                    Route::get('{product}/edit', [ProductController::class, 'edit'])
+                        ->whereNumber('product')
+                        ->middleware('permission:products.edit')
+                        ->name('edit');
+                    Route::put('{product}', [ProductController::class, 'update'])
+                        ->whereNumber('product')
+                        ->middleware('permission:products.edit')
+                        ->name('update');
+                    Route::delete('{product}', [ProductController::class, 'destroy'])
+                        ->whereNumber('product')
+                        ->middleware('permission:products.delete')
+                        ->name('destroy');
+                });
+            Route::prefix('authorization')
+                ->name('authorization.')
+                ->group(function (): void {
+                    Route::get('/', [SinAuthorizationController::class, 'index'])
+                        ->middleware('permission:sin-authorizations.view')
+                        ->name('index');
+                    Route::post('/', [SinAuthorizationController::class, 'store'])
+                        ->middleware('permission:sin-authorizations.manage')
+                        ->name('store');
+                    Route::put('/', [SinAuthorizationController::class, 'update'])
+                        ->middleware('permission:sin-authorizations.manage')
+                        ->name('update');
+                });
+            Route::prefix('categories')
+                ->name('categories.')
+                ->group(function (): void {
+                    Route::get('/', [ProductCategoryController::class, 'index'])
+                        ->middleware('permission:product-categories.view')
+                        ->name('index');
+                    Route::get('create', [ProductCategoryController::class, 'create'])
+                        ->middleware('permission:product-categories.create')
+                        ->name('create');
+                    Route::post('/', [ProductCategoryController::class, 'store'])
+                        ->middleware('permission:product-categories.create')
+                        ->name('store');
+                    Route::get('{productCategory}/edit', [ProductCategoryController::class, 'edit'])
+                        ->whereNumber('productCategory')
+                        ->middleware('permission:product-categories.edit')
+                        ->name('edit');
+                    Route::put('{productCategory}', [ProductCategoryController::class, 'update'])
+                        ->whereNumber('productCategory')
+                        ->middleware('permission:product-categories.edit')
+                        ->name('update');
+                    Route::delete('{productCategory}', [ProductCategoryController::class, 'destroy'])
+                        ->whereNumber('productCategory')
+                        ->middleware('permission:product-categories.delete')
+                        ->name('destroy');
+                });
+            Route::prefix('customers')
+                ->name('customers.')
+                ->group(function (): void {
+                    Route::get('/', [CustomerController::class, 'index'])
+                        ->middleware('permission:customers.view')
+                        ->name('index');
+                    Route::get('create', [CustomerController::class, 'create'])
+                        ->middleware('permission:customers.create')
+                        ->name('create');
+                    Route::post('/', [CustomerController::class, 'store'])
+                        ->middleware('permission:customers.create')
+                        ->name('store');
+                    Route::get('{customer}/edit', [CustomerController::class, 'edit'])
+                        ->whereNumber('customer')
+                        ->middleware('permission:customers.edit')
+                        ->name('edit');
+                    Route::put('{customer}', [CustomerController::class, 'update'])
+                        ->whereNumber('customer')
+                        ->middleware('permission:customers.edit')
+                        ->name('update');
+                    Route::delete('{customer}', [CustomerController::class, 'destroy'])
+                        ->whereNumber('customer')
+                        ->middleware('permission:customers.delete')
+                        ->name('destroy');
+                });
+        });
     Route::prefix('datatables')->name('datatables.')->group(function (): void {
         Route::get('audits', [AdminDataTableController::class, 'audits'])->name('audits');
-        Route::get('spaces', [SpaceController::class, 'datatable'])->middleware(['company_user', 'permission:spaces.view'])->name('spaces');
+        Route::get('siat/catalogs/{catalog}/items', [AdminDataTableController::class, 'siatCatalogItems'])
+            ->middleware('permission:siat-catalogs.view')
+            ->name('siat-catalog-items');
     });
     Route::prefix('users')->name('users.')->group(function (): void {
         Route::get('/', [UserController::class, 'index'])->middleware('permission:users.view')->name('index');

@@ -27,10 +27,15 @@ const toast = Swal.mixin({
 
 function showInitialAlerts() {
     const success = document.querySelector('[data-swal-success]')?.dataset.swalSuccess;
+    const warning = document.querySelector('[data-swal-warning]')?.dataset.swalWarning;
     const error = document.querySelector('[data-swal-error]')?.dataset.swalError;
 
     if (success) {
         toast.fire({ icon: 'success', title: success });
+    }
+
+    if (warning) {
+        toast.fire({ icon: 'warning', title: warning });
     }
 
     if (error) {
@@ -114,6 +119,14 @@ function showFormErrors(form, errors) {
     });
 }
 
+function validationSummary(errors, fallback = 'Revisa los datos ingresados.') {
+    const messages = Object.values(errors)
+        .flat()
+        .filter(Boolean);
+
+    return messages.length > 0 ? messages.join('\n') : fallback;
+}
+
 function setSubmitting(form, submitting) {
     const submit = form.querySelector('[type="submit"]');
     const spinner = form.querySelector('[data-submit-spinner]');
@@ -160,8 +173,9 @@ async function submitAjaxForm(form) {
         const payload = await response.json();
 
         if (response.status === 422) {
-            showFormErrors(form, payload.errors ?? payload.data ?? {});
-            Swal.fire({ icon: 'error', title: 'Validacion', text: payload.message ?? 'Revisa los datos ingresados.' });
+            const errors = payload.errors ?? payload.data ?? {};
+            showFormErrors(form, errors);
+            Swal.fire({ icon: 'error', title: 'Validacion', text: validationSummary(errors, payload.message) });
 
             return;
         }
@@ -169,6 +183,13 @@ async function submitAjaxForm(form) {
         if (!response.ok || payload.success === false) {
             throw new Error(payload.message ?? 'No se pudo completar la operacion.');
         }
+
+        document.dispatchEvent(new CustomEvent('ajax-form:success', {
+            detail: {
+                form,
+                payload,
+            },
+        }));
 
         if (payload.redirect_url) {
             window.location.assign(payload.redirect_url);
@@ -294,7 +315,7 @@ function initTomSelects(scope = document) {
         }
 
         new TomSelect(select, {
-            allowEmptyOption: true,
+            allowEmptyOption: select.dataset.allowEmptyOption !== 'false',
             create: false,
             dropdownParent: 'body',
             maxItems: select.multiple ? null : 1,
@@ -306,6 +327,504 @@ function initTomSelects(scope = document) {
                 },
             },
         });
+    });
+}
+
+function initProductSiatSelectors(scope = document) {
+    scope.querySelectorAll('[data-product-siat-form]').forEach((form) => {
+        if (form.dataset.productSiatInitialized === '1') {
+            return;
+        }
+
+        const activitySelect = form.querySelector('[data-product-siat-activity]');
+        const productSelect = form.querySelector('[data-product-siat-code]');
+
+        if (!activitySelect || !productSelect) {
+            return;
+        }
+
+        const sourceOptions = Array.from(productSelect.options).map((option) => ({
+            value: option.value,
+            text: option.textContent,
+            activityCode: option.dataset.activityCode || '',
+        }));
+
+        const syncProducts = () => {
+            const activityCode = activitySelect.value;
+            const currentValue = productSelect.value;
+            const availableOptions = sourceOptions.filter((option) => (
+                option.value !== '' && option.activityCode === activityCode
+            ));
+            const currentIsAvailable = availableOptions.some((option) => option.value === currentValue);
+
+            if (productSelect.tomselect) {
+                const tomSelect = productSelect.tomselect;
+
+                tomSelect.clear(true);
+                tomSelect.clearOptions();
+                tomSelect.settings.placeholder = activityCode ? 'Seleccionar producto SIAT' : 'Selecciona una actividad primero';
+                productSelect.setAttribute('placeholder', tomSelect.settings.placeholder);
+                tomSelect.inputState();
+
+                availableOptions.forEach((option, index) => {
+                    tomSelect.addOption({
+                        value: option.value,
+                        text: option.text,
+                        $order: index + 1,
+                    });
+                });
+
+                if (currentValue && currentIsAvailable) {
+                    tomSelect.setValue(currentValue, true);
+                }
+
+                if (!activityCode || availableOptions.length === 0) {
+                    tomSelect.disable();
+                } else {
+                    tomSelect.enable();
+                }
+
+                tomSelect.refreshOptions(false);
+                tomSelect.refreshItems();
+
+                return;
+            }
+
+            Array.from(productSelect.options).forEach((option) => {
+                if (option.value === '') {
+                    option.textContent = activityCode ? 'Seleccionar producto SIAT' : 'Selecciona una actividad primero';
+                    option.hidden = false;
+                    return;
+                }
+
+                option.hidden = option.dataset.activityCode !== activityCode;
+            });
+
+            productSelect.disabled = !activityCode || availableOptions.length === 0;
+
+            if (currentValue && !currentIsAvailable) {
+                productSelect.value = '';
+            }
+        };
+
+        activitySelect.addEventListener('change', syncProducts);
+
+        if (activitySelect.tomselect) {
+            activitySelect.tomselect.on('change', syncProducts);
+        }
+
+        syncProducts();
+        form.dataset.productSiatInitialized = '1';
+    });
+}
+
+function initInvoiceIssueForms(scope = document) {
+    scope.querySelectorAll('[data-invoice-issue-form]').forEach((form) => {
+        if (form.dataset.invoiceIssueInitialized === '1') {
+            return;
+        }
+
+        const pointOfSaleSelect = form.querySelector('[data-invoice-point-of-sale]');
+        const customerSelect = form.querySelector('[data-invoice-customer-select]');
+        const productSelect = form.querySelector('[data-invoice-product-select]');
+        const itemsBody = form.querySelector('[data-invoice-items]');
+        const emptyRow = form.querySelector('[data-invoice-empty]');
+        const activitySelect = form.querySelector('[name="economic_activity_code"]');
+        const additionalDescriptionInput = form.querySelector('[name="additional_description"]');
+        const quantityInput = form.querySelector('[data-invoice-quantity]');
+        const unitPriceInput = form.querySelector('[data-invoice-unit-price]');
+        const discountInput = form.querySelector('[data-invoice-discount]');
+        const totalDiscountInput = form.querySelector('[data-invoice-total-discount]');
+        const productUnit = form.querySelector('[data-product-unit]');
+        const subtotalTarget = form.querySelector('[data-invoice-subtotal]');
+        const totalTarget = form.querySelector('[data-invoice-total]');
+        const taxableTotalTarget = form.querySelector('[data-invoice-taxable-total]');
+        const fiscalStatus = form.querySelector('[data-invoice-fiscal-status]');
+        const communicationOk = fiscalStatus?.dataset.communicationOk === '1';
+        const cufdRequestUrl = fiscalStatus?.dataset.cufdRequestUrl;
+        const cuisStatus = form.querySelector('[data-cuis-status]');
+        const cufdStatus = form.querySelector('[data-cufd-status]');
+        const submitButton = form.querySelector('[data-invoice-submit]');
+        const items = [];
+
+        const money = (amount) => `BO ${Number(amount || 0).toFixed(2)}`;
+        const numberValue = (input, fallback = 0) => {
+            const value = Number.parseFloat(input?.value ?? '');
+
+            return Number.isFinite(value) ? value : fallback;
+        };
+
+        const selectedOption = (select) => select?.options?.[select.selectedIndex] ?? null;
+        const customerOptionText = (customer) => {
+            const complement = customer.document_complement ? `-${customer.document_complement}` : '';
+
+            return `${customer.name} - ${customer.document_number}${complement}`;
+        };
+        const optionData = (option) => ({
+            name: option?.dataset.name || '-',
+            document: option?.dataset.document || '-',
+            complement: option?.dataset.complement || '-',
+            email: option?.dataset.email || '-',
+            documentType: option?.dataset.documentType || '',
+        });
+
+        const setFiscalStatus = (target, ok, label, detail) => {
+            if (!target) {
+                return;
+            }
+
+            target.classList.toggle('is-ok', ok);
+            target.classList.toggle('is-bad', !ok);
+
+            const labelTarget = target.querySelector('[data-status-label]');
+            const detailTarget = target.querySelector('[data-status-detail]');
+
+            if (labelTarget) {
+                labelTarget.textContent = label;
+            }
+
+            if (detailTarget) {
+                detailTarget.textContent = ok ? '' : detail;
+                detailTarget.classList.toggle('d-none', ok || !detail);
+            }
+        };
+
+        const requestCufd = async (option) => {
+            if (
+                !cufdRequestUrl
+                || !option?.value
+                || String(option.value).startsWith('branch-')
+                || option.dataset.cufdRequesting === '1'
+                || option.dataset.cufdAttempted === '1'
+            ) {
+                return;
+            }
+
+            option.dataset.cufdRequesting = '1';
+            option.dataset.cufdAttempted = '1';
+            option.dataset.cufdDetail = 'Solicitando CUFD...';
+            setFiscalStatus(cufdStatus, false, option.dataset.cufdLabel || 'CUFD', option.dataset.cufdDetail);
+
+            try {
+                const body = new FormData();
+                body.append('sin_point_of_sale_id', option.value);
+
+                const response = await fetch(cufdRequestUrl, {
+                    method: 'POST',
+                    body,
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                const payload = await response.json();
+
+                if (!response.ok || payload.success === false) {
+                    throw new Error(payload.message ?? 'No se pudo solicitar CUFD.');
+                }
+
+                option.dataset.cufdValid = payload.data?.cufd?.is_current ? '1' : '0';
+                option.dataset.cufdLabel = 'CUFD';
+                option.dataset.cufdDetail = option.dataset.cufdValid === '1' ? '' : 'CUFD no vigente';
+
+                toast.fire({ icon: 'success', title: payload.message ?? 'CUFD generado correctamente.' });
+            } catch (error) {
+                option.dataset.cufdValid = '0';
+                option.dataset.cufdLabel = 'CUFD';
+                option.dataset.cufdDetail = 'CUFD no vigente';
+                Swal.fire({ icon: 'error', title: 'CUFD', text: error.message });
+            } finally {
+                option.dataset.cufdRequesting = '0';
+                updateFiscalReadiness();
+            }
+        };
+
+        const updateFiscalReadiness = () => {
+            const option = selectedOption(pointOfSaleSelect);
+            const hasPointOfSale = Boolean(option?.value) && !String(option.value).startsWith('branch-');
+            const cuisOk = hasPointOfSale && option?.dataset.cuisValid === '1';
+            const cufdOk = hasPointOfSale && option?.dataset.cufdValid === '1';
+
+            setFiscalStatus(
+                cuisStatus,
+                cuisOk,
+                option?.dataset.cuisLabel || 'CUIS',
+                option?.dataset.cuisDetail || 'CUIS no vigente',
+            );
+            setFiscalStatus(
+                cufdStatus,
+                cufdOk,
+                option?.dataset.cufdLabel || 'CUFD',
+                option?.dataset.cufdDetail || 'CUFD no vigente',
+            );
+
+            if (submitButton) {
+                submitButton.disabled = !(communicationOk && cuisOk && cufdOk);
+            }
+
+            if (communicationOk && hasPointOfSale && cuisOk && !cufdOk) {
+                requestCufd(option);
+            }
+        };
+
+        const updateCustomer = () => {
+            const option = selectedOption(customerSelect);
+            const customer = optionData(option);
+
+            form.querySelector('[data-client-name]').textContent = customer.name;
+            form.querySelector('[data-client-document]').textContent = customer.document;
+            form.querySelector('[data-client-complement]').textContent = customer.complement;
+            form.querySelector('[data-client-email]').textContent = customer.email;
+
+            form.dispatchEvent(new CustomEvent('invoice:customer-selected', { detail: customer }));
+        };
+
+        const addCustomerOption = (customer) => {
+            if (!customerSelect || !customer?.id) {
+                return;
+            }
+
+            const value = String(customer.id);
+            let option = customerSelect.querySelector(`option[value="${CSS.escape(value)}"]`);
+
+            if (!option) {
+                option = new Option(customerOptionText(customer), value, true, true);
+                customerSelect.append(option);
+            }
+
+            option.textContent = customerOptionText(customer);
+            option.dataset.name = customer.name ?? '';
+            option.dataset.document = customer.document_number ?? '';
+            option.dataset.complement = customer.document_complement ?? '';
+            option.dataset.email = customer.email ?? '';
+            option.dataset.customerCode = customer.customer_code ?? '';
+            option.dataset.documentType = customer.identity_document_type_code ?? '';
+
+            if (customerSelect.tomselect) {
+                customerSelect.tomselect.addOption({
+                    value,
+                    text: option.textContent,
+                });
+                customerSelect.tomselect.refreshOptions(false);
+                customerSelect.tomselect.setValue(value, true);
+            } else {
+                customerSelect.value = value;
+            }
+
+            updateCustomer();
+        };
+
+        const updateProduct = () => {
+            const option = selectedOption(productSelect);
+
+            if (unitPriceInput && option?.dataset.unitPrice) {
+                unitPriceInput.value = Number(option.dataset.unitPrice).toFixed(2);
+            }
+
+            if (productUnit) {
+                const unitCode = option?.dataset.unitCode;
+                const unitDescription = option?.dataset.unitDescription;
+                productUnit.textContent = unitCode
+                    ? `${unitCode} - ${unitDescription || 'Unidad SIAT'}`
+                    : 'Seleccione un producto';
+            }
+        };
+
+        const renderItems = () => {
+            if (!itemsBody) {
+                return;
+            }
+
+            itemsBody.querySelectorAll('[data-invoice-item-row]').forEach((row) => row.remove());
+            emptyRow?.classList.toggle('d-none', items.length > 0);
+
+            items.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.dataset.invoiceItemRow = '1';
+                row.innerHTML = `
+                    <td><strong></strong><div class="text-body-secondary small"></div></td>
+                    <td class="text-end"></td>
+                    <td></td>
+                    <td class="text-end"></td>
+                    <td class="text-end"></td>
+                    <td class="text-end fw-semibold"></td>
+                    <td class="text-end"><button class="btn btn-outline-danger btn-sm btn-icon" type="button" aria-label="Quitar item"><i class="ti ti-trash" aria-hidden="true"></i></button></td>
+                `;
+
+                row.children[0].querySelector('strong').textContent = item.code;
+                row.children[0].querySelector('div').textContent = item.description;
+                row.children[1].textContent = item.quantity.toFixed(2);
+                row.children[2].textContent = item.unit;
+                row.children[3].textContent = money(item.unitPrice);
+                row.children[4].textContent = money(item.discount);
+                row.children[5].textContent = money(item.subtotal);
+                row.querySelector('button')?.addEventListener('click', () => {
+                    items.splice(index, 1);
+                    renderItems();
+                    updateTotals();
+                });
+
+                itemsBody.append(row);
+            });
+        };
+
+        const updateTotals = () => {
+            const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+            const totalDiscount = numberValue(totalDiscountInput);
+            const total = Math.max(0, subtotal - totalDiscount);
+
+            if (subtotalTarget) {
+                subtotalTarget.textContent = money(subtotal);
+            }
+
+            if (totalTarget) {
+                totalTarget.textContent = money(total);
+            }
+
+            if (taxableTotalTarget) {
+                taxableTotalTarget.textContent = money(total);
+            }
+        };
+
+        form.querySelector('[data-invoice-add-item]')?.addEventListener('click', () => {
+            const option = selectedOption(productSelect);
+
+            if (!option?.value) {
+                Swal.fire({ icon: 'warning', title: 'Producto requerido', text: 'Selecciona un producto homologado para agregarlo al detalle.' });
+
+                return;
+            }
+
+            const quantity = numberValue(quantityInput, 1);
+            const unitPrice = numberValue(unitPriceInput);
+            const discount = numberValue(discountInput);
+            const subtotal = Math.max(0, (quantity * unitPrice) - discount);
+
+            items.push({
+                product_id: Number(option.value),
+                code: option.dataset.internalCode || option.value,
+                description: option.dataset.description || option.textContent.trim(),
+                additional_description: additionalDescriptionInput?.value?.trim() || '',
+                activity_code: option.dataset.activityCode || activitySelect?.value || '',
+                siat_product_code: option.dataset.siatProductCode || '',
+                measurement_unit_code: option.dataset.unitCode || '',
+                quantity,
+                unit: option.dataset.unitDescription || option.dataset.unitCode || '-',
+                unit_price: unitPrice,
+                unitPrice,
+                discount,
+                subtotal,
+            });
+
+            renderItems();
+            updateTotals();
+        });
+
+        const submitInvoice = async () => {
+            if (submitButton?.disabled) {
+                return;
+            }
+
+            if (items.length === 0) {
+                Swal.fire({ icon: 'warning', title: 'Detalle requerido', text: 'Agrega al menos un producto o servicio.' });
+
+                return;
+            }
+
+            submitButton.disabled = true;
+            submitButton.classList.add('disabled');
+
+            try {
+                const body = new FormData(form);
+                body.set('items', JSON.stringify(items));
+
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body,
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                const payload = await response.json();
+
+                if (response.status === 422) {
+                    const errors = payload.errors ?? payload.data ?? {};
+                    showFormErrors(form, errors);
+                    Swal.fire({ icon: 'error', title: 'Validacion', text: validationSummary(errors, payload.message) });
+
+                    return;
+                }
+
+                const invoice = payload.data?.invoice;
+
+                if (payload.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Factura validada',
+                        text: `Factura ${invoice?.invoice_number ?? ''} validada por el SIN. Codigo de recepcion: ${invoice?.reception_code ?? '-'}`,
+                    });
+
+                    return;
+                }
+
+                Swal.fire({
+                    icon: 'warning',
+                    title: `Factura ${invoice?.status_label ?? 'observada'}`,
+                    text: `Intento nro. ${invoice?.attempted_invoice_number ?? '-'}. ${payload.message ?? 'El SIN devolvio observaciones para la factura.'}`,
+                });
+            } catch (error) {
+                Swal.fire({ icon: 'error', title: 'Emision de factura', text: error.message });
+            } finally {
+                updateFiscalReadiness();
+                submitButton.classList.remove('disabled');
+            }
+        };
+
+        submitButton?.addEventListener('click', submitInvoice);
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            submitInvoice();
+        });
+
+        form.querySelector('[data-invoice-clear]')?.addEventListener('click', () => {
+            items.splice(0, items.length);
+            window.setTimeout(() => {
+                form.querySelectorAll('select[data-tom-select]').forEach((select) => select.tomselect?.clear(true));
+                updateCustomer();
+                updateProduct();
+                updateFiscalReadiness();
+                renderItems();
+                updateTotals();
+            }, 0);
+        });
+
+        pointOfSaleSelect?.addEventListener('change', updateFiscalReadiness);
+        customerSelect?.addEventListener('change', updateCustomer);
+        productSelect?.addEventListener('change', updateProduct);
+        pointOfSaleSelect?.tomselect?.on('change', updateFiscalReadiness);
+        customerSelect?.tomselect?.on('change', updateCustomer);
+        productSelect?.tomselect?.on('change', updateProduct);
+        totalDiscountInput?.addEventListener('input', updateTotals);
+        document.addEventListener('ajax-form:success', (event) => {
+            const sourceForm = event.detail?.form;
+            const customer = event.detail?.payload?.data?.customer;
+
+            if (!sourceForm?.matches('[data-invoice-customer-create]') || !customer) {
+                return;
+            }
+
+            addCustomerOption(customer);
+        });
+
+        updateCustomer();
+        updateProduct();
+        updateFiscalReadiness();
+        renderItems();
+        updateTotals();
+        form.dataset.invoiceIssueInitialized = '1';
     });
 }
 
@@ -655,6 +1174,8 @@ function initSidebarToggle() {
 function initializeUi(scope = document) {
     disableBusinessFormAutocomplete(scope);
     initTomSelects(scope);
+    initProductSiatSelectors(scope);
+    initInvoiceIssueForms(scope);
     initAdminDataTables(scope);
     initCharacterCounters(scope);
     initPermissionMatrices(scope);

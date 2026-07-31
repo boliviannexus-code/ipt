@@ -3,7 +3,12 @@
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
+use App\Models\CashRegister;
 use App\Models\Company;
+use App\Models\Customer;
+use App\Models\Product;
+use App\Models\ProductCategory;
+use App\Models\SinAuthorization;
 use App\Models\User;
 use App\Support\CompanyContext;
 use Illuminate\Http\Request;
@@ -13,8 +18,13 @@ use OwenIt\Auditing\Models\Audit;
 class AuditController extends Controller
 {
     public const AUDITABLE_TYPES = [
-        \App\Models\Company::class => 'Empresas',
-        \App\Models\User::class => 'Usuarios',
+        CashRegister::class => 'Cajas',
+        Company::class => 'Empresas',
+        Customer::class => 'Clientes',
+        Product::class => 'Productos',
+        ProductCategory::class => 'Categorias',
+        SinAuthorization::class => 'Autorizacion SIN',
+        User::class => 'Usuarios',
     ];
 
     public function index(Request $request): View

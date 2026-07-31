@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
+use App\Models\SinCatalogItem;
 use App\Models\User;
+use App\Services\Siat\SiatCatalogRegistry;
 use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,6 +47,42 @@ class AdminDataTableController extends Controller
             ->toJson();
     }
 
+    public function siatCatalogItems(Request $request, string $catalog): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('siat-catalogs.view'), 403);
+
+        app(SiatCatalogRegistry::class)->find($catalog);
+
+        $query = SinCatalogItem::query()
+            ->where('catalog_key', $catalog)
+            ->select('sin_catalog_items.*');
+
+        return DataTables::eloquent($query)
+            ->filter(function ($query) use ($request): void {
+                $keyword = trim((string) data_get($request->input('search'), 'value', ''));
+
+                if ($keyword === '') {
+                    return;
+                }
+
+                $query->where(function ($query) use ($keyword): void {
+                    $query->where('classifier_code', 'ilike', "%{$keyword}%")
+                        ->orWhere('item_key', 'ilike', "%{$keyword}%")
+                        ->orWhere('description', 'ilike', "%{$keyword}%")
+                        ->orWhereRaw('raw_data::text ilike ?', ["%{$keyword}%"]);
+                });
+            })
+            ->addColumn('selector', fn (SinCatalogItem $item): string => $this->catalogItemSelector($item))
+            ->addColumn('status', fn (SinCatalogItem $item): string => $this->catalogItemStatus($catalog, $item))
+            ->addColumn('code', fn (SinCatalogItem $item): string => e($item->classifier_code ?: $item->item_key ?: '-'))
+            ->editColumn('description', fn (SinCatalogItem $item): string => e($item->description ?: '-'))
+            ->addColumn('raw_fields', fn (SinCatalogItem $item): string => $this->catalogRawFields($item))
+            ->editColumn('synced_at', fn (SinCatalogItem $item): string => $item->synced_at?->format('Y-m-d H:i:s') ?? '')
+            ->addColumn('json', fn (SinCatalogItem $item): string => $this->catalogJson($item))
+            ->rawColumns(['selector', 'status', 'raw_fields', 'json'])
+            ->toJson();
+    }
+
     private function auditEventBadge(string $event): string
     {
         $tone = match ($event) {
@@ -79,5 +117,56 @@ class AdminDataTableController extends Controller
         $url = route('audits.show', $auditId);
 
         return '<a class="btn btn-outline-primary btn-sm" href="'.$url.'" data-modal-url="'.$url.'" data-modal-title="Detalle de auditoria">Ver</a>';
+    }
+
+    private function catalogItemSelector(SinCatalogItem $item): string
+    {
+        return '<input class="form-check-input" form="catalog-selected-status-form" name="items[]" type="checkbox" value="'
+            .e((string) $item->id)
+            .'" aria-label="Seleccionar item '
+            .e($item->classifier_code ?: $item->item_key)
+            .'" data-catalog-item-selector>';
+    }
+
+    private function catalogItemStatus(string $catalog, SinCatalogItem $item): string
+    {
+        $buttonClass = $item->is_active ? 'btn-success' : 'btn-outline-secondary';
+        $label = $item->is_active ? 'Activo' : 'Inactivo';
+
+        return '<form method="POST" action="'
+            .e(route('siat.catalogs.items.update-status', [$catalog, $item]))
+            .'">'
+            .csrf_field()
+            .method_field('PATCH')
+            .'<input type="hidden" name="is_active" value="'.($item->is_active ? '0' : '1').'">'
+            .'<button class="btn btn-sm '.$buttonClass.'" type="submit">'.$label.'</button>'
+            .'</form>';
+    }
+
+    private function catalogRawFields(SinCatalogItem $item): string
+    {
+        $fields = collect($item->raw_data ?? [])
+            ->filter(fn ($value): bool => is_scalar($value) && trim((string) $value) !== '');
+
+        if ($fields->isEmpty()) {
+            return '<span class="text-body-secondary">-</span>';
+        }
+
+        return $fields
+            ->map(fn ($value, string|int $key): string => '<div class="small"><span class="text-body-secondary">'
+                .e((string) $key)
+                .':</span> <span class="fw-semibold">'
+                .e((string) $value)
+                .'</span></div>')
+            ->implode('');
+    }
+
+    private function catalogJson(SinCatalogItem $item): string
+    {
+        $json = json_encode($item->raw_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return '<details><summary class="text-primary">Ver</summary><pre class="mt-2 mb-0 p-2 bg-muted-lt rounded text-secondary small">'
+            .e((string) $json)
+            .'</pre></details>';
     }
 }

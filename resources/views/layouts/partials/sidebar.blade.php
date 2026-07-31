@@ -1,11 +1,42 @@
 @php
     $organizationOpen = request()->routeIs('companies.*');
     $adminOpen = request()->routeIs('users.*', 'roles.*', 'permissions.*', 'audits.*');
-    $spacesOpen = request()->routeIs('spaces.*');
+    $cashRegistersOpen = request()->routeIs('cash-registers.*');
+    $billingOpen = request()->routeIs('billing.*');
+    $apiTokenOpen = request()->routeIs('sin-api-token.*');
+    $siatCommunicationOpen = request()->routeIs('siat.communication.*');
+    $siatCuisOpen = request()->routeIs('siat.cuis.*');
+    $siatCatalogsOpen = request()->routeIs('siat.catalogs.*');
+    $siatBranchesOpen = request()->routeIs('siat.branches.*');
+    $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen;
+    $parametersOpen = request()->routeIs('parameters.*');
 
     $canOrganization = auth()->user()?->can('companies.view');
-    $canSpaces = auth()->user()?->company_id !== null
-        && (auth()->user()?->can('spaces.view') || auth()->user()?->can('spaces.create'));
+    $canCashRegisters = auth()->user()?->company_id !== null
+        && auth()->user()?->can('cash-registers.view');
+    $canBilling = auth()->user()?->company_id !== null
+        && (
+            auth()->user()?->can('invoices.view')
+            || auth()->user()?->can('invoices.issue')
+        );
+    $canApiToken = auth()->user()?->company_id !== null
+        && auth()->user()?->can('sin-api-tokens.view');
+    $canSiatCommunication = auth()->user()?->company_id !== null
+        && auth()->user()?->can('siat-communication.view');
+    $canSiatCuis = auth()->user()?->company_id !== null
+        && auth()->user()?->can('siat-cuis.view');
+    $canSiatCatalogs = auth()->user()?->company_id !== null
+        && auth()->user()?->can('siat-catalogs.view');
+    $canSiatBranches = auth()->user()?->company_id !== null
+        && auth()->user()?->can('siat-branches.view');
+    $canSiat = $canApiToken || $canSiatCommunication || $canSiatCuis || $canSiatCatalogs || $canSiatBranches;
+    $canParameters = auth()->user()?->company_id !== null
+        && (
+            auth()->user()?->can('product-categories.view')
+            || auth()->user()?->can('customers.view')
+            || auth()->user()?->can('products.view')
+            || auth()->user()?->can('sin-authorizations.view')
+        );
     $canAdmin = auth()->user()?->can('users.view')
         || auth()->user()?->can('roles.view')
         || auth()->user()?->can('permissions.view')
@@ -57,20 +88,144 @@
                     </li>
                 @endif
 
-                @if ($canSpaces)
-                    <li class="nav-item app-menu-section {{ $spacesOpen ? 'active' : '' }}">
-                        <button class="nav-link app-menu-toggle {{ $spacesOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-spaces" aria-expanded="{{ $spacesOpen ? 'true' : 'false' }}" aria-controls="menu-spaces">
-                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-home-star"></i></span>
-                            <span class="nav-link-title">Alojamientos</span>
+                @if ($canParameters)
+                    <li class="nav-item app-menu-section {{ $parametersOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $parametersOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-parameters" aria-expanded="{{ $parametersOpen ? 'true' : 'false' }}" aria-controls="menu-parameters">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-adjustments"></i></span>
+                            <span class="nav-link-title">Parametros</span>
                             <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
                         </button>
-                        <div class="collapse {{ $spacesOpen ? 'show' : '' }}" id="menu-spaces">
+                        <div class="collapse {{ $parametersOpen ? 'show' : '' }}" id="menu-parameters">
                             <ul class="nav app-submenu">
-                                @can('spaces.view')
-                                    <li class="nav-item {{ request()->routeIs('spaces.index', 'spaces.show') ? 'active' : '' }}">
-                                        <a class="nav-link" href="{{ route('spaces.index') }}">
-                                            <span class="nav-link-icon"><i class="ti ti-list-details"></i></span>
-                                            <span class="nav-link-title">Listado</span>
+                                @can('products.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.products.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.products.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-package"></i></span>
+                                            <span class="nav-link-title">Productos</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('sin-authorizations.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.authorization.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.authorization.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-certificate"></i></span>
+                                            <span class="nav-link-title">Autorizacion</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('product-categories.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.categories.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.categories.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-category"></i></span>
+                                            <span class="nav-link-title">Categorias</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('customers.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.customers.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.customers.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-id"></i></span>
+                                            <span class="nav-link-title">Clientes</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canSiat)
+                    <li class="nav-item app-menu-section {{ $siatOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $siatOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-siat" aria-expanded="{{ $siatOpen ? 'true' : 'false' }}" aria-controls="menu-siat">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-cloud-code"></i></span>
+                            <span class="nav-link-title">SIAT</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $siatOpen ? 'show' : '' }}" id="menu-siat">
+                            <ul class="nav app-submenu">
+                                @can('sin-api-tokens.view')
+                                    <li class="nav-item {{ $apiTokenOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('sin-api-token.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-key"></i></span>
+                                            <span class="nav-link-title">Token API</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('siat-communication.view')
+                                    <li class="nav-item {{ $siatCommunicationOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('siat.communication.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-plug-connected"></i></span>
+                                            <span class="nav-link-title">Verificar comunicacion</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('siat-cuis.view')
+                                    <li class="nav-item {{ $siatCuisOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('siat.cuis.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-id-badge-2"></i></span>
+                                            <span class="nav-link-title">CUIS</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('siat-branches.view')
+                                    <li class="nav-item {{ $siatBranchesOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('siat.branches.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-building-store"></i></span>
+                                            <span class="nav-link-title">Sucursales</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('siat-catalogs.view')
+                                    <li class="nav-item {{ $siatCatalogsOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('siat.catalogs.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-table-options"></i></span>
+                                            <span class="nav-link-title">Catalogos SIAT</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canCashRegisters)
+                    <li class="nav-item {{ $cashRegistersOpen ? 'active' : '' }}">
+                        <a class="nav-link" href="{{ route('cash-registers.index') }}">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-cash-register"></i></span>
+                            <span class="nav-link-title">Cajas</span>
+                        </a>
+                    </li>
+                @endif
+
+                @if ($canBilling)
+                    <li class="nav-item app-menu-section {{ $billingOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $billingOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-billing" aria-expanded="{{ $billingOpen ? 'true' : 'false' }}" aria-controls="menu-billing">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-file-invoice"></i></span>
+                            <span class="nav-link-title">Facturacion</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $billingOpen ? 'show' : '' }}" id="menu-billing">
+                            <ul class="nav app-submenu">
+                                @can('invoices.view')
+                                    <li class="nav-item {{ request()->routeIs('billing.invoices.index') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.invoices.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-files"></i></span>
+                                            <span class="nav-link-title">Facturas</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('invoices.issue')
+                                    <li class="nav-item {{ request()->routeIs('billing.invoices.issue.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.invoices.issue.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-receipt"></i></span>
+                                            <span class="nav-link-title">Emitir factura</span>
                                         </a>
                                     </li>
                                 @endcan
