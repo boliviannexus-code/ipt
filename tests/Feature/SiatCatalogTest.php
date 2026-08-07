@@ -54,7 +54,56 @@ class SiatCatalogTest extends TestCase
             ->assertSee('Actividades economicas')
             ->assertSee('Fecha y hora actual')
             ->assertSee('Tipos documento identidad')
+            ->assertSee(route('siat.catalogs.sync-all'), false)
+            ->assertSee('Sincronizar todos')
             ->assertDontSee('sincronizarParametricaUnidadMedida');
+    }
+
+    public function test_company_user_can_sync_all_catalogs_with_one_request(): void
+    {
+        $user = $this->companyUser([
+            'siat-catalogs.view',
+            'siat-catalogs.sync',
+        ]);
+        $pointOfSale = $this->siatConfiguration($user);
+        $client = new class
+        {
+            public int $calls = 0;
+
+            public function __call(string $name, array $arguments): object
+            {
+                $this->calls++;
+
+                return (object) [
+                    'RespuestaListaParametricas' => (object) [
+                        'transaccion' => true,
+                        'listaCodigos' => [
+                            (object) ['codigoClasificador' => 1, 'descripcion' => $name],
+                        ],
+                    ],
+                ];
+            }
+        };
+        $this->fakeSoapClient($client);
+
+        $this
+            ->actingAs($user)
+            ->post(route('siat.catalogs.sync-all'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+            ])
+            ->assertRedirect(route('siat.catalogs.index'))
+            ->assertSessionHas('success', fn (string $message): bool => str_contains($message, 'Catalogos: 18')
+                && str_contains($message, 'Exitosos: 18')
+                && str_contains($message, 'Observados: 0'));
+
+        $this->assertSame(18, $client->calls);
+        $this->assertSame(18, SinCatalogSync::query()
+            ->where('company_id', $user->company_id)
+            ->count());
+        $this->assertSame(18, SinCatalogSync::query()
+            ->where('company_id', $user->company_id)
+            ->distinct('catalog_key')
+            ->count('catalog_key'));
     }
 
     public function test_company_user_can_sync_catalog_and_view_stored_items(): void
@@ -829,11 +878,17 @@ XML;
             ->actingAs($user)
             ->get(route('siat.catalogs.index'))
             ->assertOk()
-            ->assertDontSee(route('siat.catalogs.sync', 'tipos_documento_identidad'));
+            ->assertDontSee(route('siat.catalogs.sync', 'tipos_documento_identidad'))
+            ->assertDontSee(route('siat.catalogs.sync-all'));
 
         $this
             ->actingAs($user)
             ->post(route('siat.catalogs.sync', 'tipos_documento_identidad'))
+            ->assertForbidden();
+
+        $this
+            ->actingAs($user)
+            ->post(route('siat.catalogs.sync-all'))
             ->assertForbidden();
     }
 

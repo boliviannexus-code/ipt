@@ -20,6 +20,7 @@
         data-invoice-issue-form
     >
         @csrf
+        <input name="issuance_key" type="hidden" value="{{ $issuanceKey }}">
 
         <header class="invoice-ribbon">
             <div>
@@ -31,6 +32,7 @@
                 data-invoice-fiscal-status
                 data-communication-ok="{{ $communicationStatus['ok'] ? '1' : '0' }}"
                 data-cufd-request-url="{{ route('billing.invoices.issue.cufd.request') }}"
+                data-refresh-cufd-on-selection="{{ $refreshCufdOnPointOfSaleSelection ? '1' : '0' }}"
             >
                 <span class="invoice-status-pill {{ $communicationStatus['ok'] ? 'is-ok' : 'is-bad' }}">
                     <span>
@@ -55,8 +57,13 @@
             </div>
         </header>
 
-        <div class="invoice-layout">
-            <div class="invoice-main">
+        <div class="alert {{ $communicationStatus['ok'] ? 'alert-warning d-none' : 'alert-danger' }}" role="alert" data-invoice-communication-message>
+            {{ $communicationStatus['ok']
+                ? 'La emision esta bloqueada hasta registrar la contingencia y procesar las facturas fuera de linea pendientes.'
+                : 'No existe comunicacion con SIAT. Las facturas se emitiran fuera de linea y quedaran pendientes de sincronizacion.' }}
+        </div>
+
+        <div class="invoice-flow-top">
                 <section class="invoice-panel" aria-labelledby="invoice-transaction-heading">
                     <div class="invoice-panel-header">
                         <span class="invoice-panel-icon invoice-panel-icon-blue" aria-hidden="true"><i class="ti ti-arrows-exchange"></i></span>
@@ -82,6 +89,7 @@
                                             data-cufd-valid="{{ ($status['cufd_valid'] ?? false) ? '1' : '0' }}"
                                             data-cufd-label="{{ $status['cufd_label'] ?? 'CUFD' }}"
                                             data-cufd-detail="{{ $status['cufd_detail'] ?? 'CUFD no vigente' }}"
+                                            data-recovery-blocked="{{ ($status['recovery_blocked'] ?? false) ? '1' : '0' }}"
                                         >
                                             Suc. {{ $branch->branch_code }} - {{ $branch->name }} / PV {{ $point->point_of_sale_code }} - {{ $point->name }}
                                         </option>
@@ -113,7 +121,17 @@
                                 @endforeach
                             </select>
                         </div>
+                    </div>
+                </section>
 
+                <section class="invoice-client-strip" aria-labelledby="invoice-client-heading">
+                    <div class="invoice-client-heading">
+                        <div>
+                            <h3 id="invoice-client-heading">Datos básicos del cliente</h3>
+                            <p>Busca un cliente registrado o crea uno nuevo</p>
+                        </div>
+                    </div>
+                    <div class="row g-3 align-items-end invoice-client-picker">
                         <div class="col-lg-8">
                             <label class="form-label" for="invoice-customer-id">Cliente registrado</label>
                             <select class="form-select" id="invoice-customer-id" name="customer_id" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar cliente" data-invoice-customer-select>
@@ -152,12 +170,6 @@
                             @endcan
                         </div>
                     </div>
-                </section>
-
-                <section class="invoice-client-strip" aria-labelledby="invoice-client-heading">
-                    <div>
-                        <h3 id="invoice-client-heading">Datos basicos del cliente</h3>
-                    </div>
                     <dl>
                         <div>
                             <dt>Razon social</dt>
@@ -177,7 +189,10 @@
                         </div>
                     </dl>
                 </section>
+        </div>
 
+        <div class="invoice-layout">
+            <div class="invoice-main">
                 <section class="invoice-panel" aria-labelledby="invoice-detail-heading">
                     <div class="invoice-panel-header">
                         <span class="invoice-panel-icon invoice-panel-icon-green" aria-hidden="true"><i class="ti ti-shopping-cart"></i></span>
@@ -187,8 +202,8 @@
                         </div>
                     </div>
 
-                    <div class="row g-3 align-items-end">
-                        <div class="col-lg-5">
+                    <div class="row g-3 align-items-end invoice-item-entry">
+                        <div class="col-lg-6 invoice-item-description">
                             <label class="form-label" for="invoice-product-id">Codigo / descripcion</label>
                             <select class="form-select" id="invoice-product-id" name="product_id" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar producto" data-invoice-product-select>
                                 <option value="" disabled selected>Seleccionar producto</option>
@@ -209,7 +224,7 @@
                             </select>
                         </div>
 
-                        <div class="col-lg-3">
+                        <div class="col-lg-2">
                             <label class="form-label" for="invoice-quantity">Cantidad</label>
                             <input class="form-control text-end" id="invoice-quantity" name="quantity" type="number" min="0.00001" step="0.00001" value="1.00" data-invoice-quantity>
                         </div>
@@ -219,13 +234,13 @@
                             <div class="invoice-readonly-pill" data-product-unit>Seleccione un producto</div>
                         </div>
 
-                        <div class="col-lg-5">
+                        <div class="col-12 invoice-item-description">
                             <label class="form-label" for="invoice-additional-description">Descripcion adicional</label>
                             <textarea class="form-control" id="invoice-additional-description" name="additional_description" rows="3" maxlength="485" data-character-counter="#invoice-additional-count"></textarea>
                             <div class="form-hint" id="invoice-additional-count">0 caracteres</div>
                         </div>
 
-                        <div class="col-sm-6 col-lg-3">
+                        <div class="col-md-4">
                             <label class="form-label" for="invoice-unit-price">Precio unitario</label>
                             <div class="input-group">
                                 <span class="input-group-text">Bs</span>
@@ -233,16 +248,20 @@
                             </div>
                         </div>
 
-                        <div class="col-sm-6 col-lg-2">
-                            <label class="form-label" for="invoice-discount">Descuento</label>
-                            <div class="input-group">
-                                <span class="input-group-text">Bs</span>
+                        <div class="col-md-5 invoice-item-discount">
+                            <label class="form-label" for="invoice-discount">Descuento del ítem</label>
+                            <div class="input-group invoice-discount-control">
+                                <label class="visually-hidden" for="invoice-discount-type">Tipo de descuento</label>
+                                <select class="form-select" id="invoice-discount-type" data-invoice-discount-type aria-label="Tipo de descuento">
+                                    <option value="FIXED">Bs</option>
+                                    <option value="PERCENTAGE">%</option>
+                                </select>
                                 <input class="form-control text-end" id="invoice-discount" name="discount" type="number" min="0" step="0.00001" value="0.00" data-invoice-discount>
                             </div>
-                        </div>
+                                  </div>
 
-                        <div class="col-lg-2">
-                            <button class="btn btn-primary w-100" type="button" data-invoice-add-item>
+                        <div class="col-md-3 invoice-item-add">
+                            <button class="btn btn-primary w-100" type="button" data-invoice-add-item aria-label="Adicionar producto al detalle de la factura">
                                 <i class="ti ti-shopping-cart-plus me-1" aria-hidden="true"></i>Adicionar
                             </button>
                         </div>
@@ -274,18 +293,27 @@
             <aside class="invoice-summary" aria-labelledby="invoice-summary-heading">
                 <h3 id="invoice-summary-heading">Resumen</h3>
 
-                <label class="form-label" for="invoice-issued-at">Fecha emision</label>
-                <input class="form-control" id="invoice-issued-at" name="issued_at" type="datetime-local" value="{{ now()->format('Y-m-d\\TH:i') }}">
+                <input id="invoice-issued-at" name="issued_at" type="hidden" value="{{ now()->format('Y-m-d\\TH:i') }}">
 
-                <label class="form-label mt-3" for="invoice-payment-method">Metodo de pago</label>
+                <label class="form-label" for="invoice-payment-method">Método de pago</label>
                 <select class="form-select" id="invoice-payment-method" name="payment_method_code" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar metodo de pago">
                     <option value="" disabled selected>Seleccionar metodo</option>
                     @foreach ($paymentMethods as $paymentMethod)
-                        <option value="{{ $paymentMethod->classifier_code }}" @selected((string) $paymentMethod->classifier_code === '1')>
+                        @php($normalizedPaymentMethod = preg_replace('/[^a-z0-9]+/', '', strtolower(\Illuminate\Support\Str::ascii((string) $paymentMethod->description))))
+                        @php($isGiftCardPayment = str_contains($normalizedPaymentMethod, 'gift') || str_contains($normalizedPaymentMethod, 'tarjetaregalo'))
+                        <option value="{{ $paymentMethod->classifier_code }}" data-is-gift-card="{{ $isGiftCardPayment ? '1' : '0' }}" @selected((string) $paymentMethod->classifier_code === '1')>
                             {{ $paymentMethod->classifier_code }} - {{ $paymentMethod->description }}
                         </option>
                     @endforeach
                 </select>
+
+                <div class="mt-3 d-none" data-invoice-card-field>
+                    <label class="form-label" for="invoice-card-number">Número de tarjeta</label>
+                    <input class="form-control font-monospace" id="invoice-card-number" name="card_number"
+                        type="text" inputmode="numeric" autocomplete="off" maxlength="19"
+                        placeholder="1234 5678 9012 3456" data-invoice-card-number>
+                    <div class="form-text">Solo se conservarán los primeros y últimos 4 dígitos; los 8 centrales se reemplazarán por ceros.</div>
+                </div>
 
                 <label class="form-label mt-3" for="invoice-currency">Moneda</label>
                 <select class="form-select" id="invoice-currency" name="currency_code" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar moneda">
@@ -296,15 +324,27 @@
                         </option>
                     @endforeach
                 </select>
+                <div class="mt-3 d-none" data-invoice-exchange-rate-field>
+                    <label class="form-label" for="invoice-exchange-rate">Tipo de cambio</label>
+                    <input class="form-control text-end" id="invoice-exchange-rate" name="exchange_rate" type="number" min="0.00001" step="0.00001" value="1.00">
+                    <div class="form-hint">Valor de una unidad de la moneda seleccionada en bolivianos</div>
+                </div>
+                <label class="form-label mt-3" for="invoice-gift-card">Monto Gift Card</label>
+                <input class="form-control text-end" id="invoice-gift-card" name="gift_card_amount" type="number" min="0" step="0.01" value="0.00" data-invoice-gift-card disabled>
+                <div class="form-hint">Se habilita únicamente para métodos de pago que incluyen Gift Card.</div>
 
                 <div class="invoice-totals">
                     <div>
                         <span>SubTotal</span>
                         <strong data-invoice-subtotal>BO 0.00</strong>
                     </div>
-                    <div>
+                    <div class="invoice-total-discount">
                         <span>Monto descuento</span>
-                        <input class="form-control form-control-sm text-end" name="total_discount" type="number" min="0" step="0.01" value="0" data-invoice-total-discount>
+                        <div class="input-group">
+                            <select class="form-select" name="additional_discount_type" data-invoice-total-discount-type><option value="FIXED">Bs</option><option value="PERCENTAGE">%</option></select>
+                            <input class="form-control text-end" name="total_discount" type="number" min="0" step="0.5" value="0" data-invoice-total-discount>
+                            <input name="additional_discount_percentage" type="hidden" value="" data-invoice-total-discount-percentage>
+                        </div>
                     </div>
                     <div>
                         <span>Total</span>
@@ -324,7 +364,7 @@
                         <i class="ti ti-eraser me-1" aria-hidden="true"></i>Limpiar
                     </button>
                     <button class="btn btn-success" type="button" data-invoice-submit disabled>
-                        <i class="ti ti-send me-1" aria-hidden="true"></i>Emitir
+                        <i class="ti ti-send me-1" aria-hidden="true"></i><span data-invoice-submit-label>Emitir</span>
                     </button>
                 </div>
             </aside>

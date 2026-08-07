@@ -3,11 +3,18 @@
 use App\Http\Controllers\Web\AdminDataTableController;
 use App\Http\Controllers\Web\AuditController;
 use App\Http\Controllers\Web\AuthController;
+use App\Http\Controllers\Web\Billing\CafcRangeController;
+use App\Http\Controllers\Web\Billing\ContingencyDashboardController;
+use App\Http\Controllers\Web\Billing\FiscalArtifactController;
 use App\Http\Controllers\Web\Billing\InvoiceController;
 use App\Http\Controllers\Web\Billing\InvoiceIssueController;
+use App\Http\Controllers\Web\Billing\InvoicePrintSettingController;
+use App\Http\Controllers\Web\Billing\ManualCafcInvoiceController;
+use App\Http\Controllers\Web\Billing\SignificantEventController;
 use App\Http\Controllers\Web\CashRegisterController;
 use App\Http\Controllers\Web\CompanyController;
 use App\Http\Controllers\Web\DashboardController;
+use App\Http\Controllers\Web\NotificationController;
 use App\Http\Controllers\Web\Parameters\CustomerController;
 use App\Http\Controllers\Web\Parameters\ProductCategoryController;
 use App\Http\Controllers\Web\Parameters\ProductController;
@@ -31,6 +38,10 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
     Route::post('logout', [AuthController::class, 'logout'])->name('logout');
 
     Route::get('/', DashboardController::class)->name('dashboard');
+    Route::post('notifications/read-all', [NotificationController::class, 'readAll'])
+        ->name('notifications.read-all');
+    Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])
+        ->whereUuid('notification')->name('notifications.read');
     Route::get('audits', [AuditController::class, 'index'])->middleware('permission:audits.view')->name('audits.index');
     Route::get('audits/{audit}', [AuditController::class, 'show'])->middleware('permission:audits.view')->name('audits.show');
     Route::prefix('companies')->name('companies.')->group(function (): void {
@@ -57,6 +68,33 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->middleware('permission:cash-registers.close')
                 ->name('close');
         });
+    Route::prefix('facturacion/contingencias')
+        ->name('billing.contingencies.')
+        ->group(function (): void {
+            Route::get('/', [ContingencyDashboardController::class, 'index'])
+                ->middleware('permission:contingencies.view')->name('index');
+            Route::get('eventos/{event}', [ContingencyDashboardController::class, 'event'])
+                ->whereNumber('event')->middleware('permission:contingencies.events.view')->name('events.show');
+            Route::get('respuesta/{type}/{id}', [ContingencyDashboardController::class, 'technical'])
+                ->whereIn('type', ['invoice', 'package', 'event'])->whereNumber('id')
+                ->middleware('permission:contingencies.technical.view')->name('technical.show');
+            Route::post('comunicacion/consultar', [ContingencyDashboardController::class, 'verifyCommunication'])
+                ->middleware('permission:contingencies.communication.check')->name('communication.check');
+            Route::post('eventos/{event}/reintentar-registro', [ContingencyDashboardController::class, 'retryEvent'])
+                ->whereNumber('event')->middleware('permission:contingencies.events.retry')->name('events.retry');
+            Route::post('eventos/{event}/registrar', [ContingencyDashboardController::class, 'registerEvent'])
+                ->whereNumber('event')->middleware('permission:contingencies.events.retry')->name('events.register');
+            Route::post('eventos/{event}/generar-paquetes', [ContingencyDashboardController::class, 'buildPackages'])
+                ->whereNumber('event')->middleware('permission:contingencies.packages.build')->name('packages.build');
+            Route::post('paquetes/{package}/reintentar-envio', [ContingencyDashboardController::class, 'sendPackage'])
+                ->whereNumber('package')->middleware('permission:contingencies.packages.send')->name('packages.send');
+            Route::post('paquetes/{package}/consultar-validacion', [ContingencyDashboardController::class, 'validatePackage'])
+                ->whereNumber('package')->middleware('permission:contingencies.packages.validate')->name('packages.validate');
+            Route::get('facturas/{invoice}/xml', [FiscalArtifactController::class, 'xml'])
+                ->whereNumber('invoice')->middleware('permission:contingencies.artifacts.download')->name('invoices.xml');
+            Route::get('facturas/{invoice}/representacion', [FiscalArtifactController::class, 'pdf'])
+                ->whereNumber('invoice')->middleware('permission:contingencies.artifacts.download')->name('invoices.pdf');
+        });
     Route::prefix('facturacion')
         ->name('billing.')
         ->middleware('company_user')
@@ -64,6 +102,46 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::get('facturas', [InvoiceController::class, 'index'])
                 ->middleware('permission:invoices.view')
                 ->name('invoices.index');
+            Route::get('facturas/{invoice}/imprimir', [InvoiceController::class, 'print'])
+                ->whereNumber('invoice')
+                ->middleware('permission:invoices.view')
+                ->name('invoices.print');
+            Route::get('facturas/{invoice}/anular', [InvoiceController::class, 'cancelForm'])
+                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel.form');
+            Route::post('facturas/{invoice}/anular', [InvoiceController::class, 'cancel'])
+                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel');
+            Route::post('facturas/{invoice}/notificar-anulacion', [InvoiceController::class, 'notifyCancellation'])
+                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel.notify');
+            Route::get('facturas/{invoice}/revertir-anulacion', [InvoiceController::class, 'reversalForm'])
+                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.reversal.form');
+            Route::post('facturas/{invoice}/revertir-anulacion', [InvoiceController::class, 'reverseCancellation'])
+                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.reversal');
+            Route::post('facturas/{invoice}/notificar-reversion', [InvoiceController::class, 'notifyReversal'])
+                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.reversal.notify');
+            Route::get('facturas/{invoice}/corregir-pago', [InvoiceController::class, 'correctPaymentForm'])
+                ->whereNumber('invoice')->middleware('permission:invoices.issue')->name('invoices.payment.correct.form');
+            Route::post('facturas/{invoice}/corregir-pago', [InvoiceController::class, 'correctPayment'])
+                ->whereNumber('invoice')->middleware('permission:invoices.issue')->name('invoices.payment.correct');
+            Route::get('cafc', [CafcRangeController::class, 'index'])
+                ->middleware('permission:cafc-ranges.view')->name('cafc-ranges.index');
+            Route::post('cafc', [CafcRangeController::class, 'store'])
+                ->middleware('permission:cafc-ranges.manage')->name('cafc-ranges.store');
+            Route::get('manuales-cafc', [ManualCafcInvoiceController::class, 'index'])
+                ->middleware('permission:manual-cafc.view')->name('manual-cafc.index');
+            Route::post('manuales-cafc', [ManualCafcInvoiceController::class, 'store'])
+                ->middleware('permission:manual-cafc.use')->name('manual-cafc.store');
+            Route::get('manuales-cafc/{manualInvoice}/transcribir', [ManualCafcInvoiceController::class, 'edit'])
+                ->whereNumber('manualInvoice')->middleware('permission:manual-cafc.transcribe')->name('manual-cafc.transcribe.edit');
+            Route::put('manuales-cafc/{manualInvoice}/transcribir', [ManualCafcInvoiceController::class, 'update'])
+                ->whereNumber('manualInvoice')->middleware('permission:manual-cafc.transcribe')->name('manual-cafc.transcribe.update');
+            Route::post('manuales-cafc/{manualInvoice}/enviar', [ManualCafcInvoiceController::class, 'send'])
+                ->whereNumber('manualInvoice')->middleware('permission:manual-cafc.transcribe')->name('manual-cafc.send');
+            Route::get('configuracion/impresion', [InvoicePrintSettingController::class, 'edit'])
+                ->middleware('permission:invoices.issue')
+                ->name('invoice-print-settings.edit');
+            Route::put('configuracion/impresion', [InvoicePrintSettingController::class, 'update'])
+                ->middleware('permission:invoices.issue')
+                ->name('invoice-print-settings.update');
             Route::get('emitir', [InvoiceIssueController::class, 'index'])
                 ->middleware('permission:invoices.issue')
                 ->name('invoices.issue.index');
@@ -73,6 +151,21 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::post('emitir/compra-venta', [InvoiceIssueController::class, 'issuePurchaseSale'])
                 ->middleware('permission:invoices.issue')
                 ->name('invoices.issue.purchase-sale.store');
+            Route::get('facturas/{invoice}/evento-significativo', [SignificantEventController::class, 'create'])
+                ->whereNumber('invoice')
+                ->middleware('permission:invoices.issue')
+                ->name('significant-events.create');
+            Route::post('facturas/{invoice}/evento-significativo', [SignificantEventController::class, 'store'])
+                ->whereNumber('invoice')
+                ->middleware('permission:invoices.issue')
+                ->name('significant-events.store');
+            Route::get('eventos-significativos/registrar/{pointOfSale}', [SignificantEventController::class, 'createForPointOfSale'])
+                ->whereNumber('pointOfSale')
+                ->middleware('permission:invoices.issue')
+                ->name('significant-events.point-of-sale.create');
+            Route::post('eventos-significativos/registrar', [SignificantEventController::class, 'storeForPointOfSale'])
+                ->middleware('permission:invoices.issue')
+                ->name('significant-events.point-of-sale.store');
             Route::get('emitir/{documentSectorCode}', [InvoiceIssueController::class, 'show'])
                 ->whereNumber('documentSectorCode')
                 ->middleware('permission:invoices.issue')
@@ -111,6 +204,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::get('catalogs', [SiatCatalogController::class, 'index'])
                 ->middleware('permission:siat-catalogs.view')
                 ->name('catalogs.index');
+            Route::post('catalogs/sync-all', [SiatCatalogController::class, 'syncAll'])
+                ->middleware('permission:siat-catalogs.sync')
+                ->name('catalogs.sync-all');
             Route::get('catalogs/{catalog}', [SiatCatalogController::class, 'show'])
                 ->middleware('permission:siat-catalogs.view')
                 ->name('catalogs.show');
@@ -230,6 +326,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         });
     Route::prefix('datatables')->name('datatables.')->group(function (): void {
         Route::get('audits', [AdminDataTableController::class, 'audits'])->name('audits');
+        Route::get('invoices', [AdminDataTableController::class, 'invoices'])
+            ->middleware(['company_user', 'permission:invoices.view'])
+            ->name('invoices');
         Route::get('siat/catalogs/{catalog}/items', [AdminDataTableController::class, 'siatCatalogItems'])
             ->middleware('permission:siat-catalogs.view')
             ->name('siat-catalog-items');

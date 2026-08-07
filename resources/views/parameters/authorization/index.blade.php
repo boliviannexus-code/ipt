@@ -44,6 +44,9 @@
                         <dt>Codigo sistema</dt>
                         <dd><span class="authorization-secret">{{ $authorization->masked_system_code }}</span></dd>
 
+                        <dt>Vencimiento certificado</dt>
+                        <dd>{{ $authorization->certificate_expires_at?->format('d/m/Y H:i') ?? 'No registrado' }}</dd>
+
                         <dt>Actualizado</dt>
                         <dd>{{ $authorization->updated_at?->format('d/m/Y H:i') ?? '-' }}</dd>
                     </dl>

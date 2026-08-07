@@ -46,6 +46,30 @@ class SiatCufdService
 
     public function request(User $user, SinPointOfSale $pointOfSale): SinCufd
     {
+        $apiToken = $this->apiTokens->current();
+        $authorization = $this->authorizations->current();
+        $currentCuis = $this->cuis->currentForPointOfSale($pointOfSale);
+
+        if (! $apiToken || ! $authorization || ! $currentCuis) {
+            $this->ensureReady($apiToken, $authorization, $pointOfSale, $currentCuis);
+        }
+
+        return $this->requestWithConfiguration(
+            $user,
+            $pointOfSale,
+            $apiToken,
+            $authorization,
+            $currentCuis,
+        );
+    }
+
+    public function requestWithConfiguration(
+        User $user,
+        SinPointOfSale $pointOfSale,
+        SinApiToken $apiToken,
+        SinAuthorization $authorization,
+        SinCuis $currentCuis,
+    ): SinCufd {
         $companyId = CompanyContext::id($user);
 
         if ($companyId === null || $companyId <= 0) {
@@ -54,9 +78,13 @@ class SiatCufdService
             ]);
         }
 
-        $apiToken = $this->apiTokens->current();
-        $authorization = $this->authorizations->current();
-        $currentCuis = $this->cuis->currentForPointOfSale($pointOfSale);
+        foreach ([$pointOfSale, $apiToken, $authorization, $currentCuis] as $configuration) {
+            if ((int) $configuration->company_id !== $companyId) {
+                throw ValidationException::withMessages([
+                    'cufd' => 'La configuracion usada para solicitar CUFD pertenece a otra empresa.',
+                ]);
+            }
+        }
 
         $this->ensureReady($apiToken, $authorization, $pointOfSale, $currentCuis);
 

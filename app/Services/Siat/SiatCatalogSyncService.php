@@ -13,8 +13,8 @@ use App\Services\Parameters\SinAuthorizationService;
 use App\Services\SinApiTokenService;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -139,6 +139,16 @@ class SiatCatalogSyncService
     {
         return collect(range(1, max(1, $times)))
             ->map(fn (): SinCatalogSync => $this->sync($user, $catalogKey, $pointOfSale));
+    }
+
+    /**
+     * @return Collection<int, SinCatalogSync>
+     */
+    public function syncAll(User $user, SinPointOfSale $pointOfSale): Collection
+    {
+        return $this->catalogs->all()
+            ->map(fn (array $catalog): SinCatalogSync => $this->sync($user, $catalog['key'], $pointOfSale))
+            ->values();
     }
 
     public function setItemStatus(User $user, string $catalogKey, SinCatalogItem $item, bool $isActive): SinCatalogItem
@@ -327,7 +337,7 @@ class SiatCatalogSyncService
      */
     private function normalizeXmlResponse(string $response): array
     {
-        $document = new \DOMDocument();
+        $document = new \DOMDocument;
 
         if (! @$document->loadXML($response, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
             return [];

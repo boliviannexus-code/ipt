@@ -5,8 +5,6 @@ namespace Database\Factories;
 use App\Enums\SiatEnvironment;
 use App\Enums\SiatModality;
 use App\Models\Company;
-use App\Models\SinApiToken;
-use App\Models\SinAuthorization;
 use App\Models\SinBranch;
 use App\Models\SinCufd;
 use App\Models\SinCuis;
@@ -25,11 +23,18 @@ class SinCufdFactory extends Factory
     {
         return [
             'company_id' => Company::factory(),
-            'sin_api_token_id' => SinApiToken::factory(),
-            'sin_authorization_id' => SinAuthorization::factory(),
-            'sin_branch_id' => SinBranch::factory(),
-            'sin_point_of_sale_id' => SinPointOfSale::factory(),
-            'sin_cuis_id' => SinCuis::factory(),
+            'sin_branch_id' => fn (array $attributes) => SinBranch::factory()->create(['company_id' => $attributes['company_id']])->id,
+            'sin_point_of_sale_id' => fn (array $attributes) => SinPointOfSale::factory()->create([
+                'company_id' => $attributes['company_id'],
+                'sin_branch_id' => $attributes['sin_branch_id'],
+            ])->id,
+            'sin_cuis_id' => fn (array $attributes) => SinCuis::factory()->create([
+                'company_id' => $attributes['company_id'],
+                'sin_branch_id' => $attributes['sin_branch_id'],
+                'sin_point_of_sale_id' => $attributes['sin_point_of_sale_id'],
+            ])->id,
+            'sin_api_token_id' => fn (array $attributes) => SinCuis::query()->findOrFail($attributes['sin_cuis_id'])->sin_api_token_id,
+            'sin_authorization_id' => fn (array $attributes) => SinCuis::query()->findOrFail($attributes['sin_cuis_id'])->sin_authorization_id,
             'tax_id' => fake()->numerify('##########'),
             'wsdl_url' => SiatWsdlRegistry::CODES,
             'environment_code' => SiatEnvironment::TestingAndPilot,

@@ -6,6 +6,37 @@
 
 @section('content')
     <x-ui.table-card title="Catalogos disponibles">
+        @can('siat-catalogs.sync')
+            <x-slot:actions>
+                <form class="d-flex flex-column flex-sm-row gap-2" method="POST" action="{{ route('siat.catalogs.sync-all') }}">
+                    @csrf
+                    <div>
+                        <label class="visually-hidden" for="sync-all-point-of-sale">Sucursal / punto de venta</label>
+                        <select
+                            class="form-select form-select-sm @error('sin_point_of_sale_id') is-invalid @enderror"
+                            id="sync-all-point-of-sale"
+                            name="sin_point_of_sale_id"
+                            required
+                        >
+                            <option value="">Sucursal / PV</option>
+                            @foreach ($pointOptions as $point)
+                                <option value="{{ $point->id }}" @selected((string) old('sin_point_of_sale_id') === (string) $point->id)>
+                                    Suc. {{ $point->branch->branch_code }} / PV {{ $point->point_of_sale_code }}
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('sin_point_of_sale_id')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                    <input name="sync_count" type="hidden" value="1">
+                    <button class="btn btn-primary btn-sm" type="submit" @disabled($pointOptions->isEmpty())>
+                        <i class="ti ti-refresh me-1" aria-hidden="true"></i>Sincronizar todos
+                    </button>
+                </form>
+            </x-slot:actions>
+        @endcan
+
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>

@@ -54,6 +54,26 @@ class User extends Authenticatable implements Auditable
         return $this->hasMany(CashRegister::class);
     }
 
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
+    }
+
+    public function createdManualContingencyInvoices(): HasMany
+    {
+        return $this->hasMany(SinManualContingencyInvoice::class, 'created_by_user_id');
+    }
+
+    public function transcribedManualContingencyInvoices(): HasMany
+    {
+        return $this->hasMany(SinManualContingencyInvoice::class, 'transcribed_by_user_id');
+    }
+
+    public function voidedManualContingencyInvoices(): HasMany
+    {
+        return $this->hasMany(SinManualContingencyInvoice::class, 'voided_by_user_id');
+    }
+
     public function activeCashRegister(): HasOne
     {
         return $this->hasOne(CashRegister::class)->whereNull('closed_at');

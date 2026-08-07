@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Web;
 
+use App\Enums\InvoiceFiscalStatus;
 use App\Http\Controllers\Controller;
 use App\Models\SinCatalogItem;
+use App\Models\SinInvoiceIssue;
 use App\Models\User;
 use App\Services\Siat\SiatCatalogRegistry;
 use App\Support\CompanyContext;
@@ -83,6 +85,58 @@ class AdminDataTableController extends Controller
             ->toJson();
     }
 
+    public function invoices(Request $request): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('invoices.view'), 403);
+
+        $query = SinInvoiceIssue::query()
+            ->withoutGlobalScope('company')
+            ->select(
+                'sin_invoice_issues.*',
+                'customers.name as customer_name',
+                'customers.document_number as customer_document_number'
+            )
+            ->leftJoin('customers', 'customers.id', '=', 'sin_invoice_issues.customer_id')
+            ->when(CompanyContext::id(), fn ($query, $companyId) => $query->where('sin_invoice_issues.company_id', $companyId));
+
+        return DataTables::eloquent($query)
+            ->filter(function ($query) use ($request): void {
+                if ($request->filled('status')) {
+                    $query->where('sin_invoice_issues.fiscal_status', $request->string('status'));
+                }
+
+                $keyword = trim((string) data_get($request->input('search'), 'value', ''));
+
+                if ($keyword === '') {
+                    return;
+                }
+
+                $query->where(function ($query) use ($keyword): void {
+                    $query
+                        ->where('sin_invoice_issues.cuf', 'ilike', "%{$keyword}%")
+                        ->orWhere('sin_invoice_issues.reception_code', 'ilike', "%{$keyword}%")
+                        ->orWhere('sin_invoice_issues.status_label', 'ilike', "%{$keyword}%")
+                        ->orWhere('sin_invoice_issues.fiscal_status', 'ilike', "%{$keyword}%")
+                        ->orWhere('customers.name', 'ilike', "%{$keyword}%")
+                        ->orWhere('customers.document_number', 'ilike', "%{$keyword}%");
+
+                    if (is_numeric($keyword)) {
+                        $query
+                            ->orWhere('sin_invoice_issues.invoice_number', (int) $keyword)
+                            ->orWhere('sin_invoice_issues.attempted_invoice_number', (int) $keyword);
+                    }
+                });
+            })
+            ->editColumn('invoice_number', fn (SinInvoiceIssue $invoice): string => $this->invoiceNumberColumn($invoice))
+            ->editColumn('issued_at', fn (SinInvoiceIssue $invoice): string => $invoice->issued_at?->format('d/m/Y H:i') ?? '-')
+            ->addColumn('customer', fn (SinInvoiceIssue $invoice): string => $this->invoiceCustomerColumn($invoice))
+            ->editColumn('total_amount', fn (SinInvoiceIssue $invoice): string => 'Bs '.money_format_decimal($invoice->total_amount))
+            ->editColumn('status_label', fn (SinInvoiceIssue $invoice): string => $this->invoiceStatusColumn($invoice))
+            ->addColumn('actions', fn (SinInvoiceIssue $invoice): string => $this->invoiceActions($invoice))
+            ->rawColumns(['invoice_number', 'customer', 'status_label', 'actions'])
+            ->toJson();
+    }
+
     private function auditEventBadge(string $event): string
     {
         $tone = match ($event) {
@@ -94,6 +148,102 @@ class AdminDataTableController extends Controller
         };
 
         return '<span class="badge text-bg-'.$tone.'">'.AuditController::eventLabel($event).'</span>';
+    }
+
+    private function invoiceNumberColumn(SinInvoiceIssue $invoice): string
+    {
+        if ($invoice->invoice_number) {
+            $number = '<div class="fw-semibold">Nro. '.e((string) $invoice->invoice_number).'</div>';
+        } else {
+            $number = '<div class="fw-semibold text-body-secondary">Intento nro. '.e((string) ($invoice->attempted_invoice_number ?? '-')).'</div>'
+                .'<div class="text-danger small">No validada</div>';
+        }
+
+        return $number.'<div class="text-body-secondary small">Suc. '
+            .e((string) $invoice->branch_code)
+            .' / PV '
+            .e((string) $invoice->point_of_sale_code)
+            .'</div>';
+    }
+
+    private function invoiceCustomerColumn(SinInvoiceIssue $invoice): string
+    {
+        return '<div>'.e((string) ($invoice->customer_name ?? '-')).'</div>'
+            .'<div class="text-body-secondary small">'
+            .e((string) ($invoice->customer_document_number ?? 'Sin documento'))
+            .'</div>';
+    }
+
+    private function invoiceStatusColumn(SinInvoiceIssue $invoice): string
+    {
+        $statusTone = match ($invoice->fiscal_status) {
+            InvoiceFiscalStatus::Validated,
+            InvoiceFiscalStatus::ValidatedAfterContingency,
+            InvoiceFiscalStatus::ManualValidated => 'bg-success-lt',
+            InvoiceFiscalStatus::Observed,
+            InvoiceFiscalStatus::UncertainSend => 'bg-yellow-lt',
+            InvoiceFiscalStatus::PendingOnlineSend,
+            InvoiceFiscalStatus::PendingPackage,
+            InvoiceFiscalStatus::PackageSent => 'bg-blue-lt',
+            default => 'bg-danger-lt',
+        };
+
+        $status = '<span class="badge '.$statusTone.'">'.e($invoice->fiscal_status->label()).'</span>';
+
+        if ($invoice->failure_category) {
+            $status .= '<div class="text-body-secondary small">'.e($invoice->failure_category->label()).'</div>';
+        }
+
+        if ($invoice->status_code) {
+            $status .= '<div class="text-body-secondary small">Codigo '.e((string) $invoice->status_code).'</div>';
+        }
+
+        return $status;
+    }
+
+    private function invoiceActions(SinInvoiceIssue $invoice): string
+    {
+        if (auth()->user()?->can('invoices.issue')
+            && in_array($invoice->fiscal_status, [InvoiceFiscalStatus::Observed, InvoiceFiscalStatus::Rejected], true)
+            && in_array($invoice->status_code, [904, 902], true)) {
+            return '<a class="btn btn-outline-warning btn-sm" href="'.e(route('billing.invoices.payment.correct.form', $invoice)).'">'
+                .'<i class="ti ti-edit me-1" aria-hidden="true"></i>Corregir método de pago</a>';
+        }
+
+        if (! ($invoice->status_code === 908 && $invoice->transaccion && $invoice->invoice_number)
+            && ! in_array($invoice->fiscal_status, [InvoiceFiscalStatus::CancelledInSiat, InvoiceFiscalStatus::ReversedInSiat], true)) {
+            return '<span class="text-body-secondary small">-</span>';
+        }
+
+        $actions = '<a class="btn btn-outline-primary btn-sm" href="'
+            .e(route('billing.invoices.print', $invoice))
+            .'" target="_blank" rel="noopener">'
+            .'<i class="ti ti-printer me-1" aria-hidden="true"></i>Reimprimir'
+            .'</a>';
+
+        if (auth()->user()?->can('invoices.cancel')
+            && in_array($invoice->fiscal_status, [InvoiceFiscalStatus::Validated, InvoiceFiscalStatus::ValidatedAfterContingency, InvoiceFiscalStatus::ManualValidated], true)) {
+            $actions .= ' <a class="btn btn-outline-danger btn-sm" href="'.e(route('billing.invoices.cancel.form', $invoice)).'">'
+                .'<i class="ti ti-file-off me-1" aria-hidden="true"></i>Anular</a>';
+        }
+
+        if (auth()->user()?->can('invoices.cancel')
+            && $invoice->fiscal_status === InvoiceFiscalStatus::CancelledInSiat
+            && ! $invoice->cancellation_notified_at) {
+            $actions .= ' <form class="d-inline" method="POST" action="'.e(route('billing.invoices.cancel.notify', $invoice)).'">'
+                .csrf_field().'<button class="btn btn-outline-warning btn-sm" type="submit">Notificar comprador</button></form>';
+        }
+
+        if (auth()->user()?->can('invoices.cancel') && $invoice->fiscal_status === InvoiceFiscalStatus::CancelledInSiat) {
+            $actions .= ' <a class="btn btn-outline-success btn-sm" href="'.e(route('billing.invoices.reversal.form', $invoice)).'">'
+                .'<i class="ti ti-arrow-back-up me-1" aria-hidden="true"></i>Revertir anulación</a>';
+        }
+        if (auth()->user()?->can('invoices.cancel') && $invoice->fiscal_status === InvoiceFiscalStatus::ReversedInSiat && ! $invoice->reversal_notified_at) {
+            $actions .= ' <form class="d-inline" method="POST" action="'.e(route('billing.invoices.reversal.notify', $invoice)).'">'
+                .csrf_field().'<button class="btn btn-outline-warning btn-sm" type="submit">Notificar reversión</button></form>';
+        }
+
+        return $actions;
     }
 
     private function auditChangesSummary(Audit $audit): string

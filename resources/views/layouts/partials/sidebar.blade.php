@@ -18,7 +18,11 @@
         && (
             auth()->user()?->can('invoices.view')
             || auth()->user()?->can('invoices.issue')
+            || auth()->user()?->can('cafc-ranges.view')
+            || auth()->user()?->can('manual-cafc.view')
         );
+    $canContingencies = \App\Support\CompanyContext::canOperate(auth()->user())
+        && auth()->user()?->can('contingencies.view');
     $canApiToken = auth()->user()?->company_id !== null
         && auth()->user()?->can('sin-api-tokens.view');
     $canSiatCommunication = auth()->user()?->company_id !== null
@@ -221,6 +225,14 @@
                                         </a>
                                     </li>
                                 @endcan
+                                @can('contingencies.view')
+                                    <li class="nav-item {{ request()->routeIs('billing.contingencies.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.contingencies.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-activity-heartbeat"></i></span>
+                                            <span class="nav-link-title">Contingencias</span>
+                                        </a>
+                                    </li>
+                                @endcan
                                 @can('invoices.issue')
                                     <li class="nav-item {{ request()->routeIs('billing.invoices.issue.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('billing.invoices.issue.index') }}">
@@ -228,9 +240,40 @@
                                             <span class="nav-link-title">Emitir factura</span>
                                         </a>
                                     </li>
+                                    <li class="nav-item {{ request()->routeIs('billing.invoice-print-settings.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.invoice-print-settings.edit') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-printer"></i></span>
+                                            <span class="nav-link-title">Configuracion</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('cafc-ranges.view')
+                                    <li class="nav-item {{ request()->routeIs('billing.cafc-ranges.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.cafc-ranges.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-number"></i></span>
+                                            <span class="nav-link-title">Rangos CAFC</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('manual-cafc.view')
+                                    <li class="nav-item {{ request()->routeIs('billing.manual-cafc.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.manual-cafc.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-file-pencil"></i></span>
+                                            <span class="nav-link-title">Facturas manuales</span>
+                                        </a>
+                                    </li>
                                 @endcan
                             </ul>
                         </div>
+                    </li>
+                @endif
+
+                @if ($canContingencies && ! $canBilling)
+                    <li class="nav-item {{ request()->routeIs('billing.contingencies.*') ? 'active' : '' }}">
+                        <a class="nav-link" href="{{ route('billing.contingencies.index') }}">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-activity-heartbeat"></i></span>
+                            <span class="nav-link-title">Contingencias</span>
+                        </a>
                     </li>
                 @endif
 

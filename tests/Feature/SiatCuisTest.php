@@ -163,6 +163,7 @@ class SiatCuisTest extends TestCase
                 return (object) [
                     'RespuestaCuis' => (object) [
                         'mensajesList' => (object) [
+                            'codigo' => 980,
                             'descripcion' => 'CUIS ya fue generado para estos parametros.',
                         ],
                         'transaccion' => false,
@@ -190,6 +191,51 @@ class SiatCuisTest extends TestCase
             'message' => 'CUIS ya fue generado para estos parametros.',
         ]);
         $this->assertSame('CURRENT-CUIS-999', SinCuis::query()->successful()->latest('requested_at')->first()?->cuis_code);
+    }
+
+    public function test_already_generated_response_recovers_codigo_cuis_and_preserves_full_response(): void
+    {
+        $user = $this->companyUser([
+            'siat-cuis.view',
+            'siat-cuis.request',
+        ]);
+        [, , $pointOfSale] = $this->siatConfiguration($user);
+
+        $this->fakeSoapClient(new class
+        {
+            public function cuis(array $params): object
+            {
+                return (object) [
+                    'RespuestaCuis' => (object) [
+                        'codigoCUIS' => 'CUIS-RECOVERED-123',
+                        'fechaVigencia' => '2027-08-03T23:59:59.000',
+                        'mensajesList' => (object) [
+                            'codigo' => 980,
+                            'descripcion' => 'CUIS ya fue generado para estos parametros.',
+                        ],
+                        'transaccion' => false,
+                    ],
+                ];
+            }
+        });
+
+        $this
+            ->actingAs($user)
+            ->followingRedirects()
+            ->post(route('siat.cuis.request'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+            ])
+            ->assertOk()
+            ->assertSee('CUIS-RECOVERED-123')
+            ->assertSee('CUIS ya fue generado para estos parametros.');
+
+        $attempt = SinCuis::query()->latest('requested_at')->firstOrFail();
+
+        $this->assertTrue($attempt->transaccion);
+        $this->assertSame('CUIS-RECOVERED-123', $attempt->cuis_code);
+        $this->assertSame('2027-08-03T23:59:59.000', $attempt->response['RespuestaCuis']['fechaVigencia']);
+        $this->assertSame(980, $attempt->response['RespuestaCuis']['mensajesList']['codigo']);
+        $this->assertFalse($attempt->response['RespuestaCuis']['transaccion']);
     }
 
     public function test_cuis_request_requires_token_and_authorization_configuration(): void

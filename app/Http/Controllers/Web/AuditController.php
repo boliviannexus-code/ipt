@@ -9,6 +9,12 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\SinAuthorization;
+use App\Models\SinCafcRange;
+use App\Models\SinCommunicationLog;
+use App\Models\SinInvoiceIssue;
+use App\Models\SinInvoicePackage;
+use App\Models\SinManualContingencyInvoice;
+use App\Models\SinSignificantEvent;
 use App\Models\User;
 use App\Support\CompanyContext;
 use Illuminate\Http\Request;
@@ -24,6 +30,12 @@ class AuditController extends Controller
         Product::class => 'Productos',
         ProductCategory::class => 'Categorias',
         SinAuthorization::class => 'Autorizacion SIN',
+        SinSignificantEvent::class => 'Eventos significativos',
+        SinInvoiceIssue::class => 'Facturas fiscales',
+        SinInvoicePackage::class => 'Paquetes de contingencia',
+        SinManualContingencyInvoice::class => 'Facturas manuales CAFC',
+        SinCafcRange::class => 'Rangos CAFC',
+        SinCommunicationLog::class => 'Comunicación SIAT',
         User::class => 'Usuarios',
     ];
 

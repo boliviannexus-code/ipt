@@ -65,7 +65,7 @@
         </div>
 
         <div class="row g-3">
-            <div class="col-lg-6">
+            <div class="col-lg-4">
                 <label class="form-label" for="authorization-system-code">Codigo de sistema</label>
                 <input
                     class="form-control @error('system_code') is-invalid @enderror"
@@ -89,7 +89,7 @@
                 @enderror
             </div>
 
-            <div class="col-lg-3">
+            <div class="col-lg-2">
                 <label class="form-label" for="authorization-environment-code">Ambiente</label>
                 <select
                     class="form-select @error('environment_code') is-invalid @enderror"
@@ -109,7 +109,7 @@
                 @enderror
             </div>
 
-            <div class="col-lg-3">
+            <div class="col-lg-2">
                 <label class="form-label" for="authorization-modality-code">Modalidad</label>
                 <select
                     class="form-select @error('modality_code') is-invalid @enderror"
@@ -125,6 +125,22 @@
                 </select>
                 <div class="form-hint">Parametro SIAT: codigoModalidad.</div>
                 @error('modality_code')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+            </div>
+
+            <div class="col-lg-4">
+                <label class="form-label" for="authorization-certificate-expiry">Vencimiento del certificado</label>
+                <input
+                    class="form-control @error('certificate_expires_at') is-invalid @enderror"
+                    id="authorization-certificate-expiry"
+                    name="certificate_expires_at"
+                    type="datetime-local"
+                    value="{{ old('certificate_expires_at', $authorization?->certificate_expires_at?->format('Y-m-d\\TH:i')) }}"
+                    aria-describedby="authorization-certificate-expiry-help"
+                >
+                <div class="form-hint" id="authorization-certificate-expiry-help">Permite alertar antes del vencimiento; no almacena el certificado.</div>
+                @error('certificate_expires_at')
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
             </div>

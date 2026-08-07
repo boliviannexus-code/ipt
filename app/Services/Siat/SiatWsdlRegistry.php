@@ -14,6 +14,23 @@ class SiatWsdlRegistry
 
     public const PURCHASE_SALE_INVOICE = 'https://pilotosiatservicios.impuestos.gob.bo/v2/ServicioFacturacionCompraVenta?wsdl';
 
+    public static function relatedService(string $configuredWsdl, string $service): string
+    {
+        $parts = parse_url(trim($configuredWsdl));
+
+        if (! is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+            throw new \InvalidArgumentException('El WSDL configurado para SIAT no es válido.');
+        }
+
+        $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+        $path = (string) ($parts['path'] ?? '/v2/FacturacionCodigos');
+        $versionPath = preg_match('#^/v\d+/#', $path) === 1
+            ? preg_replace('#^(/v\d+/).*$#', '$1', $path)
+            : '/v2/';
+
+        return $parts['scheme'].'://'.$parts['host'].$port.$versionPath.$service.'?wsdl';
+    }
+
     /**
      * @return Collection<int, array{key: string, name: string, url: string}>
      */

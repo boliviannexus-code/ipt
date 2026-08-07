@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Web\Billing;
 
+use App\Enums\InvoiceEmissionMode;
+use App\Enums\InvoiceFiscalStatus;
+use App\Enums\SiatEnvironment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\IssuePurchaseSaleInvoiceRequest;
 use App\Models\Customer;
@@ -11,8 +14,10 @@ use App\Models\SinAuthorization;
 use App\Models\SinBranch;
 use App\Models\SinCatalogItem;
 use App\Models\SinCuis;
+use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
-use App\Services\Siat\PurchaseSaleInvoiceIssueService;
+use App\Services\Billing\InvoiceIssuanceService;
+use App\Services\Billing\SaleCreationService;
 use App\Services\Siat\SiatCommunicationService;
 use App\Services\Siat\SiatCufdService;
 use App\Support\CompanyContext;
@@ -21,6 +26,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class InvoiceIssueController extends Controller
@@ -32,7 +38,8 @@ class InvoiceIssueController extends Controller
     public function __construct(
         private readonly SiatCommunicationService $communication,
         private readonly SiatCufdService $cufds,
-        private readonly PurchaseSaleInvoiceIssueService $invoiceIssues,
+        private readonly SaleCreationService $sales,
+        private readonly InvoiceIssuanceService $invoiceIssuance,
     ) {}
 
     public function index(): View
@@ -89,6 +96,7 @@ class InvoiceIssueController extends Controller
             'sector' => $sector,
             'company' => $company,
             'authorization' => $authorization,
+            'refreshCufdOnPointOfSaleSelection' => $authorization?->environment_code === SiatEnvironment::TestingAndPilot,
             'branches' => $branches,
             'communicationStatus' => $communicationStatus,
             'fiscalStatuses' => $fiscalStatuses,
@@ -105,6 +113,7 @@ class InvoiceIssueController extends Controller
             'products' => $products,
             'paymentMethods' => $this->activeCatalogItems('tipos_metodo_pago'),
             'currencies' => $this->activeCatalogItems('tipos_moneda'),
+            'issuanceKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -148,14 +157,19 @@ class InvoiceIssueController extends Controller
 
     public function issuePurchaseSale(IssuePurchaseSaleInvoiceRequest $request): JsonResponse
     {
-        $issue = $this->invoiceIssues->issue($request->user(), $request->validated());
-        $validated = $issue->status_code === 908 && $issue->transaccion;
+        $sale = $this->sales->create($request->user(), $request->validated());
+        $result = $this->invoiceIssuance->issue($sale);
+        $issue = $result->invoice;
+        $validated = $issue?->status_code === 908 && $issue->transaccion;
+        $offlineIssued = $issue?->fiscal_status === InvoiceFiscalStatus::OfflineIssued;
+        $successful = $validated || $offlineIssued;
 
         return response()->json([
-            'success' => $validated,
-            'message' => $issue->message,
+            'success' => $successful,
+            'message' => $result->message,
+            'decision' => $result->decision->value,
             'data' => [
-                'invoice' => [
+                'invoice' => $issue ? [
                     'id' => $issue->id,
                     'invoice_number' => $issue->invoice_number,
                     'attempted_invoice_number' => $issue->attempted_invoice_number,
@@ -167,9 +181,19 @@ class InvoiceIssueController extends Controller
                     'hash_file' => $issue->hash_file,
                     'xml_path' => $issue->xml_path,
                     'gzip_path' => $issue->gzip_path,
-                ],
+                    'print_url' => ($validated || $offlineIssued)
+                        ? route('billing.invoices.print', $issue)
+                        : null,
+                    'emission_mode' => $issue->emission_mode->value,
+                    'commercial_status' => $issue->commercial_status->value,
+                    'fiscal_status' => $issue->fiscal_status->value,
+                    'failure_category' => $issue->failure_category?->value,
+                    'contingency_url' => $issue->allowsSignificantEvent()
+                        ? route('billing.significant-events.create', $issue)
+                        : null,
+                ] : null,
             ],
-        ], $validated ? 201 : 200);
+        ], $successful ? 201 : 200);
     }
 
     /**
@@ -226,14 +250,28 @@ class InvoiceIssueController extends Controller
 
     /**
      * @param  Collection<int, SinBranch>  $branches
-     * @return array<string, array{cuis_valid: bool, cuis_label: string, cuis_detail: string, cufd_valid: bool, cufd_label: string, cufd_detail: string}>
+     * @return array<string, array{cuis_valid: bool, cuis_label: string, cuis_detail: string, cufd_valid: bool, cufd_label: string, cufd_detail: string, recovery_blocked: bool}>
      */
     private function fiscalStatuses(Collection $branches): array
     {
         $statuses = [];
+        $pointIds = $branches->flatMap(
+            fn (SinBranch $branch) => $branch->activePointsOfSale->pluck('id')
+        );
+        $blockedPointIds = SinInvoiceIssue::query()
+            ->withoutGlobalScope('company')
+            ->whereIn('sin_point_of_sale_id', $pointIds)
+            ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
+            ->whereNotIn('fiscal_status', [
+                InvoiceFiscalStatus::ValidatedAfterContingency,
+                InvoiceFiscalStatus::Observed,
+                InvoiceFiscalStatus::Rejected,
+            ])
+            ->pluck('sin_point_of_sale_id')
+            ->mapWithKeys(static fn ($id): array => [(int) $id => true]);
 
-        $branches->each(function (SinBranch $branch) use (&$statuses): void {
-            $branch->activePointsOfSale->each(function (SinPointOfSale $pointOfSale) use (&$statuses): void {
+        $branches->each(function (SinBranch $branch) use (&$statuses, $blockedPointIds): void {
+            $branch->activePointsOfSale->each(function (SinPointOfSale $pointOfSale) use (&$statuses, $blockedPointIds): void {
                 $currentCuis = $this->currentCuisForPointOfSale($pointOfSale);
                 $currentCufd = $this->cufds->currentForPointOfSale($pointOfSale);
 
@@ -244,6 +282,7 @@ class InvoiceIssueController extends Controller
                     'cufd_valid' => $currentCufd !== null,
                     'cufd_label' => 'CUFD',
                     'cufd_detail' => $currentCufd ? '' : 'CUFD no vigente',
+                    'recovery_blocked' => $blockedPointIds->has((int) $pointOfSale->id),
                 ];
             });
         });

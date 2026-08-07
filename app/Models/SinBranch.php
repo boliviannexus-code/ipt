@@ -52,4 +52,19 @@ class SinBranch extends Model implements Auditable
     {
         return ($this->is_main ? 'Casa matriz' : 'Sucursal '.$this->branch_code).' - '.$this->name;
     }
+
+    public function invoicePackages(): HasMany
+    {
+        return $this->hasMany(SinInvoicePackage::class, 'sin_branch_id');
+    }
+
+    public function cafcRanges(): HasMany
+    {
+        return $this->hasMany(SinCafcRange::class, 'sin_branch_id');
+    }
+
+    public function manualContingencyInvoices(): HasMany
+    {
+        return $this->hasMany(SinManualContingencyInvoice::class, 'sin_branch_id');
+    }
 }

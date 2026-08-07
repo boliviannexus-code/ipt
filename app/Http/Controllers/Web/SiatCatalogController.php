@@ -62,6 +62,20 @@ class SiatCatalogController extends Controller
             );
     }
 
+    public function syncAll(SyncSiatCatalogRequest $request): RedirectResponse
+    {
+        $syncs = $this->syncs->syncAll($request->user(), $request->pointOfSale());
+        $successfulCount = $syncs->filter(fn ($sync): bool => (bool) $sync->transaccion)->count();
+        $totalCount = $syncs->count();
+        $observedCount = $totalCount - $successfulCount;
+        $message = "Sincronizacion general finalizada. Catalogos: {$totalCount}. "
+            ."Exitosos: {$successfulCount}. Observados: {$observedCount}.";
+
+        return redirect()
+            ->route('siat.catalogs.index')
+            ->with($observedCount === 0 ? 'success' : 'warning', $message);
+    }
+
     public function updateItemStatus(UpdateSinCatalogItemStatusRequest $request, string $catalog, SinCatalogItem $item): RedirectResponse
     {
         $this->syncs->setItemStatus($request->user(), $catalog, $item, $request->isActive());

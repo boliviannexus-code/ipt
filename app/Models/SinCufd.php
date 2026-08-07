@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use OwenIt\Auditing\Contracts\Auditable;
 
 class SinCufd extends Model implements Auditable
@@ -115,5 +116,25 @@ class SinCufd extends Model implements Auditable
             'Observado' => 'bg-yellow-lt',
             default => 'bg-danger-lt',
         };
+    }
+
+    public function invoicePackages(): HasMany
+    {
+        return $this->hasMany(SinInvoicePackage::class, 'sin_cufd_id');
+    }
+
+    public function significantEvents(): HasMany
+    {
+        return $this->hasMany(SinSignificantEvent::class, 'sin_cufd_id');
+    }
+
+    public function recoveredSignificantEvents(): HasMany
+    {
+        return $this->hasMany(SinSignificantEvent::class, 'recovery_sin_cufd_id');
+    }
+
+    public function communicationLogs(): HasMany
+    {
+        return $this->hasMany(SinCommunicationLog::class, 'sin_cufd_id');
     }
 }

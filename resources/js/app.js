@@ -229,6 +229,24 @@ function confirmDelete(form) {
     });
 }
 
+function confirmAction(form) {
+    Swal.fire({
+        icon: 'warning',
+        title: form.dataset.confirmTitle ?? '¿Confirmar esta acción?',
+        text: form.dataset.confirmText ?? 'Revisa la información antes de continuar.',
+        showCancelButton: true,
+        confirmButtonText: form.dataset.confirmButton ?? 'Sí, continuar',
+        cancelButtonText: 'Volver y revisar',
+        confirmButtonColor: '#d63939',
+        reverseButtons: true,
+        focusCancel: true,
+    }).then((result) => {
+        if (result.isConfirmed) {
+            form.submit();
+        }
+    });
+}
+
 function initAdminDataTables(scope = document) {
     scope.querySelectorAll('[data-datatable]').forEach((table) => {
         if (table.dataset.datatableInitialized === '1') {
@@ -430,11 +448,22 @@ function initInvoiceIssueForms(scope = document) {
         const itemsBody = form.querySelector('[data-invoice-items]');
         const emptyRow = form.querySelector('[data-invoice-empty]');
         const activitySelect = form.querySelector('[name="economic_activity_code"]');
+        const issuedAtInput = form.querySelector('[name="issued_at"]');
         const additionalDescriptionInput = form.querySelector('[name="additional_description"]');
         const quantityInput = form.querySelector('[data-invoice-quantity]');
         const unitPriceInput = form.querySelector('[data-invoice-unit-price]');
         const discountInput = form.querySelector('[data-invoice-discount]');
+        const discountTypeInput = form.querySelector('[data-invoice-discount-type]');
         const totalDiscountInput = form.querySelector('[data-invoice-total-discount]');
+        const totalDiscountTypeInput = form.querySelector('[data-invoice-total-discount-type]');
+        const totalDiscountPercentageInput = form.querySelector('[data-invoice-total-discount-percentage]');
+        const paymentMethodSelect = form.querySelector('[name="payment_method_code"]');
+        const currencySelect = form.querySelector('[name="currency_code"]');
+        const exchangeRateField = form.querySelector('[data-invoice-exchange-rate-field]');
+        const exchangeRateInput = form.querySelector('[name="exchange_rate"]');
+        const cardField = form.querySelector('[data-invoice-card-field]');
+        const cardNumberInput = form.querySelector('[data-invoice-card-number]');
+        const giftCardInput = form.querySelector('[data-invoice-gift-card]');
         const productUnit = form.querySelector('[data-product-unit]');
         const subtotalTarget = form.querySelector('[data-invoice-subtotal]');
         const totalTarget = form.querySelector('[data-invoice-total]');
@@ -442,19 +471,63 @@ function initInvoiceIssueForms(scope = document) {
         const fiscalStatus = form.querySelector('[data-invoice-fiscal-status]');
         const communicationOk = fiscalStatus?.dataset.communicationOk === '1';
         const cufdRequestUrl = fiscalStatus?.dataset.cufdRequestUrl;
+        const refreshCufdOnSelection = fiscalStatus?.dataset.refreshCufdOnSelection === '1';
         const cuisStatus = form.querySelector('[data-cuis-status]');
         const cufdStatus = form.querySelector('[data-cufd-status]');
         const submitButton = form.querySelector('[data-invoice-submit]');
+        const submitLabel = form.querySelector('[data-invoice-submit-label]');
+        const communicationMessage = form.querySelector('[data-invoice-communication-message]');
         const items = [];
 
         const money = (amount) => `BO ${Number(amount || 0).toFixed(2)}`;
+        const currentLocalDateTime = () => {
+            const now = new Date();
+            const offset = now.getTimezoneOffset() * 60000;
+
+            return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+        };
         const numberValue = (input, fallback = 0) => {
             const value = Number.parseFloat(input?.value ?? '');
 
             return Number.isFinite(value) ? value : fallback;
         };
 
-        const selectedOption = (select) => select?.options?.[select.selectedIndex] ?? null;
+        const selectedValue = (select) => {
+            const value = select?.tomselect ? select.tomselect.getValue() : select?.value;
+
+            return Array.isArray(value) ? value[0] : value;
+        };
+        const selectedOption = (select) => {
+            const value = selectedValue(select);
+
+            if (!select || !value) {
+                return null;
+            }
+
+            return Array.from(select.options).find((option) => option.value === String(value)) ?? null;
+        };
+        const updatePaymentMethod = () => {
+            const usesCard = String(selectedValue(paymentMethodSelect) ?? '') === '2';
+            const usesGiftCard = selectedOption(paymentMethodSelect)?.dataset.isGiftCard === '1';
+            cardField?.classList.toggle('d-none', !usesCard);
+            if (cardNumberInput) {
+                cardNumberInput.required = usesCard;
+                if (!usesCard) cardNumberInput.value = '';
+            }
+            if (giftCardInput) {
+                giftCardInput.disabled = !usesGiftCard;
+                if (!usesGiftCard) giftCardInput.value = '0.00';
+            }
+            updateTotals();
+        };
+        const updateCurrency = () => {
+            const usesBolivianos = String(selectedValue(currencySelect) ?? '1') === '1';
+            exchangeRateField?.classList.toggle('d-none', usesBolivianos);
+
+            if (usesBolivianos && exchangeRateInput) {
+                exchangeRateInput.value = '1.00';
+            }
+        };
         const customerOptionText = (customer) => {
             const complement = customer.document_complement ? `-${customer.document_complement}` : '';
 
@@ -545,6 +618,7 @@ function initInvoiceIssueForms(scope = document) {
             const hasPointOfSale = Boolean(option?.value) && !String(option.value).startsWith('branch-');
             const cuisOk = hasPointOfSale && option?.dataset.cuisValid === '1';
             const cufdOk = hasPointOfSale && option?.dataset.cufdValid === '1';
+            const recoveryBlocked = communicationOk && option?.dataset.recoveryBlocked === '1';
 
             setFiscalStatus(
                 cuisStatus,
@@ -560,12 +634,32 @@ function initInvoiceIssueForms(scope = document) {
             );
 
             if (submitButton) {
-                submitButton.disabled = !(communicationOk && cuisOk && cufdOk);
+                submitButton.disabled = !(cuisOk && cufdOk) || recoveryBlocked;
+            }
+
+            if (submitLabel) {
+                submitLabel.textContent = communicationOk ? 'Emitir' : 'Emitir fuera de linea';
+            }
+
+            if (communicationMessage && communicationOk) {
+                communicationMessage.classList.toggle('d-none', !recoveryBlocked);
             }
 
             if (communicationOk && hasPointOfSale && cuisOk && !cufdOk) {
                 requestCufd(option);
             }
+        };
+
+        const handlePointOfSaleSelection = () => {
+            const option = selectedOption(pointOfSaleSelect);
+
+            if (communicationOk && refreshCufdOnSelection && option?.value && !String(option.value).startsWith('branch-')) {
+                option.dataset.cufdAttempted = '0';
+                option.dataset.cufdValid = '0';
+                option.dataset.cufdDetail = 'CUFD pendiente de renovacion';
+            }
+
+            updateFiscalReadiness();
         };
 
         const updateCustomer = () => {
@@ -605,6 +699,12 @@ function initInvoiceIssueForms(scope = document) {
                 customerSelect.tomselect.addOption({
                     value,
                     text: option.textContent,
+                    name: customer.name ?? '',
+                    document_number: customer.document_number ?? '',
+                    document_complement: customer.document_complement ?? '',
+                    customer_code: customer.customer_code ?? '',
+                    email: customer.email ?? '',
+                    identity_document_type_code: customer.identity_document_type_code ?? '',
                 });
                 customerSelect.tomselect.refreshOptions(false);
                 customerSelect.tomselect.setValue(value, true);
@@ -625,9 +725,7 @@ function initInvoiceIssueForms(scope = document) {
             if (productUnit) {
                 const unitCode = option?.dataset.unitCode;
                 const unitDescription = option?.dataset.unitDescription;
-                productUnit.textContent = unitCode
-                    ? `${unitCode} - ${unitDescription || 'Unidad SIAT'}`
-                    : 'Seleccione un producto';
+                productUnit.textContent = unitDescription || (unitCode ? 'Unidad SIAT' : 'Seleccione un producto');
             }
         };
 
@@ -644,7 +742,7 @@ function initInvoiceIssueForms(scope = document) {
                 row.dataset.invoiceItemRow = '1';
                 row.innerHTML = `
                     <td><strong></strong><div class="text-body-secondary small"></div></td>
-                    <td class="text-end"></td>
+                    <td class="text-end"><input class="form-control form-control-sm text-end ms-auto" type="number" min="0.00001" step="0.00001" style="width: 7rem" aria-label="Cantidad del item"></td>
                     <td></td>
                     <td class="text-end"></td>
                     <td class="text-end"></td>
@@ -654,11 +752,32 @@ function initInvoiceIssueForms(scope = document) {
 
                 row.children[0].querySelector('strong').textContent = item.code;
                 row.children[0].querySelector('div').textContent = item.description;
-                row.children[1].textContent = item.quantity.toFixed(2);
+                const rowQuantityInput = row.children[1].querySelector('input');
+                rowQuantityInput.value = Number(item.quantity).toFixed(5).replace(/\.?0+$/, '');
                 row.children[2].textContent = item.unit;
                 row.children[3].textContent = money(item.unitPrice);
                 row.children[4].textContent = money(item.discount);
                 row.children[5].textContent = money(item.subtotal);
+                rowQuantityInput.addEventListener('input', () => {
+                    const quantity = numberValue(rowQuantityInput);
+                    item.quantity = quantity;
+
+                    if (quantity <= 0) {
+                        rowQuantityInput.setCustomValidity('La cantidad debe ser mayor a cero.');
+                        item.subtotal = 0;
+                        row.children[5].textContent = money(0);
+                        updateTotals();
+
+                        return;
+                    }
+
+                    rowQuantityInput.setCustomValidity('');
+                    const gross = quantity * item.unitPrice;
+                    item.discount = item.discount_type === 'PERCENTAGE' ? gross * item.discount_percentage / 100 : item.discount_value;
+                    item.subtotal = Math.max(0, gross - item.discount);
+                    row.children[5].textContent = money(item.subtotal);
+                    updateTotals();
+                });
                 row.querySelector('button')?.addEventListener('click', () => {
                     items.splice(index, 1);
                     renderItems();
@@ -671,8 +790,13 @@ function initInvoiceIssueForms(scope = document) {
 
         const updateTotals = () => {
             const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
-            const totalDiscount = numberValue(totalDiscountInput);
+            const enteredDiscount = numberValue(totalDiscountInput);
+            const totalDiscount = totalDiscountTypeInput?.value === 'PERCENTAGE' ? subtotal * enteredDiscount / 100 : enteredDiscount;
+            if (totalDiscountPercentageInput) totalDiscountPercentageInput.value = totalDiscountTypeInput?.value === 'PERCENTAGE' ? enteredDiscount : '';
             const total = Math.max(0, subtotal - totalDiscount);
+            const usesGiftCard = selectedOption(paymentMethodSelect)?.dataset.isGiftCard === '1';
+            const giftCard = usesGiftCard ? Math.min(numberValue(giftCardInput), total) : 0;
+            const taxableTotal = Math.max(0, total - giftCard);
 
             if (subtotalTarget) {
                 subtotalTarget.textContent = money(subtotal);
@@ -683,7 +807,7 @@ function initInvoiceIssueForms(scope = document) {
             }
 
             if (taxableTotalTarget) {
-                taxableTotalTarget.textContent = money(total);
+                taxableTotalTarget.textContent = money(taxableTotal);
             }
         };
 
@@ -699,7 +823,9 @@ function initInvoiceIssueForms(scope = document) {
             const quantity = numberValue(quantityInput, 1);
             const unitPrice = numberValue(unitPriceInput);
             const discount = numberValue(discountInput);
-            const subtotal = Math.max(0, (quantity * unitPrice) - discount);
+            const discountType = discountTypeInput?.value || 'FIXED';
+            const discountAmount = discountType === 'PERCENTAGE' ? quantity * unitPrice * discount / 100 : discount;
+            const subtotal = Math.max(0, (quantity * unitPrice) - discountAmount);
 
             items.push({
                 product_id: Number(option.value),
@@ -713,13 +839,57 @@ function initInvoiceIssueForms(scope = document) {
                 unit: option.dataset.unitDescription || option.dataset.unitCode || '-',
                 unit_price: unitPrice,
                 unitPrice,
-                discount,
+                discount: discountAmount,
+                discount_value: discount,
+                discount_type: discountType,
+                discount_percentage: discountType === 'PERCENTAGE' ? discount : null,
                 subtotal,
             });
 
             renderItems();
             updateTotals();
+
+            if (quantityInput) {
+                quantityInput.value = '1.00';
+            }
+
+            if (discountInput) {
+                discountInput.value = '0.00';
+            }
         });
+
+        const resetInvoiceForm = () => {
+            items.splice(0, items.length);
+            form.reset();
+
+            const issuanceKeyInput = form.querySelector('[name="issuance_key"]');
+
+            if (issuanceKeyInput && globalThis.crypto?.randomUUID) {
+                issuanceKeyInput.value = globalThis.crypto.randomUUID();
+            }
+
+            form.querySelectorAll('select[data-tom-select]').forEach((select) => {
+                if (select === paymentMethodSelect || select === currencySelect) {
+                    select.tomselect?.setValue('1', true);
+
+                    return;
+                }
+
+                select.tomselect?.clear(true);
+            });
+
+            if (issuedAtInput) {
+                issuedAtInput.value = currentLocalDateTime();
+            }
+
+            updateCustomer();
+            updateProduct();
+            updateFiscalReadiness();
+            renderItems();
+            updateTotals();
+            updatePaymentMethod();
+            updateCurrency();
+        };
 
         const submitInvoice = async () => {
             if (submitButton?.disabled) {
@@ -732,10 +902,20 @@ function initInvoiceIssueForms(scope = document) {
                 return;
             }
 
+            if (items.some((item) => !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+                Swal.fire({ icon: 'warning', title: 'Cantidad inválida', text: 'Todas las cantidades del detalle deben ser mayores a cero.' });
+
+                return;
+            }
+
             submitButton.disabled = true;
             submitButton.classList.add('disabled');
 
             try {
+                if (issuedAtInput) {
+                    issuedAtInput.value = currentLocalDateTime();
+                }
+
                 const body = new FormData(form);
                 body.set('items', JSON.stringify(items));
 
@@ -761,20 +941,40 @@ function initInvoiceIssueForms(scope = document) {
                 const invoice = payload.data?.invoice;
 
                 if (payload.success) {
-                    Swal.fire({
+                    const offline = payload.decision === 'OFFLINE_DIGITAL';
+                    resetInvoiceForm();
+                    const result = await Swal.fire({
                         icon: 'success',
-                        title: 'Factura validada',
-                        text: `Factura ${invoice?.invoice_number ?? ''} validada por el SIN. Codigo de recepcion: ${invoice?.reception_code ?? '-'}`,
+                        title: offline ? 'Factura emitida fuera de linea' : 'Factura validada',
+                        text: offline
+                            ? `Factura ${invoice?.invoice_number ?? ''} emitida localmente y pendiente de sincronizacion con el SIN.`
+                            : `Factura ${invoice?.invoice_number ?? ''} validada por el SIN. Codigo de recepcion: ${invoice?.reception_code ?? '-'}`,
+                        confirmButtonText: invoice?.print_url ? 'Imprimir PDF' : 'Aceptar',
+                        showCancelButton: Boolean(invoice?.print_url),
+                        cancelButtonText: 'Cerrar',
                     });
+
+                    if (result.isConfirmed && invoice?.print_url) {
+                        window.open(invoice.print_url, '_blank', 'noopener');
+                    }
 
                     return;
                 }
 
-                Swal.fire({
+                const failedResult = await Swal.fire({
                     icon: 'warning',
-                    title: `Factura ${invoice?.status_label ?? 'observada'}`,
-                    text: `Intento nro. ${invoice?.attempted_invoice_number ?? '-'}. ${payload.message ?? 'El SIN devolvio observaciones para la factura.'}`,
+                    title: invoice ? `Factura ${invoice.status_label ?? 'observada'}` : 'Emision bloqueada',
+                    text: invoice
+                        ? `Intento nro. ${invoice.attempted_invoice_number ?? '-'}. ${payload.message ?? 'El SIN devolvio observaciones para la factura.'}`
+                        : (payload.message ?? 'No fue posible emitir la factura.'),
+                    confirmButtonText: invoice?.contingency_url ? 'Registrar evento de contingencia' : 'Aceptar',
+                    showCancelButton: Boolean(invoice?.contingency_url),
+                    cancelButtonText: 'Cerrar',
                 });
+
+                if (failedResult.isConfirmed && invoice?.contingency_url) {
+                    window.location.assign(invoice.contingency_url);
+                }
             } catch (error) {
                 Swal.fire({ icon: 'error', title: 'Emision de factura', text: error.message });
             } finally {
@@ -790,24 +990,26 @@ function initInvoiceIssueForms(scope = document) {
         });
 
         form.querySelector('[data-invoice-clear]')?.addEventListener('click', () => {
-            items.splice(0, items.length);
-            window.setTimeout(() => {
-                form.querySelectorAll('select[data-tom-select]').forEach((select) => select.tomselect?.clear(true));
-                updateCustomer();
-                updateProduct();
-                updateFiscalReadiness();
-                renderItems();
-                updateTotals();
-            }, 0);
+            window.setTimeout(resetInvoiceForm, 0);
         });
 
-        pointOfSaleSelect?.addEventListener('change', updateFiscalReadiness);
+        pointOfSaleSelect?.addEventListener('change', handlePointOfSaleSelection);
         customerSelect?.addEventListener('change', updateCustomer);
         productSelect?.addEventListener('change', updateProduct);
-        pointOfSaleSelect?.tomselect?.on('change', updateFiscalReadiness);
+        pointOfSaleSelect?.tomselect?.on('change', handlePointOfSaleSelection);
         customerSelect?.tomselect?.on('change', updateCustomer);
         productSelect?.tomselect?.on('change', updateProduct);
         totalDiscountInput?.addEventListener('input', updateTotals);
+        totalDiscountTypeInput?.addEventListener('change', updateTotals);
+        giftCardInput?.addEventListener('input', updateTotals);
+        paymentMethodSelect?.addEventListener('change', updatePaymentMethod);
+        paymentMethodSelect?.tomselect?.on('change', updatePaymentMethod);
+        currencySelect?.addEventListener('change', updateCurrency);
+        currencySelect?.tomselect?.on('change', updateCurrency);
+        cardNumberInput?.addEventListener('input', () => {
+            const digits = cardNumberInput.value.replace(/\D/g, '').slice(0, 16);
+            cardNumberInput.value = digits.replace(/(.{4})/g, '$1 ').trim();
+        });
         document.addEventListener('ajax-form:success', (event) => {
             const sourceForm = event.detail?.form;
             const customer = event.detail?.payload?.data?.customer;
@@ -824,6 +1026,8 @@ function initInvoiceIssueForms(scope = document) {
         updateFiscalReadiness();
         renderItems();
         updateTotals();
+        updatePaymentMethod();
+        updateCurrency();
         form.dataset.invoiceIssueInitialized = '1';
     });
 }
@@ -1208,10 +1412,18 @@ document.addEventListener('click', (event) => {
 document.addEventListener('submit', (event) => {
     const ajaxForm = event.target.closest('[data-ajax-form]');
     const deleteForm = event.target.closest('[data-confirm-delete]');
+    const actionForm = event.target.closest('[data-confirm-action]');
 
     if (deleteForm) {
         event.preventDefault();
         confirmDelete(deleteForm);
+
+        return;
+    }
+
+    if (actionForm) {
+        event.preventDefault();
+        confirmAction(actionForm);
 
         return;
     }

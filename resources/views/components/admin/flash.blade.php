@@ -6,6 +6,10 @@
     <div class="alert alert-warning d-none" data-swal-warning="{{ session('warning') }}"></div>
 @endif
 
+@if (session('error'))
+    <div class="alert alert-danger d-none" data-swal-error="{{ session('error') }}"></div>
+@endif
+
 @if (($errors ?? null)?->any())
     <div class="alert alert-danger d-none" data-swal-error="{{ implode("\n", $errors->all()) }}"></div>
 @endif

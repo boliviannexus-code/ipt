@@ -18,7 +18,9 @@ class SinPointOfSaleFactory extends Factory
     {
         return [
             'company_id' => Company::factory(),
-            'sin_branch_id' => SinBranch::factory(),
+            'sin_branch_id' => fn (array $attributes) => SinBranch::factory()->create([
+                'company_id' => $attributes['company_id'],
+            ])->id,
             'point_of_sale_code' => fake()->numberBetween(1, 999),
             'name' => 'Punto de venta',
             'is_default' => false,

@@ -103,6 +103,10 @@ class SinAuthorizationService
                 : (int) $data['point_of_sale_code'];
         }
 
+        if (array_key_exists('certificate_expires_at', $data) && blank($data['certificate_expires_at'])) {
+            $data['certificate_expires_at'] = null;
+        }
+
         if (($data['system_code'] ?? null) === null || $data['system_code'] === '') {
             unset($data['system_code']);
         }

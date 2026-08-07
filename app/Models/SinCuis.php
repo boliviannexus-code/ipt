@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use OwenIt\Auditing\Contracts\Auditable;
 
 class SinCuis extends Model implements Auditable
@@ -92,5 +93,20 @@ class SinCuis extends Model implements Auditable
     public function getStatusBadgeAttribute(): string
     {
         return $this->transaccion ? 'bg-success-lt' : 'bg-yellow-lt';
+    }
+
+    public function invoicePackages(): HasMany
+    {
+        return $this->hasMany(SinInvoicePackage::class, 'sin_cuis_id');
+    }
+
+    public function significantEvents(): HasMany
+    {
+        return $this->hasMany(SinSignificantEvent::class, 'sin_cuis_id');
+    }
+
+    public function communicationLogs(): HasMany
+    {
+        return $this->hasMany(SinCommunicationLog::class, 'sin_cuis_id');
     }
 }

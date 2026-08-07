@@ -28,6 +28,7 @@ class SaveSinAuthorizationRequest extends FormRequest
             'modality_code' => ['required', 'integer', Rule::in(SiatModality::values())],
             'branch_code' => ['required', 'integer', 'min:0', 'max:2147483647'],
             'point_of_sale_code' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'certificate_expires_at' => ['nullable', 'date'],
         ];
     }
 
@@ -53,6 +54,7 @@ class SaveSinAuthorizationRequest extends FormRequest
             'system_code',
             'branch_code',
             'point_of_sale_code',
+            'certificate_expires_at',
         ] as $field) {
             $value = $this->input($field);
             $data[$field] = is_string($value) ? trim($value) : $value;
@@ -64,6 +66,10 @@ class SaveSinAuthorizationRequest extends FormRequest
 
         if ($data['point_of_sale_code'] === '') {
             $data['point_of_sale_code'] = null;
+        }
+
+        if ($data['certificate_expires_at'] === '') {
+            $data['certificate_expires_at'] = null;
         }
 
         $this->merge($data);

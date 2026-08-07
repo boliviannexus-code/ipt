@@ -335,7 +335,19 @@ class CashRegisterTest extends TestCase
             'cash-registers.view',
             'cash-registers.open',
             'cash-registers.close',
+            'invoices.view',
+            'invoices.issue',
+            'manual-cafc.view',
+            'manual-cafc.use',
+            'contingencies.view',
+            'contingencies.events.view',
+            'customers.create',
         ], $cashier->permissions->pluck('name')->all());
+
+        $this->assertFalse($cashier->hasPermissionTo('contingencies.events.retry'));
+        $this->assertFalse($cashier->hasPermissionTo('contingencies.packages.build'));
+        $this->assertFalse($cashier->hasPermissionTo('contingencies.packages.send'));
+        $this->assertFalse($cashier->hasPermissionTo('contingencies.technical.view'));
     }
 
     private function companyUser(

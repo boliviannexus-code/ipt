@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\InvoiceFiscalStatus;
+use App\Enums\SiatEnvironment;
+use App\Enums\SiatFailureCategory;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -11,6 +14,7 @@ use App\Models\SinBranch;
 use App\Models\SinCatalogItem;
 use App\Models\SinCufd;
 use App\Models\SinCuis;
+use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
 use App\Models\User;
 use App\Services\Siat\SiatCommunicationResult;
@@ -93,6 +97,8 @@ class InvoiceIssueTest extends TestCase
             ->assertSee('BOLIVIANO')
             ->assertSee($product->internal_code)
             ->assertSee('Resumen')
+            ->assertSee('id="invoice-issued-at" name="issued_at" type="datetime-local"', false)
+            ->assertSee('readonly aria-readonly="true"', false)
             ->assertSee('Emitir factura');
     }
 
@@ -151,7 +157,33 @@ class InvoiceIssueTest extends TestCase
             ->assertSee('data-cuis-valid="1"', false)
             ->assertSee('data-cufd-valid="1"', false)
             ->assertSee('data-cufd-request-url=', false)
+            ->assertSee('data-refresh-cufd-on-selection="1"', false)
             ->assertDontSee('Solicitar CUFD');
+    }
+
+    public function test_production_keeps_current_cufd_reuse_behavior_when_selecting_a_point_of_sale(): void
+    {
+        $user = $this->companyUser(['invoices.issue']);
+        [$apiToken, $authorization] = $this->siatConfiguration($user);
+        $authorization->update(['environment_code' => SiatEnvironment::Production]);
+
+        $this->mock(SiatCommunicationService::class, function (MockInterface $mock) use ($apiToken): void {
+            $mock->shouldReceive('verify')->once()->andReturn(new SiatCommunicationResult(
+                ok: true,
+                message: 'SIAT respondio correctamente.',
+                operation: 'verificarComunicacion',
+                wsdlUrl: $apiToken->wsdl_url,
+                durationMs: 90,
+                checkedAt: '03/08/2026 14:00:00',
+            ));
+        });
+
+        $this->seedDocumentSector($user->company_id, '1', 'FACTURA COMPRA-VENTA');
+
+        $this->actingAs($user)
+            ->get(route('billing.invoices.issue.show', 1))
+            ->assertOk()
+            ->assertSee('data-refresh-cufd-on-selection="0"', false);
     }
 
     public function test_invoice_cufd_request_uses_codes_wsdl_and_stores_successful_result(): void
@@ -260,6 +292,113 @@ class InvoiceIssueTest extends TestCase
         $this->assertTrue(Role::findByName('cashier')->hasPermissionTo('invoices.issue'));
         $this->assertTrue(Role::findByName('cashier')->hasPermissionTo('customers.create'));
         $this->assertFalse(Role::findByName('viewer')->hasPermissionTo('invoices.issue'));
+    }
+
+    public function test_failed_invoice_can_register_a_significant_event_through_operations_service(): void
+    {
+        $user = $this->companyUser(['invoices.issue']);
+        [$apiToken, $authorization, $pointOfSale] = $this->siatConfiguration($user);
+        $cuis = SinCuis::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'branch_code' => 7,
+            'point_of_sale_code' => 3,
+            'transaccion' => true,
+            'cuis_code' => 'CUIS-EVENT-123',
+        ]);
+        $cufd = SinCufd::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'sin_cuis_id' => $cuis->id,
+            'branch_code' => 7,
+            'point_of_sale_code' => 3,
+            'transaccion' => true,
+            'cufd_code' => 'CUFD-EVENT-123',
+        ]);
+        $customer = Customer::factory()->create(['company_id' => $user->company_id]);
+        $invoice = SinInvoiceIssue::query()->create([
+            'company_id' => $user->company_id,
+            'user_id' => $user->id,
+            'customer_id' => $customer->id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'sin_cuis_id' => $cuis->id,
+            'sin_cufd_id' => $cufd->id,
+            'tax_id' => '123456789',
+            'environment_code' => $authorization->environment_code,
+            'modality_code' => $authorization->modality_code,
+            'branch_code' => 7,
+            'point_of_sale_code' => 3,
+            'attempted_invoice_number' => 1,
+            'cuf' => '12345678901234567890',
+            'cufd_code' => 'CUFD-EVENT-123',
+            'status_label' => 'Error',
+            'fiscal_status' => InvoiceFiscalStatus::PendingOnlineSend,
+            'failure_category' => SiatFailureCategory::Communication,
+            'transaccion' => false,
+            'issued_at' => now()->subMinutes(10),
+        ]);
+        $this->seedCatalogItem($user->company_id, 'eventos_significativos', '1', 'CORTE DEL SERVICIO DE INTERNET');
+
+        $factory = new class extends SiatSoapClientFactory
+        {
+            public array $wsdlUrls = [];
+
+            public array $payloads = [];
+
+            public function make(string $wsdlUrl, string $apiToken, int $timeoutSeconds = 5): object
+            {
+                $this->wsdlUrls[] = $wsdlUrl;
+
+                return new class($this)
+                {
+                    public function __construct(private object $factory) {}
+
+                    public function registroEventoSignificativo(array $payload): object
+                    {
+                        $this->factory->payloads[] = $payload;
+
+                        return (object) ['RespuestaListaEventos' => (object) [
+                            'codigoRecepcionEventoSignificativo' => 'EVT-123',
+                            'transaccion' => true,
+                        ]];
+                    }
+                };
+            }
+        };
+        $this->instance(SiatSoapClientFactory::class, $factory);
+
+        $this->actingAs($user)
+            ->get(route('billing.significant-events.create', $invoice))
+            ->assertOk()
+            ->assertSee('CORTE DEL SERVICIO DE INTERNET');
+
+        $this->actingAs($user)
+            ->post(route('billing.significant-events.store', $invoice), [
+                'event_code' => 1,
+                'description' => 'Corte de internet del proveedor.',
+                'started_at' => now()->subMinutes(10)->format('Y-m-d H:i:s'),
+                'ended_at' => now()->subMinute()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect(route('billing.significant-events.create', $invoice))
+            ->assertSessionHas('success');
+
+        $this->assertSame([SiatWsdlRegistry::OPERATIONS], $factory->wsdlUrls);
+        $this->assertSame(1, $factory->payloads[0]['SolicitudEventoSignificativo']['codigoMotivoEvento']);
+        $this->assertSame('CUFD-EVENT-123', $factory->payloads[0]['SolicitudEventoSignificativo']['cufdEvento']);
+        $this->assertDatabaseHas('sin_significant_events', [
+            'sin_invoice_issue_id' => $invoice->id,
+            'event_code' => 1,
+            'reception_code' => 'EVT-123',
+            'transaccion' => true,
+            'status_label' => 'Registrado',
+        ]);
     }
 
     private function companyUser(array $permissions): User

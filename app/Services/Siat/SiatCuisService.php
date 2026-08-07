@@ -107,8 +107,20 @@ class SiatCuisService
             $client = $this->clients->make(SiatWsdlRegistry::CODES, (string) $apiToken->api_token);
             $response = $client->cuis($this->payload($authorization, $pointOfSale));
             $responseData = $this->normalizeResponse($response);
-            $transaccion = $this->findTransaction($responseData) ?? false;
-            $cuisCode = $transaccion ? $this->findValue($responseData, ['codigo', 'codigoCuis', 'cuis']) : null;
+            $siatTransaction = $this->findTransaction($responseData) ?? false;
+            $cuisCode = $this->findValue($responseData, ['codigoCUIS', 'codigoCuis', 'cuis']);
+
+            // Keep compatibility with older responses/mocks that expose the
+            // generated value as `codigo`, without mistaking an error-message
+            // code for a CUIS in an unsuccessful response.
+            if ($cuisCode === null && $siatTransaction) {
+                $cuisCode = $this->findValue($responseData, ['codigo']);
+            }
+
+            // SIAT can return an already-generated CUIS together with
+            // transaccion=false. The returned code is still usable and must
+            // be recovered when the local database does not contain it.
+            $transaccion = $siatTransaction || $cuisCode !== null;
 
             return $this->storeAttempt(
                 $companyId,
@@ -117,7 +129,7 @@ class SiatCuisService
                 $pointOfSale,
                 $transaccion,
                 $cuisCode,
-                $this->messageFor($transaccion, $responseData),
+                $this->messageFor($siatTransaction, $responseData),
                 $responseData,
                 $this->durationMs($startedAt),
             );
@@ -259,8 +271,10 @@ class SiatCuisService
      */
     private function findValue(array $data, array $keys): ?string
     {
+        $normalizedKeys = array_map('strtolower', $keys);
+
         foreach ($data as $key => $value) {
-            if (in_array($key, $keys, true) && is_scalar($value) && trim((string) $value) !== '') {
+            if (in_array(strtolower((string) $key), $normalizedKeys, true) && is_scalar($value) && trim((string) $value) !== '') {
                 return trim((string) $value);
             }
 

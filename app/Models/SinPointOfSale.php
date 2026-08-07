@@ -8,6 +8,7 @@ use Database\Factories\SinPointOfSaleFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use OwenIt\Auditing\Contracts\Auditable;
 
 class SinPointOfSale extends Model implements Auditable
@@ -48,5 +49,25 @@ class SinPointOfSale extends Model implements Auditable
     public function getDisplayNameAttribute(): string
     {
         return 'PV '.$this->point_of_sale_code.' - '.$this->name;
+    }
+
+    public function invoicePackages(): HasMany
+    {
+        return $this->hasMany(SinInvoicePackage::class, 'sin_point_of_sale_id');
+    }
+
+    public function cafcRanges(): HasMany
+    {
+        return $this->hasMany(SinCafcRange::class, 'sin_point_of_sale_id');
+    }
+
+    public function manualContingencyInvoices(): HasMany
+    {
+        return $this->hasMany(SinManualContingencyInvoice::class, 'sin_point_of_sale_id');
+    }
+
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class, 'sin_point_of_sale_id');
     }
 }

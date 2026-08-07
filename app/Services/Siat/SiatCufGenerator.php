@@ -2,13 +2,13 @@
 
 namespace App\Services\Siat;
 
-use Illuminate\Support\Carbon;
+use DateTimeInterface;
 
 class SiatCufGenerator
 {
     public function generate(
         string $taxId,
-        Carbon $issuedAt,
+        DateTimeInterface $issuedAt,
         int $branchCode,
         int $modalityCode,
         int $emissionTypeCode,

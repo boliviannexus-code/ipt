@@ -27,6 +27,7 @@ class Company extends Model implements Auditable
         'country',
         'logo_path',
         'report_footer',
+        'invoice_print_format',
         'is_active',
     ];
 
@@ -60,6 +61,11 @@ class Company extends Model implements Auditable
     public function products(): HasMany
     {
         return $this->hasMany(Product::class)->withoutGlobalScope('company');
+    }
+
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class)->withoutGlobalScope('company');
     }
 
     public function sinAuthorization(): HasOne
@@ -119,6 +125,41 @@ class Company extends Model implements Auditable
     public function sinPointsOfSale(): HasMany
     {
         return $this->hasMany(SinPointOfSale::class)->withoutGlobalScope('company');
+    }
+
+    public function sinInvoicePackages(): HasMany
+    {
+        return $this->hasMany(SinInvoicePackage::class)->withoutGlobalScope('company');
+    }
+
+    public function sinCafcRanges(): HasMany
+    {
+        return $this->hasMany(SinCafcRange::class)->withoutGlobalScope('company');
+    }
+
+    public function sinManualContingencyInvoices(): HasMany
+    {
+        return $this->hasMany(SinManualContingencyInvoice::class)->withoutGlobalScope('company');
+    }
+
+    public function sinCommunicationLogs(): HasMany
+    {
+        return $this->hasMany(SinCommunicationLog::class)->withoutGlobalScope('company');
+    }
+
+    public function sinMonitoringAlerts(): HasMany
+    {
+        return $this->hasMany(SinMonitoringAlert::class)->withoutGlobalScope('company');
+    }
+
+    public function sinSignificantEvents(): HasMany
+    {
+        return $this->hasMany(SinSignificantEvent::class)->withoutGlobalScope('company');
+    }
+
+    public function sinSiatAttempts(): HasMany
+    {
+        return $this->hasMany(SinSiatAttempt::class)->withoutGlobalScope('company');
     }
 
     public function getLogoUrlAttribute(): ?string

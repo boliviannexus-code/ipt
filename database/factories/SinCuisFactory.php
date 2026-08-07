@@ -24,10 +24,17 @@ class SinCuisFactory extends Factory
     {
         return [
             'company_id' => Company::factory(),
-            'sin_api_token_id' => SinApiToken::factory(),
-            'sin_authorization_id' => SinAuthorization::factory(),
-            'sin_branch_id' => SinBranch::factory(),
-            'sin_point_of_sale_id' => SinPointOfSale::factory(),
+            'sin_api_token_id' => fn (array $attributes) => SinApiToken::query()
+                ->withoutGlobalScope('company')->where('company_id', $attributes['company_id'])->value('id')
+                ?? SinApiToken::factory()->create(['company_id' => $attributes['company_id']])->id,
+            'sin_authorization_id' => fn (array $attributes) => SinAuthorization::query()
+                ->withoutGlobalScope('company')->where('company_id', $attributes['company_id'])->value('id')
+                ?? SinAuthorization::factory()->create(['company_id' => $attributes['company_id']])->id,
+            'sin_branch_id' => fn (array $attributes) => SinBranch::factory()->create(['company_id' => $attributes['company_id']])->id,
+            'sin_point_of_sale_id' => fn (array $attributes) => SinPointOfSale::factory()->create([
+                'company_id' => $attributes['company_id'],
+                'sin_branch_id' => $attributes['sin_branch_id'],
+            ])->id,
             'tax_id' => fake()->numerify('##########'),
             'wsdl_url' => SiatWsdlRegistry::CODES,
             'environment_code' => SiatEnvironment::TestingAndPilot,

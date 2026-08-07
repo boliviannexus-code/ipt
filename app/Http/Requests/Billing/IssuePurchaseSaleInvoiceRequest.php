@@ -17,6 +17,11 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
                 $this->merge(['items' => $items]);
             }
         }
+
+        $this->merge([
+            'issued_at' => now()->format('Y-m-d H:i:s'),
+            'card_number' => preg_replace('/\D+/', '', (string) $this->input('card_number')) ?: null,
+        ]);
     }
 
     public function authorize(): bool
@@ -39,6 +44,7 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
                     ->where('company_id', $companyId)
                     ->where('is_active', true),
             ],
+            'issuance_key' => ['nullable', 'uuid'],
             'economic_activity_code' => ['required', 'integer', 'min:1'],
             'customer_id' => [
                 'required',
@@ -48,9 +54,25 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
                     ->where('is_active', true),
             ],
             'issued_at' => ['required', 'date'],
-            'payment_method_code' => ['required', 'integer', 'min:1'],
+            'payment_method_code' => [
+                'required',
+                'integer',
+                Rule::exists('sin_catalog_items', 'classifier_code')
+                    ->where('company_id', $companyId)
+                    ->where('catalog_key', 'tipos_metodo_pago')
+                    ->where('is_active', true),
+            ],
+            'card_number' => [
+                Rule::requiredIf(fn (): bool => (int) $this->input('payment_method_code') === 2),
+                'nullable',
+                'digits:16',
+            ],
             'currency_code' => ['required', 'integer', 'min:1'],
+            'additional_discount_type' => ['required', Rule::in(['FIXED', 'PERCENTAGE'])],
             'total_discount' => ['nullable', 'numeric', 'min:0'],
+            'additional_discount_percentage' => ['nullable', 'numeric', 'between:0,100', 'required_if:additional_discount_type,PERCENTAGE'],
+            'exchange_rate' => ['required', 'numeric', 'gt:0'],
+            'gift_card_amount' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => [
                 'required',
@@ -64,6 +86,8 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
             'items.*.discount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.discount_type' => ['required', Rule::in(['FIXED', 'PERCENTAGE'])],
+            'items.*.discount_percentage' => ['nullable', 'numeric', 'between:0,100', 'required_if:items.*.discount_type,PERCENTAGE'],
         ];
     }
 
@@ -77,6 +101,9 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
             'items.min' => 'Agrega al menos un producto o servicio.',
             'sin_point_of_sale_id.required' => 'Selecciona la sucursal y punto de venta.',
             'customer_id.required' => 'Selecciona el cliente.',
+            'payment_method_code.exists' => 'Selecciona un método de pago vigente del catálogo del SIN.',
+            'card_number.required' => 'El número de tarjeta es obligatorio cuando el método de pago es Tarjeta.',
+            'card_number.digits' => 'El número de tarjeta debe contener exactamente 16 dígitos.',
         ];
     }
 }
