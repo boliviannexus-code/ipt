@@ -35,13 +35,14 @@
             class="table table-hover align-middle mb-0"
             data-datatable
             data-url="{{ route('datatables.invoices') }}"
-            data-order='[[1,"desc"]]'
+            data-order='[[2,"desc"]]'
             data-columns-id="invoice-table-columns"
             data-filters-form="#invoice-filters"
         >
             <thead>
                 <tr>
                     <th>Factura</th>
+                    <th>Tipo de factura</th>
                     <th>Fecha</th>
                     <th>Cliente</th>
                     <th class="text-end">Total</th>
@@ -55,6 +56,7 @@
         <script type="application/json" id="invoice-table-columns">
             [
                 {"data":"invoice_number","name":"sin_invoice_issues.invoice_number"},
+                {"data":"document_type","name":"sin_invoice_issues.document_sector_code","searchable":false},
                 {"data":"issued_at","name":"sin_invoice_issues.issued_at"},
                 {"data":"customer","name":"customers.name"},
                 {"data":"total_amount","name":"sin_invoice_issues.total_amount","className":"text-end","searchable":false},

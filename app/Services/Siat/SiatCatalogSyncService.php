@@ -102,7 +102,9 @@ class SiatCatalogSyncService
             $response = $client->{$operation}($this->payload($authorization, $cuis));
             $responseData = $this->normalizeResponse($response);
             $transaccion = $this->findTransaction($responseData) ?? false;
-            $items = $transaccion ? $this->uniqueItems($this->extractItems($responseData)) : [];
+            $items = $transaccion
+                ? $this->uniqueItems($this->extractItems($responseData), $catalog['key'])
+                : [];
 
             return $this->storeSync(
                 $companyId,
@@ -293,7 +295,7 @@ class SiatCatalogSyncService
             ->map(fn (array $item): array => [
                 'company_id' => $companyId,
                 'catalog_key' => $catalogKey,
-                'item_key' => $this->itemKey($item),
+                'item_key' => $this->itemKey($item, $catalogKey),
                 'classifier_code' => $this->classifierCode($item),
                 'description' => $this->description($item),
                 'raw_data' => $item,
@@ -444,10 +446,10 @@ class SiatCatalogSyncService
      * @param  array<int, array<string, mixed>>  $items
      * @return array<int, array<string, mixed>>
      */
-    private function uniqueItems(array $items): array
+    private function uniqueItems(array $items, string $catalogKey): array
     {
         return collect($items)
-            ->unique(fn (array $item): string => $this->itemKey($item))
+            ->unique(fn (array $item): string => $this->itemKey($item, $catalogKey))
             ->values()
             ->all();
     }
@@ -455,7 +457,7 @@ class SiatCatalogSyncService
     /**
      * @param  array<string, mixed>  $item
      */
-    private function itemKey(array $item): string
+    private function itemKey(array $item, string $catalogKey): string
     {
         if (array_key_exists('fechaHora', $item)) {
             return 'fechaHora';
@@ -466,6 +468,14 @@ class SiatCatalogSyncService
         foreach ($this->codeKeys() as $key) {
             if (array_key_exists($key, $item) && is_scalar($item[$key]) && trim((string) $item[$key]) !== '') {
                 $parts[$key] = trim((string) $item[$key]);
+            }
+        }
+
+        if ($catalogKey === 'leyendas_factura') {
+            $legend = $this->firstScalar($item, ['descripcionLeyenda', 'descripcion']);
+
+            if ($legend !== null) {
+                $parts['leyenda'] = sha1(mb_strtolower(Str::squish($legend)));
             }
         }
 

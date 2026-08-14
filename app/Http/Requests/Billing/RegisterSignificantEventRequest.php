@@ -25,7 +25,7 @@ class RegisterSignificantEventRequest extends FormRequest
             ],
             'description' => ['required', 'string', 'max:500'],
             'started_at' => ['required', 'date'],
-            'ended_at' => ['required', 'date', 'after_or_equal:started_at', 'before_or_equal:now'],
+            'ended_at' => ['required', 'date', 'after:started_at', 'before_or_equal:now'],
         ];
     }
 
@@ -35,7 +35,7 @@ class RegisterSignificantEventRequest extends FormRequest
             'event_code.required' => 'Selecciona el evento significativo.',
             'event_code.exists' => 'Selecciona un evento significativo vigente del catalogo SIN.',
             'description.required' => 'Describe la contingencia.',
-            'ended_at.after_or_equal' => 'La fecha final debe ser posterior o igual al inicio.',
+            'ended_at.after' => 'La fecha final debe ser posterior al inicio del evento.',
             'ended_at.before_or_equal' => 'La fecha final no puede estar en el futuro.',
         ];
     }

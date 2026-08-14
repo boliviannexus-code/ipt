@@ -3,6 +3,7 @@
 return [
     'xsd' => [
         'purchase_sale' => resource_path('siat/xsd/facturaComputarizadaCompraVenta.xsd'),
+        'zero_rate' => resource_path('siat/xsd/facturaComputarizadaTasaCero.xsd'),
     ],
     'communication' => [
         'timeout_seconds' => (int) env('SIAT_COMMUNICATION_TIMEOUT', 5),

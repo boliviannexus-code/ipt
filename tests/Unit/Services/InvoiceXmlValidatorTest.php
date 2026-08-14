@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Siat\InvoiceXmlValidator;
 use App\Services\Siat\PurchaseSaleInvoiceXmlBuilder;
 use Illuminate\Validation\ValidationException;
@@ -29,6 +30,23 @@ final class InvoiceXmlValidatorTest extends TestCase
         $this->expectExceptionMessage('no cumple el XSD oficial');
 
         app(InvoiceXmlValidator::class)->validatePurchaseSale($xml);
+    }
+
+    public function test_accepts_zero_rate_xml_with_sector_eight_contract(): void
+    {
+        $payload = $this->payload();
+        $payload['cabecera']['montoTotalSujetoIva'] = '0';
+        $payload['cabecera']['codigoDocumentoSector'] = InvoiceDocumentSector::ZERO_RATE;
+        unset($payload['detalle'][0]['numeroSerie'], $payload['detalle'][0]['numeroImei']);
+
+        $xml = (new PurchaseSaleInvoiceXmlBuilder)->build($payload, InvoiceDocumentSector::ZERO_RATE);
+
+        app(InvoiceXmlValidator::class)->validate($xml, InvoiceDocumentSector::ZERO_RATE);
+
+        self::assertStringContainsString('<facturaComputarizadaTasaCero', $xml);
+        self::assertStringContainsString('<montoTotalSujetoIva>0</montoTotalSujetoIva>', $xml);
+        self::assertStringNotContainsString('numeroSerie', $xml);
+        self::assertStringNotContainsString('numeroImei', $xml);
     }
 
     /** @return array{cabecera: array<string, mixed>, detalle: array<int, array<string, mixed>>} */

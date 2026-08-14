@@ -10,7 +10,7 @@ use App\Services\Billing\Contracts\InvoiceSiatClient;
 use App\Services\Siat\SiatErrorClassifier;
 use App\Services\Siat\SiatLogSanitizer;
 use App\Services\Siat\SiatSoapClientFactory;
-use App\Services\Siat\SiatWsdlRegistry;
+use App\Services\Siat\SiatDateTime;
 use SoapVar;
 use Throwable;
 
@@ -20,6 +20,7 @@ final readonly class SoapInvoiceSiatClient implements InvoiceSiatClient
         private SiatSoapClientFactory $clients,
         private SiatErrorClassifier $classifier,
         private SiatLogSanitizer $sanitizer,
+        private ?InvoiceWsdlResolver $wsdls = null,
     ) {}
 
     public function send(SinInvoiceIssue $invoice, string $compressedXml): InvoiceSiatResponse
@@ -37,7 +38,7 @@ final readonly class SoapInvoiceSiatClient implements InvoiceSiatClient
 
         try {
             $client = $this->clients->make(
-                SiatWsdlRegistry::PURCHASE_SALE_INVOICE,
+                ($this->wsdls ?? new InvoiceWsdlResolver)->resolve((int) $invoice->document_sector_code, (int) $invoice->company_id),
                 (string) $token->api_token,
                 30,
             );
@@ -65,7 +66,7 @@ final readonly class SoapInvoiceSiatClient implements InvoiceSiatClient
                 'nit' => $invoice->tax_id,
                 'tipoFacturaDocumento' => $invoice->invoice_document_type_code,
                 'archivo' => new SoapVar($compressedXml, XSD_BASE64BINARY),
-                'fechaEnvio' => now()->format('Y-m-d\TH:i:s.v'),
+                'fechaEnvio' => SiatDateTime::extended(now()),
                 'hashArchivo' => $invoice->hash_file,
             ],
         ];

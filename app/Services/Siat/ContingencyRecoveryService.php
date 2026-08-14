@@ -89,7 +89,7 @@ final class ContingencyRecoveryService
         }, 3);
 
         if ($event->event_status === SignificantEventStatus::Open) {
-            $detected = $this->detectRecovery($event, $actor);
+            $detected = $this->detectRecovery($event, $actor, dispatchRegistration: false);
 
             if (! $detected->recoveryDetected) {
                 return $detected;
@@ -107,6 +107,7 @@ final class ContingencyRecoveryService
     public function detectRecovery(
         SinSignificantEvent $significantEvent,
         ?User $actor = null,
+        bool $dispatchRegistration = true,
     ): ContingencyRecoveryResult {
         $event = $this->eventForCompany($significantEvent);
         $actor = $this->safeActor($event, $actor);
@@ -119,9 +120,18 @@ final class ContingencyRecoveryService
             SignificantEventStatus::RecoveryDetected,
             SignificantEventStatus::PendingRegistration,
         ], true)) {
-            RegisterSignificantEventJob::dispatch((int) $event->company_id, (int) $event->id, $actor?->id);
+            if ($dispatchRegistration) {
+                RegisterSignificantEventJob::dispatch((int) $event->company_id, (int) $event->id, $actor?->id);
+            }
 
-            return $this->result($event, 'La recuperacion ya fue detectada; se reanudo el registro.', detected: true, pending: true);
+            return $this->result(
+                $event,
+                $dispatchRegistration
+                    ? 'La recuperacion ya fue detectada; se reanudo el registro.'
+                    : 'La recuperacion ya fue detectada; el registro se procesara inmediatamente.',
+                detected: true,
+                pending: true,
+            );
         }
 
         $event->loadMissing(['apiToken', 'pointOfSale.branch']);
@@ -162,11 +172,13 @@ final class ContingencyRecoveryService
             return $locked->refresh();
         }, 3);
 
-        ContingencyRecoveryDetected::dispatch(
-            (int) $event->company_id,
-            (int) $event->id,
-            $actor?->id,
-        );
+        if ($dispatchRegistration) {
+            ContingencyRecoveryDetected::dispatch(
+                (int) $event->company_id,
+                (int) $event->id,
+                $actor?->id,
+            );
+        }
 
         return $this->result(
             $event,
@@ -295,6 +307,7 @@ final class ContingencyRecoveryService
             endedAt: $event->ended_at,
             startedAt: $event->started_at,
             taxId: (string) $event->authorization->tax_id,
+            sourceTimezone: config('app.timezone', 'America/La_Paz'),
         );
         $claim = (string) Str::uuid();
         $attempt = $this->claimRegistration($event, $actor, $request, $claim);
@@ -322,6 +335,10 @@ final class ContingencyRecoveryService
             )['messages'] ?? [];
             $safeMessage = $this->sanitizer->text($registration->message, $request->apiToken)
                 ?: 'SIAT no devolvio un mensaje.';
+            $requiresManualReview = ! $registration->successful
+                && collect($registration->messages)->contains(
+                    static fn (array $message): bool => in_array((int) ($message['codigo'] ?? 0), [914, 984], true),
+                );
 
             $event = DB::transaction(function () use (
                 $event,
@@ -332,6 +349,7 @@ final class ContingencyRecoveryService
                 $safeResponse,
                 $safeMessages,
                 $safeMessage,
+                $requiresManualReview,
             ): SinSignificantEvent {
                 $locked = SinSignificantEvent::query()
                     ->withoutGlobalScope('company')
@@ -365,10 +383,12 @@ final class ContingencyRecoveryService
                 $locked->update([
                     'event_status' => $registration->successful
                         ? SignificantEventStatus::Registered
-                        : SignificantEventStatus::PendingRegistration,
+                        : ($requiresManualReview ? SignificantEventStatus::Failed : SignificantEventStatus::PendingRegistration),
                     'reception_code' => $registration->successful ? $registration->receptionCode : null,
                     'transaccion' => $registration->successful,
-                    'status_label' => $registration->successful ? 'Registrado' : 'Pendiente de reintento',
+                    'status_label' => $registration->successful
+                        ? 'Registrado'
+                        : ($requiresManualReview ? 'Revisión manual requerida' : 'Pendiente de reintento'),
                     'response' => $safeResponse,
                     'message' => $safeMessage,
                     'duration_ms' => $registration->durationMs,
@@ -377,7 +397,7 @@ final class ContingencyRecoveryService
                     'updated_by_user_id' => $actor->id,
                     'registration_claim' => null,
                     'registration_claimed_at' => null,
-                    'manual_review_required' => false,
+                    'manual_review_required' => $requiresManualReview,
                 ]);
 
                 return $locked->refresh();
@@ -389,7 +409,13 @@ final class ContingencyRecoveryService
                 return $this->result($event, $safeMessage, detected: true, registered: true);
             }
 
-            return $this->result($event, $safeMessage, detected: true, pending: true, retryable: true);
+            return $this->result(
+                $event,
+                $safeMessage,
+                detected: true,
+                pending: ! $requiresManualReview,
+                retryable: ! $requiresManualReview,
+            );
         } catch (Throwable $exception) {
             $errorType = $this->errorClassifier->classify($exception);
             $safeMessage = $this->sanitizer->text($exception::class.': '.$exception->getMessage(), $request->apiToken)

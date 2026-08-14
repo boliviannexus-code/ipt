@@ -8,7 +8,8 @@
     $siatCuisOpen = request()->routeIs('siat.cuis.*');
     $siatCatalogsOpen = request()->routeIs('siat.catalogs.*');
     $siatBranchesOpen = request()->routeIs('siat.branches.*');
-    $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen;
+    $siatWsdlServicesOpen = request()->routeIs('siat.wsdl-services.*');
+    $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen || $siatWsdlServicesOpen;
     $parametersOpen = request()->routeIs('parameters.*');
 
     $canOrganization = auth()->user()?->can('companies.view');
@@ -151,6 +152,13 @@
                         <div class="collapse {{ $siatOpen ? 'show' : '' }}" id="menu-siat">
                             <ul class="nav app-submenu">
                                 @can('sin-api-tokens.view')
+                                    <li class="nav-item {{ $siatWsdlServicesOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('siat.wsdl-services.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-world-code"></i></span>
+                                            <span class="nav-link-title">Servicios WSDL</span>
+                                        </a>
+                                    </li>
+
                                     <li class="nav-item {{ $apiTokenOpen ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('sin-api-token.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-key"></i></span>
@@ -234,12 +242,26 @@
                                     </li>
                                 @endcan
                                 @can('invoices.issue')
+                                    <li class="nav-item {{ request()->routeIs('billing.significant-events.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.significant-events.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-alert-triangle"></i></span>
+                                            <span class="nav-link-title">Eventos significativos</span>
+                                        </a>
+                                    </li>
                                     <li class="nav-item {{ request()->routeIs('billing.invoices.issue.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('billing.invoices.issue.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-receipt"></i></span>
                                             <span class="nav-link-title">Emitir factura</span>
                                         </a>
                                     </li>
+                                    @can('invoice-tests.run')
+                                        <li class="nav-item {{ request()->routeIs('billing.invoice-tests.*') ? 'active' : '' }}">
+                                            <a class="nav-link" href="{{ route('billing.invoice-tests.index') }}">
+                                                <span class="nav-link-icon"><i class="ti ti-test-pipe"></i></span>
+                                                <span class="nav-link-title">Pruebas de facturación</span>
+                                            </a>
+                                        </li>
+                                    @endcan
                                     <li class="nav-item {{ request()->routeIs('billing.invoice-print-settings.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('billing.invoice-print-settings.edit') }}">
                                             <span class="nav-link-icon"><i class="ti ti-printer"></i></span>

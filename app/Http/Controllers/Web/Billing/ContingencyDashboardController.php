@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\Billing;
 
+use App\Enums\InvoiceEmissionMode;
+use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoicePackageStatus;
 use App\Enums\SignificantEventStatus;
 use App\Http\Controllers\Controller;
@@ -97,11 +99,13 @@ final class ContingencyDashboardController extends Controller
     public function retryEvent(Request $request, SinSignificantEvent $event): RedirectResponse
     {
         $this->owned($request, (int) $event->company_id);
-        abort_unless(in_array($event->event_status, [
+        if (! in_array($event->event_status, [
             SignificantEventStatus::RecoveryDetected,
             SignificantEventStatus::PendingRegistration,
             SignificantEventStatus::Failed,
-        ], true), 409);
+        ], true) || $event->manual_review_required) {
+            return back()->with('warning', $this->eventRegistrationUnavailableMessage($event));
+        }
         $actorId = $this->actorId($request, (int) $event->company_id);
         RegisterSignificantEventJob::dispatch((int) $event->company_id, (int) $event->id, $actorId);
 
@@ -111,12 +115,14 @@ final class ContingencyDashboardController extends Controller
     public function registerEvent(RegisterOpenSignificantEventRequest $request, SinSignificantEvent $event): RedirectResponse
     {
         $this->owned($request, (int) $event->company_id);
-        abort_unless(in_array($event->event_status, [
+        if (! in_array($event->event_status, [
             SignificantEventStatus::Open,
             SignificantEventStatus::RecoveryDetected,
             SignificantEventStatus::PendingRegistration,
             SignificantEventStatus::Failed,
-        ], true) && ! $event->transaccion && $event->registration_claim === null, 409);
+        ], true) || $event->transaccion || $event->manual_review_required || $event->registration_claim !== null) {
+            return back()->with('warning', $this->eventRegistrationUnavailableMessage($event));
+        }
         $data = $request->validated();
         try {
             $result = $this->recovery->prepareAndDetectRecovery(
@@ -139,14 +145,37 @@ final class ContingencyDashboardController extends Controller
         );
     }
 
+    private function eventRegistrationUnavailableMessage(SinSignificantEvent $event): string
+    {
+        return match (true) {
+            $event->transaccion && filled($event->reception_code) => 'El evento ya fue registrado ante el SIAT.',
+            $event->manual_review_required => 'El evento requiere revisión manual y no puede volver a enviarse automáticamente. Último resultado: '.($event->message ?: 'rechazo del SIAT.'),
+            $event->registration_claim !== null => 'Otro proceso ya está registrando el evento. Actualiza el panel en unos segundos.',
+            default => 'El evento no admite registro en su estado actual: '.$event->event_status->value.'.',
+        };
+    }
+
     public function buildPackages(Request $request, SinSignificantEvent $event): RedirectResponse
     {
         $this->owned($request, (int) $event->company_id);
-        if (! in_array($event->event_status, [SignificantEventStatus::Registered, SignificantEventStatus::Packaging, SignificantEventStatus::Sending, SignificantEventStatus::Validating], true)) {
+        $isRegistered = in_array($event->event_status, [SignificantEventStatus::Registered, SignificantEventStatus::Packaging], true)
+            && $event->transaccion
+            && filled($event->reception_code);
+        $hasEligibleInvoices = $event->invoiceIssues()
+            ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
+            ->whereIn('fiscal_status', [InvoiceFiscalStatus::OfflineIssued, InvoiceFiscalStatus::PendingPackage])
+            ->whereNotNull('xml_path')
+            ->whereNotNull('cuf')
+            ->whereDoesntHave('packageItem')
+            ->exists();
+
+        if (! $isRegistered || ! $hasEligibleInvoices) {
             $packageCount = $event->packages()->count();
             $message = $event->event_status === SignificantEventStatus::Completed
                 ? "El evento ya fue procesado y tiene {$packageCount} paquete(s). Revisa el resultado en Paquetes recientes."
-                : 'El evento no está listo para generar paquetes. Estado actual: '.$event->event_status->value.'.';
+                : (! $isRegistered
+                    ? 'Primero debe registrar el evento significativo ante el SIAT y obtener su código de recepción.'
+                    : 'El evento registrado no tiene facturas fuera de línea pendientes para generar paquetes.');
 
             return back()->with('warning', $message);
         }

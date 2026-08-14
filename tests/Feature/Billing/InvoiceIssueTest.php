@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatEnvironment;
 use App\Enums\SiatFailureCategory;
+use App\Jobs\ResendPendingOnlineInvoiceJob;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -23,6 +24,7 @@ use App\Services\Siat\SiatSoapClientFactory;
 use App\Services\Siat\SiatWsdlRegistry;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -42,7 +44,190 @@ class InvoiceIssueTest extends TestCase
             ->assertOk()
             ->assertSee('Facturacion')
             ->assertSee('Emitir factura')
+            ->assertSee('Eventos significativos')
+            ->assertSee(route('billing.significant-events.index'))
             ->assertSee(route('billing.invoices.issue.index'));
+    }
+
+    public function test_invoice_list_identifies_the_document_sector_in_its_own_column(): void
+    {
+        $user = $this->companyUser(['invoices.view']);
+
+        $this
+            ->actingAs($user)
+            ->get(route('billing.invoices.index'))
+            ->assertOk()
+            ->assertSee('Tipo de factura')
+            ->assertSee('"data":"document_type"', false)
+            ->assertSee('"name":"sin_invoice_issues.document_sector_code"', false);
+    }
+
+    public function test_pending_online_invoice_can_be_queued_for_resend_without_creating_another_invoice(): void
+    {
+        Queue::fake();
+        $user = $this->companyUser(['invoices.issue']);
+        $invoice = SinInvoiceIssue::factory()->create([
+            'company_id' => $user->company_id,
+            'fiscal_status' => InvoiceFiscalStatus::PendingOnlineSend,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('billing.invoices.resend', $invoice))
+            ->assertRedirect(route('billing.invoices.index'))
+            ->assertSessionHas('success');
+
+        Queue::assertPushed(ResendPendingOnlineInvoiceJob::class, fn (ResendPendingOnlineInvoiceJob $job): bool => $job->companyId === $user->company_id
+            && $job->invoiceId === $invoice->id
+            && $job->actorId === $user->id,
+        );
+        $this->assertDatabaseCount('sin_invoice_issues', 1);
+    }
+
+    public function test_uncertain_invoice_cannot_be_manually_resent(): void
+    {
+        Queue::fake();
+        $user = $this->companyUser(['invoices.issue']);
+        $invoice = SinInvoiceIssue::factory()->create([
+            'company_id' => $user->company_id,
+            'fiscal_status' => InvoiceFiscalStatus::UncertainSend,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('billing.invoices.resend', $invoice))
+            ->assertStatus(422);
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_pending_invoice_cannot_be_enqueued_twice_at_the_same_time(): void
+    {
+        Queue::fake();
+        $user = $this->companyUser(['invoices.issue']);
+        $invoice = SinInvoiceIssue::factory()->create([
+            'company_id' => $user->company_id,
+            'fiscal_status' => InvoiceFiscalStatus::PendingOnlineSend,
+        ]);
+
+        $this->actingAs($user)->post(route('billing.invoices.resend', $invoice));
+        $this->actingAs($user)
+            ->post(route('billing.invoices.resend', $invoice))
+            ->assertRedirect(route('billing.invoices.index'))
+            ->assertSessionHas('info');
+
+        Queue::assertPushed(ResendPendingOnlineInvoiceJob::class, 1);
+    }
+
+    public function test_significant_event_can_be_registered_without_an_invoice(): void
+    {
+        $user = $this->companyUser(['invoices.issue']);
+        [$apiToken, $authorization, $pointOfSale] = $this->siatConfiguration($user);
+        $cuis = SinCuis::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'branch_code' => 7,
+            'point_of_sale_code' => 3,
+            'transaccion' => true,
+            'cuis_code' => 'CUIS-INDEPENDIENTE-123',
+        ]);
+        $eventCufd = SinCufd::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'sin_cuis_id' => $cuis->id,
+            'branch_code' => 7,
+            'point_of_sale_code' => 3,
+            'transaccion' => true,
+            'cufd_code' => 'CUFD-INDEPENDIENTE-123',
+            'expires_at' => now()->addDay(),
+            'requested_at' => now()->subMinutes(15),
+        ]);
+        $currentCufd = SinCufd::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'sin_cuis_id' => $cuis->id,
+            'branch_code' => 7,
+            'point_of_sale_code' => 3,
+            'transaccion' => true,
+            'cufd_code' => 'CUFD-ACTUAL-456',
+            'expires_at' => now()->addDay(),
+            'requested_at' => now(),
+        ]);
+        $this->seedCatalogItem($user->company_id, 'eventos_significativos', '1', 'CORTE DEL SERVICIO DE INTERNET');
+        $factory = new class extends SiatSoapClientFactory
+        {
+            public array $payloads = [];
+
+            public function make(string $wsdlUrl, string $apiToken, int $timeoutSeconds = 5): object
+            {
+                return new class($this)
+                {
+                    public function __construct(private object $factory) {}
+
+                    public function registroEventoSignificativo(array $payload): object
+                    {
+                        $this->factory->payloads[] = $payload;
+
+                        return (object) ['RespuestaListaEventos' => (object) [
+                            'codigoRecepcionEventoSignificativo' => 'EVT-INDEPENDIENTE-1',
+                            'transaccion' => true,
+                        ]];
+                    }
+                };
+            }
+        };
+        $this->instance(SiatSoapClientFactory::class, $factory);
+
+        $this->actingAs($user)
+            ->get(route('billing.significant-events.index'))
+            ->assertOk()
+            ->assertSee('Registro independiente')
+            ->assertSee('Sucursal 7 · PV 3')
+            ->assertSee('CORTE DEL SERVICIO DE INTERNET');
+
+        $this->actingAs($user)
+            ->post(route('billing.significant-events.point-of-sale.store'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+                'event_code' => 1,
+                'description' => 'Corte independiente del proveedor de internet.',
+                'started_at' => now()->subMinutes(10)->format('Y-m-d H:i:s'),
+                'ended_at' => now()->subMinute()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect(route('billing.significant-events.index', ['point_of_sale_id' => $pointOfSale->id]))
+            ->assertSessionHas('success');
+
+        $this->assertSame('CUFD-INDEPENDIENTE-123', $factory->payloads[0]['SolicitudEventoSignificativo']['cufdEvento']);
+        $this->assertSame('CUFD-ACTUAL-456', $factory->payloads[0]['SolicitudEventoSignificativo']['cufd']);
+        $this->assertDatabaseHas('sin_significant_events', [
+            'sin_invoice_issue_id' => null,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'event_status' => 'REGISTERED',
+            'reception_code' => 'EVT-INDEPENDIENTE-1',
+            'recovery_sin_cufd_id' => $currentCufd->id,
+            'transaccion' => true,
+        ]);
+    }
+
+    public function test_independent_significant_event_option_requires_invoice_issue_permission(): void
+    {
+        $user = $this->companyUser(['dashboard.view']);
+
+        $this->actingAs($user)
+            ->get(route('billing.significant-events.index'))
+            ->assertForbidden();
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee(route('billing.significant-events.index'));
     }
 
     public function test_issue_index_lists_only_active_document_sector_types(): void
@@ -90,16 +275,63 @@ class InvoiceIssueTest extends TestCase
             ->assertSee('Datos de la transaccion comercial')
             ->assertSee('Cliente registrado')
             ->assertSee('Cliente nuevo')
-            ->assertSee('Datos basicos del cliente')
+            ->assertSee('Datos básicos del cliente')
             ->assertSee('Detalle de la transaccion comercial')
             ->assertSee($customer->name)
             ->assertSee('EFECTIVO')
             ->assertSee('BOLIVIANO')
             ->assertSee($product->internal_code)
             ->assertSee('Resumen')
-            ->assertSee('id="invoice-issued-at" name="issued_at" type="datetime-local"', false)
-            ->assertSee('readonly aria-readonly="true"', false)
+            ->assertSee('id="invoice-issued-at" name="issued_at" type="hidden"', false)
             ->assertSee('Emitir factura');
+    }
+
+    public function test_zero_rate_sector_reuses_invoice_form_and_filters_catalogs(): void
+    {
+        $user = $this->companyUser(['invoices.issue']);
+        $activityCode = '4761100';
+        Product::factory()->create([
+            'company_id' => $user->company_id,
+            'internal_code' => 'LIBRO-001',
+            'description' => 'Libro impreso tasa cero',
+            'economic_activity_code' => $activityCode,
+        ]);
+        Product::factory()->create([
+            'company_id' => $user->company_id,
+            'internal_code' => 'OTRO-001',
+            'description' => 'Producto fuera de tasa cero',
+            'economic_activity_code' => '6201000',
+        ]);
+        $this->seedDocumentSector($user->company_id, '8', 'FACTURA TASA CERO');
+        SinCatalogItem::factory()->create([
+            'company_id' => $user->company_id,
+            'catalog_key' => 'actividades',
+            'item_key' => 'codigoCaeb:'.$activityCode,
+            'classifier_code' => null,
+            'description' => 'VENTA DE LIBROS',
+            'raw_data' => ['codigoCaeb' => $activityCode, 'descripcion' => 'VENTA DE LIBROS', 'tipoActividad' => 'P'],
+            'is_active' => true,
+        ]);
+        SinCatalogItem::factory()->create([
+            'company_id' => $user->company_id,
+            'catalog_key' => 'actividades_documento_sector',
+            'item_key' => 'codigoActividad:'.$activityCode.'|codigoDocumentoSector:8',
+            'classifier_code' => $activityCode,
+            'description' => null,
+            'raw_data' => ['codigoActividad' => $activityCode, 'codigoDocumentoSector' => 8, 'tipoDocumentoSector' => 'FTC'],
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('billing.invoices.issue.show', 8))
+            ->assertOk()
+            ->assertSee('Factura Tasa Cero')
+            ->assertSee('name="document_sector_code" type="hidden" value="8"', false)
+            ->assertSee($activityCode)
+            ->assertSee('VENTA DE LIBROS')
+            ->assertSee('LIBRO-001')
+            ->assertDontSee('OTRO-001')
+            ->assertDontSee('Formulario en desarrollo');
     }
 
     public function test_purchase_sale_form_shows_green_fiscal_statuses_when_nit_cuis_and_cufd_are_ready(): void
@@ -199,6 +431,14 @@ class InvoiceIssueTest extends TestCase
             'transaccion' => true,
             'cuis_code' => 'CUIS-CURRENT-123',
         ]);
+        $previousCufd = \App\Models\SinCufd::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'transaccion' => true,
+            'cufd_code' => 'CUFD-ANTERIOR',
+            'expires_at' => now()->addDay(),
+        ]);
 
         $factory = new class extends SiatSoapClientFactory
         {
@@ -243,6 +483,7 @@ class InvoiceIssueTest extends TestCase
             ->assertJsonPath('data.cufd.control_code', 'CTRL-123');
 
         $this->assertSame([SiatWsdlRegistry::CODES], $factory->wsdlUrls);
+        self::assertNotNull($previousCufd->refresh()->invalidated_at);
         $this->assertDatabaseHas('sin_cufds', [
             'company_id' => $user->company_id,
             'sin_branch_id' => $pointOfSale->sin_branch_id,
@@ -252,6 +493,56 @@ class InvoiceIssueTest extends TestCase
             'transaccion' => true,
             'wsdl_url' => SiatWsdlRegistry::CODES,
         ]);
+    }
+
+    public function test_cufd_wsdl_network_failure_suggests_offline_issuance_and_reuses_current_cufd(): void
+    {
+        $user = $this->companyUser(['invoices.issue']);
+        [, , $pointOfSale] = $this->siatConfiguration($user);
+        $cuis = SinCuis::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'branch_code' => $pointOfSale->branch->branch_code,
+            'point_of_sale_code' => $pointOfSale->point_of_sale_code,
+            'transaccion' => true,
+            'cuis_code' => 'CUIS-OFFLINE-123',
+        ]);
+        $currentCufd = \App\Models\SinCufd::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'sin_cuis_id' => $cuis->id,
+            'branch_code' => $pointOfSale->branch->branch_code,
+            'point_of_sale_code' => $pointOfSale->point_of_sale_code,
+            'transaccion' => true,
+            'cufd_code' => 'CUFD-VIGENTE-PARA-OFFLINE',
+            'expires_at' => now()->addDay(),
+            'requested_at' => now()->subMinute(),
+        ]);
+        $factory = new class extends SiatSoapClientFactory
+        {
+            public function make(string $wsdlUrl, string $apiToken, int $timeoutSeconds = 5): object
+            {
+                throw new \RuntimeException(
+                    'SOAP-ERROR: Parsing WSDL: Could not load from URL: failed to load external entity',
+                );
+            }
+        };
+        $this->instance(SiatSoapClientFactory::class, $factory);
+
+        $this->actingAs($user)
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post(route('billing.invoices.issue.cufd.request'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('communication_ok', false)
+            ->assertJsonPath('contingency_suggested', true)
+            ->assertJsonPath('data.cufd.id', $currentCufd->id)
+            ->assertJsonPath('data.cufd.is_current', true)
+            ->assertJsonPath('message', 'No existe comunicación con el SIN. Puede continuar con la emisión fuera de línea; la factura quedará pendiente de regularización.');
     }
 
     public function test_other_active_document_sector_types_show_development_message(): void

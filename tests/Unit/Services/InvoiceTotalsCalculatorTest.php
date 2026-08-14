@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceTotalsCalculator;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -78,5 +79,16 @@ final class InvoiceTotalsCalculatorTest extends TestCase
             [['quantity' => 1, 'unit_price' => 100]],
             giftCardPayment: true,
         );
+    }
+
+    public function test_zero_rate_sector_always_has_zero_taxable_amount(): void
+    {
+        $result = (new InvoiceTotalsCalculator)->calculate(
+            [['quantity' => 2, 'unit_price' => 100]],
+            documentSectorCode: InvoiceDocumentSector::ZERO_RATE,
+        );
+
+        self::assertSame('200.00', $result['total_amount']);
+        self::assertSame('0.00', $result['total_amount_subject_to_vat']);
     }
 }

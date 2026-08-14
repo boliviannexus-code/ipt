@@ -9,6 +9,7 @@ use App\Http\Controllers\Web\Billing\FiscalArtifactController;
 use App\Http\Controllers\Web\Billing\InvoiceController;
 use App\Http\Controllers\Web\Billing\InvoiceIssueController;
 use App\Http\Controllers\Web\Billing\InvoicePrintSettingController;
+use App\Http\Controllers\Web\Billing\InvoiceTestBatchController;
 use App\Http\Controllers\Web\Billing\ManualCafcInvoiceController;
 use App\Http\Controllers\Web\Billing\SignificantEventController;
 use App\Http\Controllers\Web\CashRegisterController;
@@ -25,6 +26,7 @@ use App\Http\Controllers\Web\SiatBranchController;
 use App\Http\Controllers\Web\SiatCatalogController;
 use App\Http\Controllers\Web\SiatCommunicationController;
 use App\Http\Controllers\Web\SiatCuisController;
+use App\Http\Controllers\Web\SiatWsdlServiceController;
 use App\Http\Controllers\Web\SinApiTokenController;
 use App\Http\Controllers\Web\UserController;
 use Illuminate\Support\Facades\Route;
@@ -122,6 +124,8 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->whereNumber('invoice')->middleware('permission:invoices.issue')->name('invoices.payment.correct.form');
             Route::post('facturas/{invoice}/corregir-pago', [InvoiceController::class, 'correctPayment'])
                 ->whereNumber('invoice')->middleware('permission:invoices.issue')->name('invoices.payment.correct');
+            Route::post('facturas/{invoice}/reenviar', [InvoiceController::class, 'resendPendingOnline'])
+                ->whereNumber('invoice')->middleware('permission:invoices.issue')->name('invoices.resend');
             Route::get('cafc', [CafcRangeController::class, 'index'])
                 ->middleware('permission:cafc-ranges.view')->name('cafc-ranges.index');
             Route::post('cafc', [CafcRangeController::class, 'store'])
@@ -145,6 +149,15 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::get('emitir', [InvoiceIssueController::class, 'index'])
                 ->middleware('permission:invoices.issue')
                 ->name('invoices.issue.index');
+            Route::get('pruebas', [InvoiceTestBatchController::class, 'index'])
+                ->middleware('permission:invoice-tests.run')
+                ->name('invoice-tests.index');
+            Route::post('pruebas', [InvoiceTestBatchController::class, 'store'])
+                ->middleware('permission:invoice-tests.run')
+                ->name('invoice-tests.store');
+            Route::post('pruebas/{batch}/anular', [InvoiceTestBatchController::class, 'cancel'])
+                ->whereNumber('batch')->middleware('permission:invoice-tests.run')
+                ->name('invoice-tests.cancel');
             Route::post('emitir/cufd/request', [InvoiceIssueController::class, 'requestCufd'])
                 ->middleware('permission:invoices.issue')
                 ->name('invoices.issue.cufd.request');
@@ -159,6 +172,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->whereNumber('invoice')
                 ->middleware('permission:invoices.issue')
                 ->name('significant-events.store');
+            Route::get('eventos-significativos', [SignificantEventController::class, 'index'])
+                ->middleware('permission:invoices.issue')
+                ->name('significant-events.index');
             Route::get('eventos-significativos/registrar/{pointOfSale}', [SignificantEventController::class, 'createForPointOfSale'])
                 ->whereNumber('pointOfSale')
                 ->middleware('permission:invoices.issue')
@@ -189,6 +205,20 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         ->name('siat.')
         ->middleware('company_user')
         ->group(function (): void {
+            Route::get('wsdl-services', [SiatWsdlServiceController::class, 'index'])
+                ->middleware('permission:sin-api-tokens.view')
+                ->name('wsdl-services.index');
+            Route::post('wsdl-services', [SiatWsdlServiceController::class, 'store'])
+                ->middleware('permission:sin-api-tokens.manage')
+                ->name('wsdl-services.store');
+            Route::put('wsdl-services/{wsdlService}', [SiatWsdlServiceController::class, 'update'])
+                ->whereNumber('wsdlService')
+                ->middleware('permission:sin-api-tokens.manage')
+                ->name('wsdl-services.update');
+            Route::delete('wsdl-services/{wsdlService}', [SiatWsdlServiceController::class, 'destroy'])
+                ->whereNumber('wsdlService')
+                ->middleware('permission:sin-api-tokens.manage')
+                ->name('wsdl-services.destroy');
             Route::get('communication', [SiatCommunicationController::class, 'index'])
                 ->middleware('permission:siat-communication.view')
                 ->name('communication.index');
@@ -230,6 +260,10 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->whereNumber('branch')
                 ->middleware('permission:siat-branches.manage')
                 ->name('branches.points.store');
+            Route::post('branches/{branch}/points/synchronize', [SiatBranchController::class, 'synchronizePoints'])
+                ->whereNumber('branch')
+                ->middleware('permission:siat-branches.manage')
+                ->name('branches.points.synchronize');
         });
     Route::prefix('parameters')
         ->name('parameters.')

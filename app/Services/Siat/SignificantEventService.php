@@ -2,7 +2,11 @@
 
 namespace App\Services\Siat;
 
+use App\Enums\InvoiceEmissionMode;
+use App\Enums\InvoiceFiscalStatus;
+use App\Enums\SignificantEventStatus;
 use App\Models\SinApiToken;
+use App\Models\SinCufd;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
 use App\Models\SinSignificantEvent;
@@ -28,14 +32,29 @@ class SignificantEventService
     public function registerForPointOfSale(User $user, SinPointOfSale $pointOfSale, array $data): SinSignificantEvent
     {
         $pointOfSale->loadMissing('branch');
+        $pendingEvent = $this->pendingOfflineEvent($pointOfSale);
+
+        if ($pendingEvent) {
+            throw ValidationException::withMessages([
+                'sin_point_of_sale_id' => "El evento #{$pendingEvent->id} ya contiene facturas fuera de línea pendientes. Registra ese evento desde el menú Contingencias; no debes crear otro evento independiente.",
+            ]);
+        }
+
         $apiToken = $this->apiTokens->current();
         $authorization = $this->authorizations->current();
         $cuis = $this->cuisService->currentForPointOfSale($pointOfSale);
-        $cufd = $this->cufdService->currentForPointOfSale($pointOfSale);
+        $currentCufd = $this->cufdService->currentForPointOfSale($pointOfSale);
+        $eventCufd = $this->cufdForEvent($pointOfSale, (string) $data['started_at']);
 
-        if (! $apiToken || ! $authorization || ! $cuis?->cuis_code || ! $cufd?->cufd_code || ! $pointOfSale->branch) {
+        if (! $apiToken || ! $authorization || ! $cuis?->cuis_code || ! $currentCufd?->cufd_code || ! $pointOfSale->branch) {
             throw ValidationException::withMessages([
                 'configuration' => 'El punto de venta necesita token, autorizacion, CUIS y CUFD vigentes para registrar la contingencia.',
+            ]);
+        }
+
+        if (! $eventCufd?->cufd_code) {
+            throw ValidationException::withMessages([
+                'started_at' => 'No existe un CUFD vigente para el punto de venta al inicio del evento. Registra el período real de la contingencia.',
             ]);
         }
 
@@ -46,7 +65,8 @@ class SignificantEventService
             $authorization,
             $pointOfSale,
             $cuis,
-            $cufd,
+            $currentCufd,
+            $eventCufd,
             $data,
         );
     }
@@ -56,7 +76,16 @@ class SignificantEventService
      */
     public function register(User $user, SinInvoiceIssue $invoice, array $data): SinSignificantEvent
     {
-        $invoice->loadMissing(['authorization', 'pointOfSale.branch', 'cuis', 'cufd']);
+        $invoice->loadMissing(['authorization', 'pointOfSale.branch', 'cuis', 'cufd', 'significantEvent']);
+
+        if ($invoice->significantEvent && ! in_array($invoice->significantEvent->event_status, [
+            SignificantEventStatus::Completed,
+            SignificantEventStatus::Expired,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'invoice' => "La factura ya pertenece al evento #{$invoice->significantEvent->id}. Registra ese evento desde el menú Contingencias; no debes crear otro.",
+            ]);
+        }
 
         if (! $invoice->allowsSignificantEvent()) {
             throw ValidationException::withMessages([
@@ -82,7 +111,7 @@ class SignificantEventService
             ]);
         }
 
-        return $this->submit($user, $invoice, $apiToken, $authorization, $pointOfSale, $cuis, $cufd, $data);
+        return $this->submit($user, $invoice, $apiToken, $authorization, $pointOfSale, $cuis, $cufd, $cufd, $data);
     }
 
     /** @param array<string, mixed> $data */
@@ -93,9 +122,14 @@ class SignificantEventService
         object $authorization,
         SinPointOfSale $pointOfSale,
         object $cuis,
-        object $cufd,
+        SinCufd $currentCufd,
+        SinCufd $eventCufd,
         array $data,
     ): SinSignificantEvent {
+        $timezone = config('app.timezone', 'America/La_Paz');
+        $startedAt = Carbon::parse((string) $data['started_at'])->setTimezone($timezone);
+        $endedAt = Carbon::parse((string) $data['ended_at'])->setTimezone($timezone);
+
         $payload = [
             'SolicitudEventoSignificativo' => [
                 'codigoAmbiente' => $authorization->environment_code->value,
@@ -103,12 +137,12 @@ class SignificantEventService
                 'codigoPuntoVenta' => $pointOfSale->point_of_sale_code,
                 'codigoSistema' => (string) $authorization->system_code,
                 'codigoSucursal' => $pointOfSale->branch->branch_code,
-                'cufd' => (string) $cufd->cufd_code,
-                'cufdEvento' => (string) $cufd->cufd_code,
+                'cufd' => (string) $currentCufd->cufd_code,
+                'cufdEvento' => (string) $eventCufd->cufd_code,
                 'cuis' => (string) $cuis->cuis_code,
                 'descripcion' => trim((string) $data['description']),
-                'fechaHoraFinEvento' => Carbon::parse((string) $data['ended_at'])->format('Y-m-d\TH:i:s.v'),
-                'fechaHoraInicioEvento' => Carbon::parse((string) $data['started_at'])->format('Y-m-d\TH:i:s.v'),
+                'fechaHoraFinEvento' => SiatDateTime::extended($endedAt),
+                'fechaHoraInicioEvento' => SiatDateTime::extended($startedAt),
                 'nit' => $authorization->tax_id,
             ],
         ];
@@ -119,44 +153,93 @@ class SignificantEventService
             'sin_invoice_issue_id' => $invoice?->id,
             'sin_api_token_id' => $apiToken->id,
             'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
             'sin_cuis_id' => $cuis->id,
-            'sin_cufd_id' => $cufd->id,
+            'sin_cufd_id' => $eventCufd->id,
+            'recovery_sin_cufd_id' => $currentCufd->id,
             'event_code' => (int) $data['event_code'],
             'event_description' => trim((string) $data['description']),
-            'started_at' => Carbon::parse((string) $data['started_at']),
-            'ended_at' => Carbon::parse((string) $data['ended_at']),
+            'event_status' => SignificantEventStatus::PendingRegistration,
+            'started_at' => $startedAt,
+            'ended_at' => $endedAt,
+            'detected_at' => now(),
+            'recovery_detected_at' => $endedAt,
+            'updated_by_user_id' => $user->id,
             'request_payload' => $payload,
         ]);
 
         $startedAt = microtime(true);
 
         try {
-            $client = $this->clients->make(SiatWsdlRegistry::OPERATIONS, (string) $apiToken->api_token, 30);
+            $operationsWsdl = SiatWsdlRegistry::relatedService(
+                (string) $apiToken->wsdl_url,
+                'FacturacionOperaciones',
+            );
+            $client = $this->clients->make($operationsWsdl, (string) $apiToken->api_token, 30);
             $response = $this->normalize($client->registroEventoSignificativo($payload));
             $transaccion = $this->findBoolean($response, 'transaccion') ?? false;
             $receptionCode = $this->findValue($response, ['codigoRecepcionEventoSignificativo', 'codigoRecepcionEvento', 'codigoRecepcion']);
+            $accepted = $transaccion && filled($receptionCode);
             $message = $this->findValue($response, ['descripcion', 'mensaje', 'descripcionMensaje'])
-                ?: ($transaccion ? 'Evento significativo registrado en el SIN.' : 'El SIN rechazo el registro del evento significativo.');
+                ?: match (true) {
+                    $accepted => 'Evento significativo registrado en el SIN.',
+                    $transaccion => 'El SIN confirmó la transacción, pero no devolvió el código de recepción del evento.',
+                    default => 'El SIN rechazó el registro del evento significativo.',
+                };
 
             $event->update([
-                'reception_code' => $receptionCode,
-                'transaccion' => $transaccion,
-                'status_label' => $transaccion ? 'Registrado' : 'Rechazado',
+                'event_status' => $accepted
+                    ? SignificantEventStatus::Registered
+                    : SignificantEventStatus::Failed,
+                'reception_code' => $accepted ? $receptionCode : null,
+                'transaccion' => $accepted,
+                'status_label' => $accepted ? 'Registrado' : 'Rechazado',
                 'response' => $response,
                 'message' => $message,
                 'duration_ms' => $this->durationMs($startedAt),
-                'registered_at' => now(),
+                'registered_at' => $accepted ? now() : null,
+                'registered_by_user_id' => $accepted ? $user->id : null,
             ]);
         } catch (Throwable $exception) {
             $event->update([
+                'event_status' => SignificantEventStatus::Failed,
                 'status_label' => 'Error',
                 'message' => 'No se pudo registrar el evento en el SIN: '.Str::limit($exception->getMessage(), 280),
                 'duration_ms' => $this->durationMs($startedAt),
-                'registered_at' => now(),
             ]);
         }
 
         return $event->refresh();
+    }
+
+    private function cufdForEvent(SinPointOfSale $pointOfSale, string $startedAt): ?SinCufd
+    {
+        $eventStart = Carbon::parse($startedAt)->setTimezone(config('app.timezone', 'America/La_Paz'));
+        $eventStartValue = $eventStart->format('Y-m-d H:i:s');
+
+        return SinCufd::query()
+            ->usable()
+            ->where('sin_point_of_sale_id', $pointOfSale->id)
+            ->where('requested_at', '<=', $eventStartValue)
+            ->where('expires_at', '>', $eventStartValue)
+            ->latest('requested_at')
+            ->first();
+    }
+
+    public function pendingOfflineEvent(SinPointOfSale $pointOfSale): ?SinSignificantEvent
+    {
+        return SinSignificantEvent::query()
+            ->where('sin_point_of_sale_id', $pointOfSale->id)
+            ->whereNotIn('event_status', [SignificantEventStatus::Completed, SignificantEventStatus::Expired])
+            ->whereHas('invoiceIssues', fn ($query) => $query
+                ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
+                ->whereIn('fiscal_status', [InvoiceFiscalStatus::OfflineIssued, InvoiceFiscalStatus::PendingPackage])
+                ->whereNotNull('xml_path')
+                ->whereNotNull('cuf')
+                ->whereDoesntHave('packageItem'))
+            ->latest('started_at')
+            ->first();
     }
 
     /** @return array<string, mixed> */

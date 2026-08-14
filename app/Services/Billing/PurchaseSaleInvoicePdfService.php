@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoicePrintFormat;
 use App\Enums\SiatEnvironment;
 use App\Models\SinCatalogItem;
@@ -81,9 +82,9 @@ class PurchaseSaleInvoicePdfService
 
         $pdf->Line(4, $y, 76, $y);
         $y += 3;
-        $this->text($pdf, 4, $y, 72, 5, 'FACTURA', 9, 'B', 'C');
+        $this->text($pdf, 4, $y, 72, 5, $this->fiscalTitle($invoice), 9, 'B', 'C');
         $y += 5;
-        $this->text($pdf, 4, $y, 72, 4, '(Con Derecho a Credito Fiscal)', 6.5, '', 'C');
+        $this->text($pdf, 4, $y, 72, 4, InvoiceDocumentSector::fiscalSubtitle((int) $invoice->document_sector_code), 6.5, '', 'C');
         $y += 7;
 
         $y = $this->rollPair($pdf, $y, 'NIT:', (string) data_get($header, 'nitEmisor', $invoice->tax_id));
@@ -144,7 +145,7 @@ class PurchaseSaleInvoicePdfService
         $y += 10;
         $this->text($pdf, 4, $y, 72, 12, $legend, 5.2, 'B', 'C');
         $y += 14;
-        $this->text($pdf, 4, $y, 72, 8, 'Este documento es la Representacion Grafica de un Documento Fiscal Digital emitido en una modalidad de facturacion en linea', 5.2, '', 'C');
+        $this->text($pdf, 4, $y, 72, 8, $this->representationGraphicLegend($invoice), 5.2, '', 'C');
         $y += 10;
 
         $pdf->write2DBarcode($this->qrUrl($invoice, $header, InvoicePrintFormat::Roll), 'QRCODE,M', 24, $y, 32, 32, [
@@ -179,8 +180,8 @@ class PurchaseSaleInvoicePdfService
         $this->text($pdf, 138, 18, 24, 4, 'CÓD. AUTORIZACIÓN', 6.1, 'B');
         $this->text($pdf, 162, 18, 40, 17, (string) data_get($header, 'cuf', $invoice->cuf), 5.5);
 
-        $this->text($pdf, 70, 37, 70, 6, 'FACTURA', 10.5, 'B', 'C');
-        $this->text($pdf, 68, 43, 74, 5, '(Con Derecho a Crédito Fiscal)', 6.5, '', 'C');
+        $this->text($pdf, 70, 37, 70, 6, $this->fiscalTitle($invoice), 10.5, 'B', 'C');
+        $this->text($pdf, 68, 43, 74, 5, InvoiceDocumentSector::fiscalSubtitle((int) $invoice->document_sector_code), 6.5, '', 'C');
     }
 
     private function drawCustomer(TCPDF $pdf, SinInvoiceIssue $invoice, array $header): void
@@ -288,7 +289,7 @@ class PurchaseSaleInvoicePdfService
 
         $this->text($pdf, 38, 132, 164, 4, 'ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO SERÁ SANCIONADO PENALMENTE DE ACUERDO A LEY', 4.8, 'B', 'C');
         $this->text($pdf, 38, 137, 164, 4, $legend, 4.8, '', 'C');
-        $this->text($pdf, 38, 142, 164, 4, '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea”', 4.5, '', 'C');
+        $this->text($pdf, 38, 142, 164, 4, $this->representationGraphicLegend($invoice), 4.5, '', 'C');
 
         $pdf->write2DBarcode($qrUrl, 'QRCODE,M', 8, 116, 25, 25, [
             'border' => 0,
@@ -342,6 +343,13 @@ class PurchaseSaleInvoicePdfService
             ->active()
             ->inRandomOrder()
             ->value('description') ?: 'Ley Nro 453: El proveedor debe brindar atencion sin discriminacion.');
+    }
+
+    public function representationGraphicLegend(SinInvoiceIssue $invoice): string
+    {
+        return $invoice->emission_mode === InvoiceEmissionMode::OfflineDigital
+            ? '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea”'
+            : '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido fuera de línea, verifique su envío con su proveedor o en la página web www.impuestos.gob.bo”';
     }
 
     private function rollPair(TCPDF $pdf, float $y, string $label, string $value): float
@@ -454,5 +462,12 @@ class PurchaseSaleInvoicePdfService
         $number = $invoice->invoice_number ?? $invoice->attempted_invoice_number ?? $invoice->id;
 
         return 'factura-'.$number.'.pdf';
+    }
+
+    private function fiscalTitle(SinInvoiceIssue $invoice): string
+    {
+        return (int) $invoice->document_sector_code === InvoiceDocumentSector::ZERO_RATE
+            ? 'FACTURA TASA CERO'
+            : 'FACTURA';
     }
 }

@@ -11,12 +11,16 @@ use App\Services\Billing\Contracts\InvoiceCancellationReversalSiatClient;
 use App\Services\Siat\SiatErrorClassifier;
 use App\Services\Siat\SiatLogSanitizer;
 use App\Services\Siat\SiatSoapClientFactory;
-use App\Services\Siat\SiatWsdlRegistry;
 use Throwable;
 
 final readonly class SoapInvoiceCancellationReversalSiatClient implements InvoiceCancellationReversalSiatClient
 {
-    public function __construct(private SiatSoapClientFactory $clients, private SiatErrorClassifier $classifier, private SiatLogSanitizer $sanitizer) {}
+    public function __construct(
+        private SiatSoapClientFactory $clients,
+        private SiatErrorClassifier $classifier,
+        private SiatLogSanitizer $sanitizer,
+        private ?InvoiceWsdlResolver $wsdls = null,
+    ) {}
 
     public function reverse(SinInvoiceIssue $invoice, SinCufd $currentCufd): InvoiceSiatResponse
     {
@@ -26,7 +30,11 @@ final readonly class SoapInvoiceCancellationReversalSiatClient implements Invoic
             throw new InvoiceTransportException('La configuración fiscal para revertir la anulación está incompleta.', false, SiatErrorType::LocalConfiguration);
         }
         try {
-            $client = $this->clients->make(SiatWsdlRegistry::PURCHASE_SALE_INVOICE, (string) $token->api_token, 30);
+            $client = $this->clients->make(
+                ($this->wsdls ?? new InvoiceWsdlResolver)->resolve((int) $invoice->document_sector_code, (int) $invoice->company_id),
+                (string) $token->api_token,
+                30,
+            );
             $startedAt = microtime(true);
             $response = $client->reversionAnulacionFactura(['SolicitudServicioReversionAnulacionFactura' => [
                 'codigoAmbiente' => $invoice->environment_code->value,

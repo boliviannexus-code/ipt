@@ -159,6 +159,57 @@ class SiatCatalogTest extends TestCase
         ]);
     }
 
+    public function test_invoice_legends_with_same_activity_are_stored_as_distinct_items(): void
+    {
+        $user = $this->companyUser([
+            'siat-catalogs.view',
+            'siat-catalogs.sync',
+        ]);
+        $pointOfSale = $this->siatConfiguration($user);
+        $this->fakeSoapClient(new class
+        {
+            public function sincronizarListaLeyendasFactura(array $params): object
+            {
+                return (object) [
+                    'RespuestaListaParametricasLeyendas' => (object) [
+                        'transaccion' => true,
+                        'listaLeyendas' => [
+                            (object) [
+                                'codigoActividad' => '4761100',
+                                'descripcionLeyenda' => 'Ley N° 453: Puedes acceder a la reclamación cuando tus derechos han sido vulnerados. ',
+                            ],
+                            (object) [
+                                'codigoActividad' => '4761100',
+                                'descripcionLeyenda' => 'Ley N° 453: El proveedor debe brindar atención sin discriminación.',
+                            ],
+                        ],
+                    ],
+                ];
+            }
+        });
+
+        $this->actingAs($user)
+            ->post(route('siat.catalogs.sync', 'leyendas_factura'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+            ])
+            ->assertRedirect(route('siat.catalogs.show', 'leyendas_factura'));
+
+        $items = SinCatalogItem::query()
+            ->where('catalog_key', 'leyendas_factura')
+            ->orderBy('description')
+            ->get();
+
+        $this->assertCount(2, $items);
+        $this->assertSame(['4761100'], $items->pluck('classifier_code')->unique()->values()->all());
+        $this->assertCount(2, $items->pluck('item_key')->unique());
+        $this->assertDatabaseHas('sin_catalog_syncs', [
+            'company_id' => $user->company_id,
+            'catalog_key' => 'leyendas_factura',
+            'items_count' => 2,
+            'transaccion' => true,
+        ]);
+    }
+
     public function test_company_user_can_sync_catalog_multiple_times_for_sin_approval(): void
     {
         $user = $this->companyUser([
@@ -202,7 +253,7 @@ class SiatCatalogTest extends TestCase
             ->actingAs($user)
             ->get(route('siat.catalogs.show', 'tipos_documento_identidad'))
             ->assertOk()
-            ->assertSee('CI');
+            ->assertSee('data-datatable', false);
 
         $this->assertSame(3, $client->calls);
         $this->assertSame(3, SinCatalogSync::query()
@@ -309,7 +360,14 @@ class SiatCatalogTest extends TestCase
                 'sin_point_of_sale_id' => $pointOfSale->id,
             ])
             ->assertOk()
-            ->assertSee('CI');
+            ->assertSee('data-datatable', false);
+
+        $this->assertDatabaseHas('sin_catalog_items', [
+            'company_id' => $user->company_id,
+            'catalog_key' => 'tipos_documento_identidad',
+            'classifier_code' => '1',
+            'description' => 'CI',
+        ]);
 
         $this->assertDatabaseHas('sin_cuis', [
             'id' => $legacyCuis->id,

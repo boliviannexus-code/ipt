@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\SinCatalogItem;
 use App\Models\SinPointOfSale;
 use App\Models\User;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\SaleCreationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -125,6 +126,31 @@ final class SaleCreationServiceTest extends TestCase
             'payment_method_code' => 1,
             'gift_card_amount' => 100,
         ]));
+    }
+
+    public function test_zero_rate_sale_reuses_sale_flow_and_sets_taxable_amount_to_zero(): void
+    {
+        [$user, $customer, $point, $product] = $this->context();
+        $activityCode = '4761100';
+        $product->update(['economic_activity_code' => $activityCode]);
+        SinCatalogItem::factory()->create([
+            'company_id' => $user->company_id,
+            'catalog_key' => 'actividades_documento_sector',
+            'item_key' => 'codigoActividad:'.$activityCode.'|codigoDocumentoSector:8',
+            'classifier_code' => $activityCode,
+            'description' => null,
+            'raw_data' => ['codigoActividad' => $activityCode, 'codigoDocumentoSector' => 8, 'tipoDocumentoSector' => 'FTC'],
+            'is_active' => true,
+        ]);
+
+        $sale = app(SaleCreationService::class)->create($user, $this->data($customer->id, $point->id, $product->id, [
+            'document_sector_code' => InvoiceDocumentSector::ZERO_RATE,
+            'economic_activity_code' => $activityCode,
+        ]));
+
+        self::assertSame(InvoiceDocumentSector::ZERO_RATE, $sale->document_sector_code);
+        self::assertSame('100.00000', $sale->total_amount);
+        self::assertSame('0.00000', $sale->total_amount_subject_to_vat);
     }
 
     /** @return array{User, Customer, SinPointOfSale, Product} */

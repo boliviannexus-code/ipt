@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Siat\Recovery;
 
+use App\Services\Siat\SiatDateTime;
 use DateTimeInterface;
 
 final readonly class SignificantEventRegistrationRequest
@@ -23,6 +24,7 @@ final readonly class SignificantEventRegistrationRequest
         public DateTimeInterface $endedAt,
         public DateTimeInterface $startedAt,
         public string $taxId,
+        public string $sourceTimezone = 'America/La_Paz',
     ) {}
 
     /** @return array{SolicitudEventoSignificativo: array<string, int|string>} */
@@ -39,8 +41,8 @@ final readonly class SignificantEventRegistrationRequest
                 'cufdEvento' => $this->eventCufd,
                 'cuis' => $this->cuis,
                 'descripcion' => $this->description,
-                'fechaHoraFinEvento' => $this->endedAt->format('Y-m-d\TH:i:s.v'),
-                'fechaHoraInicioEvento' => $this->startedAt->format('Y-m-d\TH:i:s.v'),
+                'fechaHoraFinEvento' => SiatDateTime::extended($this->endedAt, $this->sourceTimezone),
+                'fechaHoraInicioEvento' => SiatDateTime::extended($this->startedAt, $this->sourceTimezone),
                 'nit' => $this->taxId,
             ],
         ];

@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use App\Models\SinBranch;
 use App\Support\CompanyContext;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreSinPointOfSaleRequest extends FormRequest
 {
@@ -21,27 +20,21 @@ class StoreSinPointOfSaleRequest extends FormRequest
 
     public function rules(): array
     {
-        $branch = $this->route('branch');
-        $companyId = CompanyContext::id($this->user());
-
         return [
-            'point_of_sale_code' => [
+            'point_of_sale_type_code' => [
                 'required',
                 'integer',
-                'min:0',
-                'max:2147483647',
-                Rule::unique('sin_points_of_sale', 'point_of_sale_code')
-                    ->where('company_id', $companyId)
-                    ->where('sin_branch_id', $branch?->id),
+                'between:1,6',
             ],
             'name' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:255'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'point_of_sale_code.unique' => 'Ya existe un punto de venta con ese numero en la sucursal.',
+            'point_of_sale_type_code.between' => 'Selecciona un tipo de punto de venta admitido por el SIN.',
         ];
     }
 
@@ -49,6 +42,7 @@ class StoreSinPointOfSaleRequest extends FormRequest
     {
         $this->merge([
             'name' => is_string($this->input('name')) ? trim($this->input('name')) : $this->input('name'),
+            'description' => is_string($this->input('description')) ? trim($this->input('description')) : $this->input('description'),
         ]);
     }
 }

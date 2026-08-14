@@ -58,6 +58,7 @@
             \App\Enums\SignificantEventStatus::Failed,
         ], true)
         && ! $openEvent->transaccion
+        && ! $openEvent->manual_review_required
         && $openEvent->registration_claim === null;
 @endphp
 
@@ -140,7 +141,7 @@
         </article>
         <article class="contingency-line-node {{ $openEvent?->expires_at?->isPast() ? 'is-alert' : 'is-muted' }}">
             <span class="contingency-line-kicker">Regularización</span>
-            <strong data-contingency-duration data-start="{{ $openEvent?->started_at?->toIso8601String() }}">{{ $openEvent ? $openEvent->started_at->diffForHumans(now(), true) : '—' }}</strong>
+            <strong data-contingency-duration data-start="{{ $openEvent?->started_at ? \App\Services\Siat\SiatDateTime::localIso($openEvent->started_at) : null }}">{{ $openEvent ? $openEvent->started_at->diffForHumans(now(), true) : '—' }}</strong>
             <small>{{ $openEvent?->expires_at ? 'Plazo '.$openEvent->expires_at->format('d/m/Y H:i') : 'Sin plazo registrado' }}</small>
         </article>
     </section>
@@ -158,7 +159,7 @@
                         <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#register-significant-event-modal" @disabled($significantEventTypes->isEmpty())>
                             <i class="ti ti-file-upload me-1" aria-hidden="true"></i>Registrar evento significativo
                         </button>
-                    @elseif(in_array($openEvent->event_status, [\App\Enums\SignificantEventStatus::RecoveryDetected, \App\Enums\SignificantEventStatus::PendingRegistration, \App\Enums\SignificantEventStatus::Failed], true) && ! $openEvent->transaccion)
+                    @elseif(in_array($openEvent->event_status, [\App\Enums\SignificantEventStatus::RecoveryDetected, \App\Enums\SignificantEventStatus::PendingRegistration, \App\Enums\SignificantEventStatus::Failed], true) && ! $openEvent->transaccion && ! $openEvent->manual_review_required)
                         <form method="POST" action="{{ route('billing.contingencies.events.retry', $openEvent) }}">
                             @csrf
                             <button class="btn btn-primary btn-sm" type="submit">
@@ -167,7 +168,7 @@
                         </form>
                     @endif
                 @endcan
-                @can('contingencies.packages.build')@if(in_array($openEvent->event_status, [\App\Enums\SignificantEventStatus::Registered, \App\Enums\SignificantEventStatus::Packaging, \App\Enums\SignificantEventStatus::Sending, \App\Enums\SignificantEventStatus::Validating], true))<form method="POST" action="{{ route('billing.contingencies.packages.build', $openEvent) }}">@csrf<button class="btn btn-outline-primary btn-sm" type="submit"><i class="ti ti-package-export me-1" aria-hidden="true"></i>Generar paquetes</button></form>@endif @endcan
+                @can('contingencies.packages.build')@if(in_array($openEvent->event_status, [\App\Enums\SignificantEventStatus::Registered, \App\Enums\SignificantEventStatus::Packaging], true) && $openEvent->transaccion && filled($openEvent->reception_code) && $openEvent->has_eligible_offline_invoices)<form method="POST" action="{{ route('billing.contingencies.packages.build', $openEvent) }}">@csrf<button class="btn btn-outline-primary btn-sm" type="submit"><i class="ti ti-package-export me-1" aria-hidden="true"></i>Generar paquetes</button></form>@endif @endcan
             @endif
         </div>
     </div>
@@ -348,7 +349,11 @@
                                 <select class="form-select @error('event_code') is-invalid @enderror" id="register-event-code" name="event_code" required>
                                     <option value="">Seleccionar evento</option>
                                     @foreach($significantEventTypes as $eventType)
-                                        <option value="{{ $eventType->classifier_code }}" @selected((string) old('event_code') === (string) $eventType->classifier_code)>{{ $eventType->classifier_code }} - {{ $eventType->description }}</option>
+                                        <option
+                                            value="{{ $eventType->classifier_code }}"
+                                            data-description="{{ $eventType->description }}"
+                                            @selected((string) old('event_code', $openEvent->event_code) === (string) $eventType->classifier_code)
+                                        >{{ $eventType->classifier_code }} - {{ $eventType->description }}</option>
                                     @endforeach
                                 </select>
                                 @error('event_code')<div class="invalid-feedback">{{ $message }}</div>@enderror
@@ -378,6 +383,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const registrationModal = document.getElementById('register-significant-event-modal');
         if (registrationModal) bootstrap.Modal.getOrCreateInstance(registrationModal).show();
     @endif
+    const registrationEventCode = document.getElementById('register-event-code');
+    const registrationDescription = document.getElementById('register-event-description');
+    registrationEventCode?.addEventListener('change', () => {
+        const selected = registrationEventCode.options[registrationEventCode.selectedIndex];
+        if (registrationDescription && selected?.dataset.description) {
+            registrationDescription.value = selected.dataset.description;
+        }
+    });
     const timer = document.querySelector('[data-contingency-duration]');
     if (!timer?.dataset.start) return;
     const start = new Date(timer.dataset.start).getTime();

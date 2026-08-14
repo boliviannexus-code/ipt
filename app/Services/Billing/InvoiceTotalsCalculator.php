@@ -84,7 +84,10 @@ final class InvoiceTotalsCalculator
 
         return ['items' => $prepared, 'subtotal_sum' => $subtotalSum, 'discount_additional' => $discountAdditional,
             'total_amount' => $total, 'total_amount_currency' => $currencyTotal,
-            'total_amount_subject_to_vat' => bcsub($total, $giftCard, 2), 'gift_card_amount' => $giftCard, 'exchange_rate' => $rate];
+            'total_amount_subject_to_vat' => $documentSectorCode === InvoiceDocumentSector::ZERO_RATE
+                ? '0.00'
+                : bcsub($total, $giftCard, 2),
+            'gift_card_amount' => $giftCard, 'exchange_rate' => $rate];
     }
 
     private function money(mixed $value, string $field): string
@@ -99,7 +102,7 @@ final class InvoiceTotalsCalculator
             $this->fail($field, 'El porcentaje debe estar entre 0 y 100.');
         }
 
-return $v;
+        return $v;
     }
 
     private function roundMoney(string $value): string

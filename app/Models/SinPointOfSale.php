@@ -22,17 +22,25 @@ class SinPointOfSale extends Model implements Auditable
         'company_id',
         'sin_branch_id',
         'point_of_sale_code',
+        'point_of_sale_type_code',
+        'point_of_sale_type',
         'name',
+        'description',
         'is_default',
         'is_active',
+        'registered_at',
+        'last_synced_at',
     ];
 
     protected function casts(): array
     {
         return [
             'point_of_sale_code' => 'integer',
+            'point_of_sale_type_code' => 'integer',
             'is_default' => 'boolean',
             'is_active' => 'boolean',
+            'registered_at' => 'immutable_datetime',
+            'last_synced_at' => 'immutable_datetime',
         ];
     }
 

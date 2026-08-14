@@ -6,11 +6,12 @@ namespace App\Services\Billing\Packages;
 
 use App\Enums\SiatErrorType;
 use App\Models\SinInvoicePackage;
+use App\Services\Billing\InvoiceWsdlResolver;
 use App\Services\Billing\Packages\Contracts\InvoicePackageSiatClient;
 use App\Services\Siat\SiatErrorClassifier;
 use App\Services\Siat\SiatLogSanitizer;
 use App\Services\Siat\SiatSoapClientFactory;
-use App\Services\Siat\SiatWsdlRegistry;
+use App\Services\Siat\SiatDateTime;
 use SoapVar;
 use Throwable;
 
@@ -21,19 +22,20 @@ final readonly class SoapInvoicePackageSiatClient implements InvoicePackageSiatC
         private SiatErrorClassifier $classifier,
         private SiatLogSanitizer $sanitizer,
         private SiatPackageStatusMapper $statusMapper,
+        private ?InvoiceWsdlResolver $wsdls = null,
     ) {}
 
     public function send(SinInvoicePackage $package, string $archive): PackageReceptionResult
     {
         $this->loadConfiguration($package);
         $token = (string) $package->apiToken->api_token;
-        $client = $this->client($token);
+        $client = $this->client($package, $token);
         $startedAt = microtime(true);
         $payload = [
             'SolicitudServicioRecepcionPaquete' => [
                 ...$this->basePayload($package),
                 'archivo' => new SoapVar($archive, XSD_BASE64BINARY),
-                'fechaEnvio' => now()->format('Y-m-d\TH:i:s.v'),
+                'fechaEnvio' => SiatDateTime::extended(now()),
                 'hashArchivo' => $package->file_hash,
                 'cantidadFacturas' => $package->invoice_count,
                 'codigoEvento' => (string) $package->significantEvent->reception_code,
@@ -75,7 +77,7 @@ final readonly class SoapInvoicePackageSiatClient implements InvoicePackageSiatC
     {
         $this->loadConfiguration($package);
         $token = (string) $package->apiToken->api_token;
-        $client = $this->client($token);
+        $client = $this->client($package, $token);
         $startedAt = microtime(true);
         $payload = [
             'SolicitudServicioValidacionRecepcionPaquete' => [
@@ -137,10 +139,14 @@ final readonly class SoapInvoicePackageSiatClient implements InvoicePackageSiatC
         }
     }
 
-    private function client(string $token): object
+    private function client(SinInvoicePackage $package, string $token): object
     {
         try {
-            return $this->clients->make(SiatWsdlRegistry::PURCHASE_SALE_INVOICE, $token, 30);
+            return $this->clients->make(
+                ($this->wsdls ?? new InvoiceWsdlResolver)->resolve((int) $package->document_sector_code, (int) $package->company_id),
+                $token,
+                30,
+            );
         } catch (Throwable $exception) {
             throw new PackageTransportException(
                 $this->sanitizer->text($exception->getMessage(), $token) ?? 'No se pudo crear el transporte SIAT.',

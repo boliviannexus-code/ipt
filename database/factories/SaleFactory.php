@@ -27,6 +27,7 @@ class SaleFactory extends Factory
             'sin_point_of_sale_id' => fn (array $a) => SinPointOfSale::factory()->create(['company_id' => $a['company_id']])->id,
             'issuance_key' => (string) Str::uuid(),
             'sale_status' => SaleStatus::Confirmed,
+            'document_sector_code' => 1,
             'economic_activity_code' => 620100,
             'payment_method_code' => 1,
             'masked_card_number' => null,

@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Services\Siat\InvoiceXmlValidator;
 use App\Services\Siat\PurchaseSaleInvoiceXmlBuilder;
 use App\Services\Siat\SiatCufGenerator;
+use App\Services\Siat\SiatDateTime;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -147,7 +148,8 @@ final class ManualCafcService
         }
 
         $prepared = $this->prepareLines((int) $manual->company_id, $lines);
-        $calculation = $this->totals->calculate($prepared, $data['discount_amount'] ?? 0, 'FIXED', null, (int) ($data['currency_code'] ?? 1), 1, 0, self::DOCUMENT_SECTOR);
+        $documentSectorCode = (int) $manual->document_sector_code;
+        $calculation = $this->totals->calculate($prepared, $data['discount_amount'] ?? 0, 'FIXED', null, (int) ($data['currency_code'] ?? 1), 1, 0, $documentSectorCode);
         $prepared = array_map(function (array $line, int $index) use ($calculation): array {
             $amounts = $calculation['items'][$index];
 
@@ -200,8 +202,9 @@ final class ManualCafcService
             $paymentMethod = (int) ($data['payment_method_code'] ?? 1);
             $currency = (int) ($data['currency_code'] ?? 1);
             $payload = $this->payload($locked, $customer, $prepared, $authorization, $cufd, $cuf, $subtotal, $discount, $total, $paymentMethod, $currency, $actor);
-            $xml = $this->xmlBuilder->build($payload);
-            $this->xmlValidator->validatePurchaseSale($xml);
+            $documentSectorCode = (int) $locked->document_sector_code;
+            $xml = $this->xmlBuilder->build($payload, $documentSectorCode);
+            $this->xmlValidator->validate($xml, $documentSectorCode);
             $gzip = gzencode($xml, 9);
             if ($xml === '' || $gzip === false) {
                 throw new RuntimeException('No fue posible generar el XML de la factura manual.');
@@ -244,7 +247,7 @@ final class ManualCafcService
                 'subtotal_amount' => $subtotal,
                 'discount_amount' => $discount,
                 'total_amount' => $total,
-                'taxable_amount' => $total,
+                'taxable_amount' => $documentSectorCode === InvoiceDocumentSector::ZERO_RATE ? 0 : $total,
                 'payload' => $payload,
                 'issued_at' => $locked->issued_manually_at,
             ]);
@@ -401,7 +404,7 @@ final class ManualCafcService
         $base = fn (string $model) => $model::query()->withoutGlobalScope('company')->where('company_id', $manual->company_id);
         $token = $base(SinApiToken::class)->first();
         $authorization = $base(SinAuthorization::class)->first();
-        $cuis = $base(SinCuis::class)->successful()->where('sin_point_of_sale_id', $manual->sin_point_of_sale_id)->latest('requested_at')->first();
+        $cuis = $base(SinCuis::class)->usable()->where('sin_point_of_sale_id', $manual->sin_point_of_sale_id)->latest('requested_at')->first();
         $cufd = $base(SinCufd::class)->current()->where('sin_point_of_sale_id', $manual->sin_point_of_sale_id)->latest('requested_at')->first();
         if (! $token || ! $authorization || ! $cuis || ! $cufd || $authorization->modality_code !== SiatModality::ComputerizedOnline) {
             throw ValidationException::withMessages(['cafc_range_id' => 'Falta token, autorización, CUIS o CUFD vigente para transcribir y enviar.']);
@@ -421,26 +424,36 @@ final class ManualCafcService
             'codigoSucursal' => $manual->pointOfSale->branch->branch_code,
             'direccion' => $cufd->address ?: $manual->company->address ?: 'Sin dirección registrada',
             'codigoPuntoVenta' => $manual->pointOfSale->point_of_sale_code,
-            'fechaEmision' => $manual->issued_manually_at->format('Y-m-d\TH:i:s.v'),
+            'fechaEmision' => SiatDateTime::extended($manual->issued_manually_at),
             'nombreRazonSocial' => $customer->name,
             'codigoTipoDocumentoIdentidad' => $customer->identity_document_type_code,
             'numeroDocumento' => $customer->document_number, 'complemento' => $customer->document_complement,
             'codigoCliente' => $customer->customer_code, 'codigoMetodoPago' => $paymentMethod, 'numeroTarjeta' => null,
-            'montoTotal' => $total, 'montoTotalSujetoIva' => $total,
+            'montoTotal' => $total,
+            'montoTotalSujetoIva' => (int) $manual->document_sector_code === InvoiceDocumentSector::ZERO_RATE ? '0' : $total,
             'codigoMoneda' => $currency, 'tipoCambio' => '1.00', 'montoTotalMoneda' => $total,
             'montoGiftCard' => null, 'descuentoAdicional' => $discount,
             'codigoExcepcion' => null, 'cafc' => $manual->cafcRange->cafc_code,
             'leyenda' => 'Ley N° 453: El proveedor debe brindar atención sin discriminación.',
             'usuario' => Str::limit($actor->name ?: $actor->email, 50, ''),
             'codigoDocumentoSector' => $manual->document_sector_code,
-        ], 'detalle' => array_map(static fn (array $line): array => [
-            'actividadEconomica' => $line['economic_activity_code'], 'codigoProductoSin' => $line['siat_product_code'],
-            'codigoProducto' => $line['internal_code'], 'descripcion' => $line['description'],
-            'cantidad' => number_format((float) $line['quantity'], 5, '.', ''),
-            'unidadMedida' => $line['measurement_unit_code'], 'precioUnitario' => number_format((float) $line['unit_price'], 5, '.', ''),
-            'montoDescuento' => number_format((float) $line['discount_amount'], 5, '.', ''),
-            'subTotal' => number_format((float) $line['subtotal_amount'], 5, '.', ''), 'numeroSerie' => null, 'numeroImei' => null,
-        ], $lines)];
+        ], 'detalle' => array_map(function (array $line) use ($manual): array {
+            $detail = [
+                'actividadEconomica' => $line['economic_activity_code'], 'codigoProductoSin' => $line['siat_product_code'],
+                'codigoProducto' => $line['internal_code'], 'descripcion' => $line['description'],
+                'cantidad' => number_format((float) $line['quantity'], 5, '.', ''),
+                'unidadMedida' => $line['measurement_unit_code'], 'precioUnitario' => number_format((float) $line['unit_price'], 5, '.', ''),
+                'montoDescuento' => number_format((float) $line['discount_amount'], 5, '.', ''),
+                'subTotal' => number_format((float) $line['subtotal_amount'], 5, '.', ''),
+            ];
+
+            if ((int) $manual->document_sector_code === InvoiceDocumentSector::PURCHASE_SALE) {
+                $detail['numeroSerie'] = null;
+                $detail['numeroImei'] = null;
+            }
+
+            return $detail;
+        }, $lines)];
     }
 
     /** @return array{xml: string, gzip: string} */

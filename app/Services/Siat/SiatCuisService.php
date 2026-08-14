@@ -25,7 +25,7 @@ class SiatCuisService
     public function current(): ?SinCuis
     {
         return SinCuis::query()
-            ->successful()
+            ->usable()
             ->latest('requested_at')
             ->first();
     }
@@ -33,7 +33,7 @@ class SiatCuisService
     public function currentForPointOfSale(SinPointOfSale $pointOfSale): ?SinCuis
     {
         $cuis = SinCuis::query()
-            ->successful()
+            ->usable()
             ->where(function ($query) use ($pointOfSale): void {
                 $query
                     ->where('sin_point_of_sale_id', $pointOfSale->id)

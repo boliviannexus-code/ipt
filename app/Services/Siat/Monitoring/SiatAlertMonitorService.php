@@ -69,6 +69,22 @@ final class SiatAlertMonitorService
             ->get();
 
         foreach ($events as $event) {
+            if ($event->manual_review_required) {
+                $keys[] = $this->record(new SiatAlertDefinition(
+                    companyId: (int) $company->id,
+                    type: SiatAlertType::EventPendingRegistration,
+                    severity: SiatAlertSeverity::Critical,
+                    scopeKey: 'event:'.$event->id,
+                    title: 'Evento rechazado — revisión manual requerida',
+                    message: "El evento significativo #{$event->id} no admite reintento automático. Último resultado del SIAT: ".($event->message ?: 'rechazo sin detalle.'),
+                    branchId: $event->sin_branch_id,
+                    pointOfSaleId: $event->sin_point_of_sale_id,
+                    significantEventId: (int) $event->id,
+                ));
+
+                continue;
+            }
+
             $keys[] = $this->record(new SiatAlertDefinition(
                 companyId: (int) $company->id,
                 type: SiatAlertType::ContingencyStarted,
@@ -266,7 +282,7 @@ final class SiatAlertMonitorService
         $warningAt = now()->addMinutes(max(1, (int) config('siat.monitoring.thresholds.cufd_warning_minutes', 120)));
         $latestIds = SinCufd::query()->withoutGlobalScope('company')
             ->selectRaw('max(id)')
-            ->where('company_id', $company->id)->successful()
+            ->where('company_id', $company->id)->usable()
             ->groupBy('company_id', 'sin_branch_id', 'sin_point_of_sale_id');
         $cufds = SinCufd::query()->withoutGlobalScope('company')
             ->whereIn('id', $latestIds)->where('expires_at', '<=', $warningAt)->get();

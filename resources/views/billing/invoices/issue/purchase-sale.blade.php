@@ -1,7 +1,7 @@
 @extends('layouts.admin')
 
-@section('title', 'Factura compra-venta | '.config('app.name', 'Base Admin'))
-@section('page-title', 'Emision de facturas compra y venta')
+@section('title', $invoiceTitle.' | '.config('app.name', 'Base Admin'))
+@section('page-title', 'Emisión de '.$invoiceTitle)
 @section('page-subtitle', 'Codigo documento sector '.$sector->classifier_code)
 
 @section('content')
@@ -21,10 +21,11 @@
     >
         @csrf
         <input name="issuance_key" type="hidden" value="{{ $issuanceKey }}">
+        <input name="document_sector_code" type="hidden" value="{{ $documentSectorCode }}">
 
         <header class="invoice-ribbon">
             <div>
-                <div class="invoice-ribbon-kicker">Factura compra-venta</div>
+                <div class="invoice-ribbon-kicker">{{ $invoiceTitle }}</div>
                 <h2 class="invoice-ribbon-title">{{ $legalName }}</h2>
             </div>
             <div

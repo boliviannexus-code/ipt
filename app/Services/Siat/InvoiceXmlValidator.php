@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Siat;
 
+use App\Services\Billing\InvoiceDocumentSector;
 use DOMDocument;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -12,13 +13,19 @@ final class InvoiceXmlValidator
 {
     public function validatePurchaseSale(string $xml): void
     {
+        $this->validate($xml, InvoiceDocumentSector::PURCHASE_SALE);
+    }
+
+    public function validate(string $xml, int $documentSectorCode): void
+    {
+        $key = InvoiceDocumentSector::schemaConfigKey($documentSectorCode);
         $schemaPath = (string) config(
-            'siat.xsd.purchase_sale',
-            resource_path('siat/xsd/facturaComputarizadaCompraVenta.xsd'),
+            'siat.xsd.'.$key,
+            resource_path('siat/xsd/'.InvoiceDocumentSector::schemaFilename($documentSectorCode)),
         );
 
         if (! is_file($schemaPath) || ! is_readable($schemaPath)) {
-            throw new RuntimeException('No se encuentra disponible el XSD oficial para Factura de Compra y Venta.');
+            throw new RuntimeException('No se encuentra disponible el XSD oficial para el documento sector '.$documentSectorCode.'.');
         }
 
         $document = new DOMDocument;
@@ -46,7 +53,7 @@ final class InvoiceXmlValidator
             ->implode(' ');
 
         throw ValidationException::withMessages([
-            'xml' => 'El XML fiscal no cumple el XSD oficial de Factura de Compra y Venta.'
+            'xml' => 'El XML fiscal no cumple el XSD oficial del documento sector '.$documentSectorCode.'.'
                 .($details !== '' ? ' '.$details : ''),
         ]);
     }

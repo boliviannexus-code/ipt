@@ -9,6 +9,7 @@ use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoiceIssuanceDecision;
 use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatErrorType;
+use App\Enums\SignificantEventStatus;
 use App\Jobs\SynchronizeOfflineInvoiceJob;
 use App\Models\Company;
 use App\Models\Customer;
@@ -24,6 +25,7 @@ use App\Models\SinCuis;
 use App\Models\SinPointOfSale;
 use App\Models\User;
 use App\Services\Billing\Contracts\InvoiceSiatClient;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceIssuanceService;
 use App\Services\Billing\InvoiceSiatResponse;
 use App\Services\Billing\InvoiceTransportException;
@@ -67,6 +69,52 @@ final class InvoiceIssuanceServiceTest extends TestCase
         $this->assertDatabaseHas('sin_siat_attempts', ['attempt_status' => SiatAttemptStatus::Succeeded->value]);
         $this->assertDatabaseHas('sin_response_messages', ['message_code' => '9080']);
         Storage::disk('local')->assertExists((string) $result->invoice?->xml_path);
+    }
+
+    public function test_zero_rate_invoice_reuses_issuance_flow_with_sector_eight_xml(): void
+    {
+        $context = $this->context();
+        $activityCode = '4761100';
+        $context['sale']->forceFill([
+            'document_sector_code' => InvoiceDocumentSector::ZERO_RATE,
+            'economic_activity_code' => $activityCode,
+            'total_amount_subject_to_vat' => 0,
+        ])->save();
+        $context['sale']->items()->update(['economic_activity_code' => $activityCode]);
+        SinCatalogItem::factory()->create([
+            'company_id' => $context['company']->id,
+            'catalog_key' => 'actividades_documento_sector',
+            'item_key' => 'codigoActividad:'.$activityCode.'|codigoDocumentoSector:8',
+            'classifier_code' => $activityCode,
+            'description' => null,
+            'raw_data' => [
+                'codigoActividad' => $activityCode,
+                'codigoDocumentoSector' => InvoiceDocumentSector::ZERO_RATE,
+                'tipoDocumentoSector' => 'FTC',
+            ],
+            'is_active' => true,
+        ]);
+        SinCatalogItem::factory()->create([
+            'company_id' => $context['company']->id,
+            'catalog_key' => 'leyendas_factura',
+            'item_key' => 'codigoActividad:'.$activityCode.'|leyenda:tasa-cero',
+            'classifier_code' => $activityCode,
+            'description' => 'Leyenda correspondiente a venta de libros.',
+            'raw_data' => ['codigoActividad' => $activityCode, 'descripcionLeyenda' => 'Leyenda correspondiente a venta de libros.'],
+            'is_active' => true,
+        ]);
+        $this->simulate(true, [$this->response(908, true, 'ZERO-RATE-908')]);
+
+        $invoice = app(InvoiceIssuanceService::class)->issue($context['sale'])->invoice;
+        $xml = Storage::disk('local')->get((string) $invoice?->xml_path);
+
+        self::assertSame(InvoiceDocumentSector::ZERO_RATE, $invoice?->document_sector_code);
+        self::assertSame('0.00000', $invoice?->taxable_amount);
+        self::assertStringContainsString('<facturaComputarizadaTasaCero', $xml);
+        self::assertStringContainsString('<codigoDocumentoSector>8</codigoDocumentoSector>', $xml);
+        self::assertStringContainsString('<leyenda>Leyenda correspondiente a venta de libros.</leyenda>', $xml);
+        self::assertStringNotContainsString('numeroSerie', $xml);
+        self::assertStringNotContainsString('numeroImei', $xml);
     }
 
     public function test_observed_invoice_preserves_number_cuf_and_messages(): void
@@ -159,6 +207,22 @@ final class InvoiceIssuanceServiceTest extends TestCase
         Queue::assertPushed(SynchronizeOfflineInvoiceJob::class, fn ($job): bool => $job->invoiceId === $invoice?->id);
     }
 
+    public function test_pilot_batch_mode_never_creates_an_offline_invoice_or_contingency(): void
+    {
+        $context = $this->context();
+        $client = $this->simulate(false, [], contingency: true, errorType: SiatErrorType::NoInternet);
+
+        $result = app(InvoiceIssuanceService::class)->issue($context['sale'], allowContingency: false);
+
+        self::assertSame(InvoiceIssuanceDecision::Blocked, $result->decision);
+        self::assertNull($result->invoice);
+        self::assertStringContainsString('requiere comunicación en línea', $result->message);
+        self::assertSame(0, $client->calls);
+        $this->assertDatabaseCount('sin_invoice_issues', 0);
+        $this->assertDatabaseCount('sin_significant_events', 0);
+        Queue::assertNotPushed(SynchronizeOfflineInvoiceJob::class);
+    }
+
     public function test_all_offline_invoices_in_an_open_event_reuse_the_event_cufd(): void
     {
         $context = $this->context();
@@ -230,6 +294,89 @@ final class InvoiceIssuanceServiceTest extends TestCase
         self::assertStringContainsString('procesar todas las facturas emitidas fuera de linea', $blocked->message);
         self::assertSame(0, $client->calls);
         self::assertSame(InvoiceFiscalStatus::OfflineIssued, $offline?->refresh()->fiscal_status);
+    }
+
+    public function test_failed_event_requiring_manual_review_does_not_block_new_online_invoices(): void
+    {
+        $context = $this->context();
+        $this->simulate(false, [], contingency: true, errorType: SiatErrorType::SiatUnavailable);
+        $offline = app(InvoiceIssuanceService::class)->issue($context['sale'])->invoice;
+        $offline?->significantEvent?->forceFill([
+            'event_status' => SignificantEventStatus::Failed,
+            'manual_review_required' => true,
+            'message' => 'EL EVENTO SIGNIFICATIVO NO CORRESPONDE AL CUFD DEL EVENTO REGISTRADO',
+        ])->save();
+
+        $nextSale = Sale::factory()->create([
+            'company_id' => $context['company']->id,
+            'user_id' => $context['user']->id,
+            'customer_id' => $context['customer']->id,
+            'sin_point_of_sale_id' => $context['point']->id,
+            'subtotal_amount' => 100,
+            'discount_amount' => 0,
+            'total_amount' => 100,
+            'issued_at' => now()->startOfSecond(),
+        ]);
+        $nextSale->items()->create($context['sale']->items()->firstOrFail()->only([
+            'company_id', 'product_id', 'position', 'internal_code', 'description',
+            'economic_activity_code', 'siat_product_code', 'measurement_unit_code',
+            'quantity', 'unit_price', 'discount_amount', 'subtotal_amount',
+        ]));
+        $this->simulate(true, [$this->response(908, true, 'ONLINE-AFTER-MANUAL-REVIEW')]);
+
+        $result = app(InvoiceIssuanceService::class)->issue($nextSale);
+
+        self::assertSame(InvoiceIssuanceDecision::Online, $result->decision);
+        self::assertSame(InvoiceFiscalStatus::Validated, $result->invoice?->fiscal_status);
+        self::assertSame(InvoiceFiscalStatus::OfflineIssued, $offline?->refresh()->fiscal_status);
+    }
+
+    public function test_new_offline_contingency_does_not_reuse_cufd_from_failed_event_under_manual_review(): void
+    {
+        $context = $this->context();
+        $this->simulate(false, [], contingency: true, errorType: SiatErrorType::SiatUnavailable);
+        $previousOffline = app(InvoiceIssuanceService::class)->issue($context['sale'])->invoice;
+        $previousOffline?->significantEvent?->forceFill([
+            'event_status' => SignificantEventStatus::Failed,
+            'manual_review_required' => true,
+        ])->save();
+
+        $newCufd = SinCufd::factory()->create([
+            'company_id' => $context['company']->id,
+            'sin_api_token_id' => $context['token']->id,
+            'sin_authorization_id' => $context['authorization']->id,
+            'sin_branch_id' => $context['branch']->id,
+            'sin_point_of_sale_id' => $context['point']->id,
+            'sin_cuis_id' => $context['cuis']->id,
+            'cufd_code' => 'CUFD-NUEVA-CONTINGENCIA',
+            'control_code' => 'CONTROL-NUEVO',
+            'transaccion' => true,
+            'requested_at' => now()->addSecond(),
+            'expires_at' => now()->addDay(),
+        ]);
+        $nextSale = Sale::factory()->create([
+            'company_id' => $context['company']->id,
+            'user_id' => $context['user']->id,
+            'customer_id' => $context['customer']->id,
+            'sin_point_of_sale_id' => $context['point']->id,
+            'subtotal_amount' => 100,
+            'discount_amount' => 0,
+            'total_amount' => 100,
+            'issued_at' => now()->addSeconds(2)->startOfSecond(),
+        ]);
+        $nextSale->items()->create($context['sale']->items()->firstOrFail()->only([
+            'company_id', 'product_id', 'position', 'internal_code', 'description',
+            'economic_activity_code', 'siat_product_code', 'measurement_unit_code',
+            'quantity', 'unit_price', 'discount_amount', 'subtotal_amount',
+        ]));
+        $this->simulate(false, [], contingency: true, errorType: SiatErrorType::SiatUnavailable);
+
+        $result = app(InvoiceIssuanceService::class)->issue($nextSale);
+
+        self::assertSame(InvoiceIssuanceDecision::OfflineDigital, $result->decision);
+        self::assertSame($newCufd->id, $result->invoice?->sin_cufd_id);
+        self::assertSame($newCufd->cufd_code, $result->invoice?->cufd_code);
+        self::assertSame($newCufd->id, $result->invoice?->significantEvent?->sin_cufd_id);
     }
 
     public function test_missing_cufd_blocks_online_issuance(): void
@@ -314,6 +461,64 @@ final class InvoiceIssuanceServiceTest extends TestCase
         self::assertSame(1, $invoiceB?->invoice_number);
         $this->assertDatabaseHas('sin_invoice_issues', ['company_id' => $first['company']->id, 'sale_id' => $first['sale']->id]);
         $this->assertDatabaseHas('sin_invoice_issues', ['company_id' => $second['company']->id, 'sale_id' => $second['sale']->id]);
+    }
+
+    public function test_invoice_numbers_are_independent_between_document_sectors(): void
+    {
+        $context = $this->context();
+        $this->simulate(true, [
+            $this->response(908, true, 'PURCHASE-SALE-1'),
+            $this->response(908, true, 'ZERO-RATE-1'),
+        ]);
+        $service = app(InvoiceIssuanceService::class);
+
+        $purchaseSaleInvoice = $service->issue($context['sale'])->invoice;
+        $activityCode = '4761100';
+        $product = $context['sale']->items()->firstOrFail()->product;
+        $zeroRateSale = Sale::factory()->create([
+            'company_id' => $context['company']->id,
+            'user_id' => $context['user']->id,
+            'customer_id' => $context['customer']->id,
+            'sin_point_of_sale_id' => $context['point']->id,
+            'document_sector_code' => InvoiceDocumentSector::ZERO_RATE,
+            'economic_activity_code' => $activityCode,
+            'subtotal_amount' => 100,
+            'discount_amount' => 0,
+            'total_amount' => 100,
+            'total_amount_subject_to_vat' => 0,
+            'issued_at' => now()->startOfSecond(),
+        ]);
+        $zeroRateSale->items()->create([
+            'company_id' => $context['company']->id,
+            'product_id' => $product->id,
+            'position' => 1,
+            'internal_code' => $product->internal_code,
+            'description' => $product->description,
+            'economic_activity_code' => $activityCode,
+            'siat_product_code' => $product->siat_product_code,
+            'measurement_unit_code' => $product->measurement_unit_code,
+            'quantity' => 1,
+            'unit_price' => 100,
+            'discount_amount' => 0,
+            'subtotal_amount' => 100,
+        ]);
+        SinCatalogItem::factory()->create([
+            'company_id' => $context['company']->id,
+            'catalog_key' => 'actividades_documento_sector',
+            'item_key' => 'codigoActividad:'.$activityCode.'|codigoDocumentoSector:8',
+            'classifier_code' => $activityCode,
+            'raw_data' => ['codigoActividad' => $activityCode, 'codigoDocumentoSector' => InvoiceDocumentSector::ZERO_RATE],
+            'is_active' => true,
+        ]);
+
+        $zeroRateInvoice = $service->issue($zeroRateSale)->invoice;
+
+        self::assertSame(1, $purchaseSaleInvoice?->invoice_number);
+        self::assertSame(1, $zeroRateInvoice?->invoice_number);
+        self::assertSame(1, $purchaseSaleInvoice?->document_sector_code);
+        self::assertSame(InvoiceDocumentSector::ZERO_RATE, $zeroRateInvoice?->document_sector_code);
+        $this->assertDatabaseCount('sin_invoice_sequences', 2);
+        $this->assertDatabaseCount('sin_invoice_issues', 2);
     }
 
     public function test_database_rejects_changes_to_issued_cuf_number_or_xml_identity(): void

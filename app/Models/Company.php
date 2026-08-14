@@ -78,6 +78,11 @@ class Company extends Model implements Auditable
         return $this->hasOne(SinApiToken::class)->withoutGlobalScope('company');
     }
 
+    public function sinWsdlServices(): HasMany
+    {
+        return $this->hasMany(SinWsdlService::class)->withoutGlobalScope('company');
+    }
+
     public function sinCuis(): HasMany
     {
         return $this->hasMany(SinCuis::class)->withoutGlobalScope('company');

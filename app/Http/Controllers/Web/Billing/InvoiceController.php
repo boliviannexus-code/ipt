@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Web\Billing;
 
+use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\CorrectInvoicePaymentRequest;
 use App\Http\Requests\Billing\ReverseInvoiceCancellationRequest;
+use App\Jobs\ResendPendingOnlineInvoiceJob;
 use App\Models\SinCatalogItem;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
@@ -16,6 +18,7 @@ use App\Services\Billing\InvoiceIssuanceService;
 use App\Services\Billing\PurchaseSaleInvoicePdfService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -126,5 +129,34 @@ class InvoiceController extends Controller
         $success = $result->invoice?->fiscal_status === InvoiceFiscalStatus::Validated;
 
         return redirect()->route('billing.invoices.index')->with($success ? 'success' : 'error', $result->message);
+    }
+
+    public function resendPendingOnline(SinInvoiceIssue $invoice): RedirectResponse
+    {
+        abort_unless($invoice->company_id === auth()->user()?->company_id, 404);
+        abort_unless(
+            $invoice->fiscal_status === InvoiceFiscalStatus::PendingOnlineSend
+            && $invoice->emission_mode === InvoiceEmissionMode::Online,
+            422,
+        );
+
+        $lockKey = 'siat:invoice-resend:'.$invoice->company_id.':'.$invoice->id;
+        if (! Cache::add($lockKey, true, now()->addMinutes(5))) {
+            return redirect()->route('billing.invoices.index')->with(
+                'info',
+                'Esta factura ya tiene un reenvío en cola. Espere el resultado antes de intentar nuevamente.',
+            );
+        }
+
+        ResendPendingOnlineInvoiceJob::dispatch(
+            (int) $invoice->company_id,
+            (int) $invoice->id,
+            (int) auth()->id(),
+        );
+
+        return redirect()->route('billing.invoices.index')->with(
+            'success',
+            'Reenvío encolado. Se usará la misma factura, número y CUF; actualice el listado en unos instantes.',
+        );
     }
 }

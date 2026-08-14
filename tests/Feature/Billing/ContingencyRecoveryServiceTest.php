@@ -113,7 +113,7 @@ final class ContingencyRecoveryServiceTest extends TestCase
         self::assertSame(SignificantEventStatus::Registered, $result->event->event_status);
         self::assertSame('EVENT-MANUAL-7', $result->event->reception_code);
         self::assertSame(1, $registrar->calls);
-        Queue::assertPushed(RegisterSignificantEventJob::class);
+        Queue::assertNotPushed(RegisterSignificantEventJob::class);
     }
 
     public function test_cufd_failure_keeps_event_pending_without_calling_registrar(): void
@@ -152,6 +152,31 @@ final class ContingencyRecoveryServiceTest extends TestCase
             'attempt_status' => 'FAILED',
         ]);
         $this->assertDatabaseHas('sin_response_messages', ['description' => 'Registro rechazado temporalmente.']);
+    }
+
+    public function test_invalid_event_date_range_remains_available_for_retry(): void
+    {
+        $context = $this->recoveredContext();
+        $result981 = new SignificantEventRegistrationResult(
+            successful: false,
+            receptionCode: null,
+            message: 'RANGO DE FECHAS DE EVENTO SIGNIFICATIVO INVALIDO',
+            response: ['RespuestaListaEventos' => ['transaccion' => false]],
+            messages: [[
+                'codigo' => 981,
+                'descripcion' => 'RANGO DE FECHAS DE EVENTO SIGNIFICATIVO INVALIDO',
+            ]],
+            durationMs: 20,
+        );
+        $this->simulateRegistration($context, [$result981]);
+
+        $result = app(ContingencyRecoveryService::class)
+            ->registerRecoveredEvent($context['event'], $context['user']);
+
+        self::assertTrue($result->pending);
+        self::assertTrue($result->retryable);
+        self::assertFalse($result->event->manual_review_required);
+        self::assertSame(SignificantEventStatus::PendingRegistration, $result->event->event_status);
     }
 
     public function test_failed_registration_can_be_retried_successfully(): void
@@ -257,6 +282,35 @@ final class ContingencyRecoveryServiceTest extends TestCase
             $second['event']->id,
             $first['user']->id,
         ))->handle(app(ContingencyRecoveryService::class));
+    }
+
+    public function test_failed_event_can_be_rehabilitated_explicitly_and_requeued(): void
+    {
+        $context = $this->context();
+        $context['event']->forceFill([
+            'event_status' => SignificantEventStatus::Failed,
+            'manual_review_required' => true,
+            'ended_at' => now(),
+            'recovery_detected_at' => now(),
+        ])->save();
+        SinCatalogItem::factory()->create([
+            'company_id' => $context['company']->id,
+            'catalog_key' => 'eventos_significativos',
+            'classifier_code' => '2',
+            'description' => 'Inaccesibilidad al servicio web del SIN.',
+            'is_active' => true,
+        ]);
+        $this->availableHealthCheck(times: 1);
+
+        $this->artisan('siat:recover-open-contingencies', [
+            '--event' => $context['event']->id,
+            '--actor' => $context['user']->id,
+            '--event-code' => 2,
+            '--reason' => 'Reenvío autorizado después de corregir la zona horaria.',
+        ])->assertSuccessful();
+
+        self::assertFalse($context['event']->refresh()->manual_review_required);
+        Queue::assertPushed(RegisterSignificantEventJob::class, 1);
     }
 
     public function test_closed_event_is_ignored_without_checking_communication(): void

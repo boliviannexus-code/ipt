@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Web\Billing;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatEnvironment;
+use App\Enums\SignificantEventStatus;
+use App\Services\Siat\SiatErrorClassifier;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\IssuePurchaseSaleInvoiceRequest;
 use App\Models\Customer;
@@ -16,6 +18,7 @@ use App\Models\SinCatalogItem;
 use App\Models\SinCuis;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceIssuanceService;
 use App\Services\Billing\SaleCreationService;
 use App\Services\Siat\SiatCommunicationService;
@@ -28,16 +31,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 
 class InvoiceIssueController extends Controller
 {
     private const DOCUMENT_SECTOR_CATALOG = 'tipos_documento_sector';
 
-    private const PURCHASE_SALE_DOCUMENT_SECTOR_CODE = '1';
-
     public function __construct(
         private readonly SiatCommunicationService $communication,
         private readonly SiatCufdService $cufds,
+        private readonly SiatErrorClassifier $errorClassifier,
         private readonly SaleCreationService $sales,
         private readonly InvoiceIssuanceService $invoiceIssuance,
     ) {}
@@ -53,7 +56,9 @@ class InvoiceIssueController extends Controller
     {
         $sector = $this->findActiveDocumentSector($documentSectorCode);
 
-        if ($documentSectorCode !== self::PURCHASE_SALE_DOCUMENT_SECTOR_CODE) {
+        $documentSector = (int) $documentSectorCode;
+
+        if (! InvoiceDocumentSector::supports($documentSector)) {
             return view('billing.invoices.issue.development', [
                 'sector' => $sector,
                 'documentSectors' => $this->activeCatalogItems(self::DOCUMENT_SECTOR_CATALOG),
@@ -72,20 +77,26 @@ class InvoiceIssueController extends Controller
         $fiscalStatuses = $this->fiscalStatuses($branches);
         $measurementUnits = $this->activeCatalogItems('unidades_medida')
             ->keyBy(fn (SinCatalogItem $item): string => (string) ($item->classifier_code ?? Arr::get($item->raw_data, 'codigoClasificador', '')));
-        $products = Product::query()
+        $allowedActivityCodes = $this->allowedActivityCodes($documentSector);
+        $productsQuery = Product::query()
             ->with('category')
             ->active()
-            ->orderBy('description')
-            ->get([
-                'id',
-                'product_category_id',
-                'measurement_unit_code',
-                'internal_code',
-                'description',
-                'economic_activity_code',
-                'siat_product_code',
-                'unit_price',
-            ]);
+            ->orderBy('description');
+
+        if ($documentSector === InvoiceDocumentSector::ZERO_RATE) {
+            $productsQuery->whereIn('economic_activity_code', $allowedActivityCodes);
+        }
+
+        $products = $productsQuery->get([
+            'id',
+            'product_category_id',
+            'measurement_unit_code',
+            'internal_code',
+            'description',
+            'economic_activity_code',
+            'siat_product_code',
+            'unit_price',
+        ]);
 
         $products->each(function (Product $product) use ($measurementUnits): void {
             $unit = $measurementUnits->get((string) $product->measurement_unit_code);
@@ -103,6 +114,13 @@ class InvoiceIssueController extends Controller
             'activities' => SinCatalogItem::query()
                 ->where('catalog_key', 'actividades')
                 ->active()
+                ->when(
+                    $documentSector === InvoiceDocumentSector::ZERO_RATE,
+                    fn ($query) => $query->where(function ($query) use ($allowedActivityCodes): void {
+                        $query->whereIn('classifier_code', $allowedActivityCodes)
+                            ->orWhereIn('raw_data->codigoCaeb', $allowedActivityCodes);
+                    }),
+                )
                 ->orderByRaw("raw_data->>'codigoCaeb'")
                 ->get(),
             'customers' => Customer::query()
@@ -114,6 +132,8 @@ class InvoiceIssueController extends Controller
             'paymentMethods' => $this->activeCatalogItems('tipos_metodo_pago'),
             'currencies' => $this->activeCatalogItems('tipos_moneda'),
             'issuanceKey' => (string) Str::uuid(),
+            'documentSectorCode' => $documentSector,
+            'invoiceTitle' => InvoiceDocumentSector::title($documentSector),
         ]);
     }
 
@@ -139,20 +159,33 @@ class InvoiceIssueController extends Controller
             ->findOrFail((int) $validated['sin_point_of_sale_id']);
 
         $cufd = $this->cufds->request($request->user(), $pointOfSale);
+        $errorType = $cufd->transaccion
+            ? null
+            : $this->errorClassifier->classify(new RuntimeException((string) $cufd->message));
+        $communicationUnavailable = $errorType?->canOpenContingencyAfterRetries() ?? false;
+        $usableCufd = $cufd->transaccion
+            ? $cufd
+            : $this->cufds->currentForPointOfSale($pointOfSale);
+        $message = $communicationUnavailable
+            ? 'No existe comunicación con el SIN. Puede continuar con la emisión fuera de línea; la factura quedará pendiente de regularización.'
+            : $cufd->message;
 
         return response()->json([
             'success' => $cufd->transaccion,
-            'message' => $cufd->message,
+            'message' => $message,
+            'communication_ok' => ! $communicationUnavailable,
+            'contingency_suggested' => $communicationUnavailable,
+            'technical_message' => $cufd->message,
             'data' => [
                 'cufd' => [
-                    'id' => $cufd->id,
-                    'status' => $cufd->status_label,
-                    'is_current' => $cufd->transaccion && $cufd->expires_at?->isFuture(),
-                    'expires_at' => $cufd->expires_at?->format('d/m/Y H:i'),
-                    'control_code' => $cufd->control_code,
+                    'id' => $usableCufd?->id,
+                    'status' => $usableCufd?->status_label,
+                    'is_current' => $usableCufd?->transaccion && $usableCufd->expires_at?->isFuture(),
+                    'expires_at' => $usableCufd?->expires_at?->format('d/m/Y H:i'),
+                    'control_code' => $usableCufd?->control_code,
                 ],
             ],
-        ], $cufd->transaccion ? 201 : 422);
+        ], $cufd->transaccion ? 201 : ($communicationUnavailable ? 200 : 422));
     }
 
     public function issuePurchaseSale(IssuePurchaseSaleInvoiceRequest $request): JsonResponse
@@ -221,6 +254,21 @@ class InvoiceIssueController extends Controller
             ->firstOrFail();
     }
 
+    /** @return array<int, string> */
+    private function allowedActivityCodes(int $documentSectorCode): array
+    {
+        return SinCatalogItem::query()
+            ->where('catalog_key', 'actividades_documento_sector')
+            ->active()
+            ->get(['classifier_code', 'raw_data'])
+            ->filter(fn (SinCatalogItem $item): bool => (int) Arr::get($item->raw_data, 'codigoDocumentoSector') === $documentSectorCode)
+            ->map(fn (SinCatalogItem $item): string => (string) Arr::get($item->raw_data, 'codigoActividad', $item->classifier_code))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     /**
      * @return array{ok: bool, invalid_detail: string}
      */
@@ -267,6 +315,14 @@ class InvoiceIssueController extends Controller
                 InvoiceFiscalStatus::Observed,
                 InvoiceFiscalStatus::Rejected,
             ])
+            ->where(function ($query): void {
+                $query->whereNull('sin_significant_event_id')
+                    ->orWhereHas('significantEvent', fn ($event) => $event
+                        ->where(function ($status): void {
+                            $status->where('manual_review_required', false)
+                                ->orWhere('event_status', '!=', SignificantEventStatus::Failed);
+                        }));
+            })
             ->pluck('sin_point_of_sale_id')
             ->mapWithKeys(static fn ($id): array => [(int) $id => true]);
 
@@ -293,7 +349,7 @@ class InvoiceIssueController extends Controller
     private function currentCuisForPointOfSale(SinPointOfSale $pointOfSale): ?SinCuis
     {
         return SinCuis::query()
-            ->successful()
+            ->usable()
             ->where(function ($query) use ($pointOfSale): void {
                 $query
                     ->where('sin_point_of_sale_id', $pointOfSale->id)

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Web;
 
+use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Http\Controllers\Controller;
 use App\Models\SinCatalogItem;
 use App\Models\SinInvoiceIssue;
 use App\Models\User;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Siat\SiatCatalogRegistry;
 use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
@@ -128,12 +130,13 @@ class AdminDataTableController extends Controller
                 });
             })
             ->editColumn('invoice_number', fn (SinInvoiceIssue $invoice): string => $this->invoiceNumberColumn($invoice))
+            ->addColumn('document_type', fn (SinInvoiceIssue $invoice): string => $this->invoiceDocumentTypeColumn($invoice))
             ->editColumn('issued_at', fn (SinInvoiceIssue $invoice): string => $invoice->issued_at?->format('d/m/Y H:i') ?? '-')
             ->addColumn('customer', fn (SinInvoiceIssue $invoice): string => $this->invoiceCustomerColumn($invoice))
             ->editColumn('total_amount', fn (SinInvoiceIssue $invoice): string => 'Bs '.money_format_decimal($invoice->total_amount))
             ->editColumn('status_label', fn (SinInvoiceIssue $invoice): string => $this->invoiceStatusColumn($invoice))
             ->addColumn('actions', fn (SinInvoiceIssue $invoice): string => $this->invoiceActions($invoice))
-            ->rawColumns(['invoice_number', 'customer', 'status_label', 'actions'])
+            ->rawColumns(['invoice_number', 'document_type', 'customer', 'status_label', 'actions'])
             ->toJson();
     }
 
@@ -174,6 +177,20 @@ class AdminDataTableController extends Controller
             .'</div>';
     }
 
+    private function invoiceDocumentTypeColumn(SinInvoiceIssue $invoice): string
+    {
+        return match ((int) $invoice->document_sector_code) {
+            InvoiceDocumentSector::PURCHASE_SALE => '<span class="badge bg-blue-lt">'
+                .'<i class="ti ti-receipt-2 me-1" aria-hidden="true"></i>Compra-Venta</span>'
+                .'<div class="text-body-secondary small">Sector 1</div>',
+            InvoiceDocumentSector::ZERO_RATE => '<span class="badge bg-purple-lt">'
+                .'<i class="ti ti-percentage me-1" aria-hidden="true"></i>Tasa Cero</span>'
+                .'<div class="text-body-secondary small">Sector 8 · Sin crédito fiscal</div>',
+            default => '<span class="badge bg-secondary-lt">Documento sector '
+                .e((string) $invoice->document_sector_code).'</span>',
+        };
+    }
+
     private function invoiceStatusColumn(SinInvoiceIssue $invoice): string
     {
         $statusTone = match ($invoice->fiscal_status) {
@@ -203,6 +220,14 @@ class AdminDataTableController extends Controller
 
     private function invoiceActions(SinInvoiceIssue $invoice): string
     {
+        if (auth()->user()?->can('invoices.issue')
+            && $invoice->fiscal_status === InvoiceFiscalStatus::PendingOnlineSend
+            && $invoice->emission_mode === InvoiceEmissionMode::Online) {
+            return '<form class="d-inline" method="POST" data-disable-on-submit action="'.e(route('billing.invoices.resend', $invoice)).'">'
+                .csrf_field().'<button class="btn btn-outline-primary btn-sm" type="submit" data-submitting-label="Encolando…">'
+                .'<i class="ti ti-send me-1" aria-hidden="true"></i><span>Reenviar al SIN</span></button></form>';
+        }
+
         if (auth()->user()?->can('invoices.issue')
             && in_array($invoice->fiscal_status, [InvoiceFiscalStatus::Observed, InvoiceFiscalStatus::Rejected], true)
             && in_array($invoice->status_code, [904, 902], true)) {

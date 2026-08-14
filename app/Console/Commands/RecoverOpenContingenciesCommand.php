@@ -25,14 +25,21 @@ final class RecoverOpenContingenciesCommand extends Command
 
     public function handle(ContingencyRecoveryService $recovery): int
     {
+        $statuses = [
+            SignificantEventStatus::Open,
+            SignificantEventStatus::RecoveryDetected,
+            SignificantEventStatus::PendingRegistration,
+        ];
+
+        if ($this->option('event') !== null
+            && ($this->option('event-code') !== null || $this->option('description') !== null)) {
+            $statuses[] = SignificantEventStatus::Failed;
+        }
+
         $query = SinSignificantEvent::query()
             ->withoutGlobalScope('company')
             ->whereNull('closed_at')
-            ->whereIn('event_status', [
-                SignificantEventStatus::Open,
-                SignificantEventStatus::RecoveryDetected,
-                SignificantEventStatus::PendingRegistration,
-            ])
+            ->whereIn('event_status', $statuses)
             ->orderBy('company_id')
             ->orderBy('id');
 

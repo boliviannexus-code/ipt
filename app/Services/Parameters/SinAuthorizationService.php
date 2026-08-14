@@ -6,6 +6,7 @@ use App\Enums\SiatEnvironment;
 use App\Enums\SiatModality;
 use App\Models\SinAuthorization;
 use App\Models\User;
+use App\Services\Siat\SiatCredentialChangeService;
 use App\Support\CompanyContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
@@ -14,6 +15,10 @@ use Illuminate\Validation\ValidationException;
 
 class SinAuthorizationService
 {
+    public function __construct(
+        private readonly SiatCredentialChangeService $credentialChanges,
+    ) {}
+
     public function current(): ?SinAuthorization
     {
         return SinAuthorization::query()->first();
@@ -70,7 +75,20 @@ class SinAuthorizationService
 
             if ($authorization) {
                 $authorization->fill(Arr::except($data, ['company_id']));
+                $siatConfigurationChanged = $authorization->isDirty([
+                    'tax_id',
+                    'system_code',
+                    'environment_code',
+                    'modality_code',
+                ]);
                 $authorization->save();
+
+                if ($siatConfigurationChanged) {
+                    $this->credentialChanges->invalidateCodes(
+                        $companyId,
+                        'Reemplazado al actualizar los parámetros de autorización SIAT.',
+                    );
+                }
 
                 return $authorization->refresh();
             }

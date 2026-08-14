@@ -8,6 +8,7 @@ use App\Enums\SaleStatus;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SinCatalogItem;
 use App\Models\SinPointOfSale;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -26,9 +27,14 @@ final class SaleCreationService
     public function create(User $user, array $data): Sale
     {
         $companyId = (int) $user->company_id;
+        $documentSectorCode = (int) ($data['document_sector_code'] ?? InvoiceDocumentSector::PURCHASE_SALE);
 
         if ($companyId <= 0) {
             throw ValidationException::withMessages(['company' => 'Selecciona una empresa antes de registrar la venta.']);
+        }
+
+        if (! InvoiceDocumentSector::supports($documentSectorCode)) {
+            throw ValidationException::withMessages(['document_sector_code' => 'El tipo de factura seleccionado todavía no está habilitado para emisión.']);
         }
 
         $issuanceKey = (string) ($data['issuance_key'] ?? Str::uuid());
@@ -42,7 +48,7 @@ final class SaleCreationService
         }
 
         try {
-            return DB::transaction(function () use ($user, $data, $companyId, $issuanceKey): Sale {
+            return DB::transaction(function () use ($user, $data, $companyId, $documentSectorCode, $issuanceKey): Sale {
                 $pointOfSale = SinPointOfSale::query()
                     ->withoutGlobalScope('company')
                     ->with('branch')
@@ -93,10 +99,11 @@ final class SaleCreationService
                         'discount_amount' => $item['discount'] ?? 0,
                     ];
                 });
+                $this->ensureActivitiesBelongToSector($companyId, $documentSectorCode, $snapshots->pluck('economic_activity_code')->all());
                 $calculation = $this->totals->calculate(
                     $snapshots->all(), $data['total_discount'] ?? 0, (string) ($data['additional_discount_type'] ?? 'FIXED'),
                     $data['additional_discount_percentage'] ?? null, (int) $data['currency_code'], $data['exchange_rate'] ?? 1,
-                    $data['gift_card_amount'] ?? 0, 1,
+                    $data['gift_card_amount'] ?? 0, $documentSectorCode,
                     $this->paymentMethods->isGiftCard($companyId, (int) $data['payment_method_code']),
                 );
                 $snapshots = $snapshots->values()->map(function (array $snapshot, int $index) use ($calculation): array {
@@ -114,6 +121,7 @@ final class SaleCreationService
                     'sin_point_of_sale_id' => $pointOfSale->id,
                     'issuance_key' => $issuanceKey,
                     'sale_status' => SaleStatus::Confirmed,
+                    'document_sector_code' => $documentSectorCode,
                     'economic_activity_code' => (int) $data['economic_activity_code'],
                     'payment_method_code' => (int) $data['payment_method_code'],
                     'masked_card_number' => (int) $data['payment_method_code'] === 2
@@ -157,5 +165,29 @@ final class SaleCreationService
         }
 
         return substr($digits, 0, 4).'00000000'.substr($digits, -4);
+    }
+
+    /** @param array<int, int|string> $activityCodes */
+    private function ensureActivitiesBelongToSector(int $companyId, int $documentSectorCode, array $activityCodes): void
+    {
+        if ($documentSectorCode !== InvoiceDocumentSector::ZERO_RATE) {
+            return;
+        }
+
+        $allowed = SinCatalogItem::query()->withoutGlobalScope('company')
+            ->where('company_id', $companyId)
+            ->where('catalog_key', 'actividades_documento_sector')
+            ->active()
+            ->get(['classifier_code', 'raw_data'])
+            ->filter(fn (SinCatalogItem $item): bool => (int) data_get($item->raw_data, 'codigoDocumentoSector') === $documentSectorCode)
+            ->map(fn (SinCatalogItem $item): string => (string) data_get($item->raw_data, 'codigoActividad', $item->classifier_code))
+            ->all();
+
+        $invalid = collect($activityCodes)->map(static fn ($code): string => (string) $code)->diff($allowed);
+        if ($allowed === [] || $invalid->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'economic_activity_code' => 'Los productos deben pertenecer a una actividad habilitada por el SIN para Factura Tasa Cero (documento sector 8).',
+            ]);
+        }
     }
 }

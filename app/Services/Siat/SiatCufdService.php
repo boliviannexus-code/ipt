@@ -12,6 +12,7 @@ use App\Services\Parameters\SinAuthorizationService;
 use App\Services\SinApiTokenService;
 use App\Support\CompanyContext;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -219,29 +220,55 @@ class SiatCufdService
         ?array $response,
         int $durationMs,
     ): SinCufd {
-        return SinCufd::query()->create([
-            'company_id' => $companyId,
-            'sin_api_token_id' => $apiToken->id,
-            'sin_authorization_id' => $authorization->id,
-            'sin_branch_id' => $pointOfSale->branch->id,
-            'sin_point_of_sale_id' => $pointOfSale->id,
-            'sin_cuis_id' => $cuis->id,
-            'tax_id' => $authorization->tax_id,
-            'wsdl_url' => SiatWsdlRegistry::CODES,
-            'environment_code' => $authorization->environment_code,
-            'modality_code' => $authorization->modality_code,
-            'branch_code' => $pointOfSale->branch->branch_code,
-            'point_of_sale_code' => $pointOfSale->point_of_sale_code,
-            'transaccion' => $transaccion,
-            'cufd_code' => $cufdCode,
-            'control_code' => $controlCode,
-            'address' => $address,
-            'expires_at' => $expiresAt,
-            'message' => $message,
-            'response' => $response,
-            'duration_ms' => $durationMs,
-            'requested_at' => now(),
-        ]);
+        return DB::transaction(function () use (
+            $companyId,
+            $apiToken,
+            $authorization,
+            $pointOfSale,
+            $cuis,
+            $transaccion,
+            $cufdCode,
+            $controlCode,
+            $address,
+            $expiresAt,
+            $message,
+            $response,
+            $durationMs,
+        ): SinCufd {
+            if ($transaccion && filled($cufdCode)) {
+                SinCufd::query()
+                    ->withoutGlobalScope('company')
+                    ->where('company_id', $companyId)
+                    ->where('sin_point_of_sale_id', $pointOfSale->id)
+                    ->whereNull('invalidated_at')
+                    ->successful()
+                    ->update(['invalidated_at' => now()]);
+            }
+
+            return SinCufd::query()->create([
+                'company_id' => $companyId,
+                'sin_api_token_id' => $apiToken->id,
+                'sin_authorization_id' => $authorization->id,
+                'sin_branch_id' => $pointOfSale->branch->id,
+                'sin_point_of_sale_id' => $pointOfSale->id,
+                'sin_cuis_id' => $cuis->id,
+                'tax_id' => $authorization->tax_id,
+                'wsdl_url' => SiatWsdlRegistry::CODES,
+                'environment_code' => $authorization->environment_code,
+                'modality_code' => $authorization->modality_code,
+                'branch_code' => $pointOfSale->branch->branch_code,
+                'point_of_sale_code' => $pointOfSale->point_of_sale_code,
+                'transaccion' => $transaccion,
+                'cufd_code' => $cufdCode,
+                'control_code' => $controlCode,
+                'address' => $address,
+                'expires_at' => $expiresAt,
+                'message' => $message,
+                'response' => $response,
+                'duration_ms' => $durationMs,
+                'requested_at' => now(),
+            ]);
+        }, 3);
     }
 
     /**

@@ -40,6 +40,7 @@ use App\Services\Siat\SiatCommunicationService;
 use App\Services\Siat\SiatCufGenerator;
 use App\Services\Siat\SiatHealthCheckResult;
 use App\Services\Siat\SiatLogSanitizer;
+use App\Services\Siat\SiatDateTime;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -49,10 +50,6 @@ use Throwable;
 
 class InvoiceIssuanceService
 {
-    private const DOCUMENT_SECTOR = 1;
-
-    private const INVOICE_DOCUMENT_TYPE = 1;
-
     private const EMISSION_ONLINE = 1;
 
     private const EMISSION_OFFLINE = 2;
@@ -71,7 +68,7 @@ class InvoiceIssuanceService
         private readonly PaymentMethodPolicy $paymentMethods,
     ) {}
 
-    public function issue(Sale $sale): InvoiceIssuanceResult
+    public function issue(Sale $sale, bool $allowContingency = true): InvoiceIssuanceResult
     {
         $sale = Sale::query()->withoutGlobalScope('company')
             ->with(['company', 'user', 'customer', 'pointOfSale.branch', 'items'])
@@ -97,6 +94,12 @@ class InvoiceIssuanceService
         }
 
         $decision = $this->decision($sale, $health, $cufd);
+
+        if (! $allowContingency && $decision !== InvoiceIssuanceDecision::Online) {
+            return $this->blocked(
+                'La prueba masiva requiere comunicación en línea con el SIAT y no generará facturas de contingencia.',
+            );
+        }
 
         if ($decision !== InvoiceIssuanceDecision::Online && $decision !== InvoiceIssuanceDecision::OfflineDigital) {
             return new InvoiceIssuanceResult(
@@ -145,6 +148,34 @@ class InvoiceIssuanceService
         return $this->sendOnline($invoice);
     }
 
+    /**
+     * Reenvía únicamente una factura cuyo primer envío está confirmado como no entregado al SIN.
+     * Conserva el XML, CUF y número fiscal ya asignados.
+     */
+    public function resendPendingOnline(SinInvoiceIssue $invoice, User $actor): InvoiceIssuanceResult
+    {
+        $invoice = SinInvoiceIssue::query()->withoutGlobalScope('company')->findOrFail($invoice->id);
+
+        if ((int) $invoice->company_id !== (int) $actor->company_id) {
+            abort(404);
+        }
+
+        if ($invoice->fiscal_status !== InvoiceFiscalStatus::PendingOnlineSend
+            || $invoice->emission_mode !== InvoiceEmissionMode::Online) {
+            throw ValidationException::withMessages([
+                'invoice' => 'Solo puede reenviarse una factura en estado pendiente de envío al SIN.',
+            ]);
+        }
+
+        if (! $invoice->gzip_path || ! Storage::disk('local')->exists($invoice->gzip_path)) {
+            throw ValidationException::withMessages([
+                'invoice' => 'No se encontró el XML fiscal original para reenviar la factura.',
+            ]);
+        }
+
+        return $this->sendOnline($invoice, true);
+    }
+
     /** @param array<string, mixed> $correction */
     public function correctPaymentAndResend(SinInvoiceIssue $invoice, int $paymentMethodCode, ?string $cardNumber, User $actor, array $correction = []): InvoiceIssuanceResult
     {
@@ -178,7 +209,7 @@ class InvoiceIssuanceService
             $calculation = $this->totals->calculate(
                 $submitted->values()->all(), $correction['total_discount'] ?? 0, (string) ($correction['additional_discount_type'] ?? 'FIXED'),
                 $correction['additional_discount_percentage'] ?? null, (int) $sale->currency_code,
-                $correction['exchange_rate'] ?? 1, $correction['gift_card_amount'] ?? 0, self::DOCUMENT_SECTOR,
+                $correction['exchange_rate'] ?? 1, $correction['gift_card_amount'] ?? 0, (int) $sale->document_sector_code,
                 $this->paymentMethods->catalogItemIsGiftCard($paymentMethod),
             );
             foreach ($submitted->values() as $index => $itemData) {
@@ -202,8 +233,9 @@ class InvoiceIssuanceService
         $sale->forceFill(['payment_method_code' => $paymentMethodCode, 'masked_card_number' => $maskedCard])->save();
         $sale->refresh()->load(['company', 'user', 'customer', 'pointOfSale.branch', 'items']);
         $payload = $this->invoicePayload($sale, $invoice->authorization, $invoice->cufd, (int) $invoice->invoice_number, (string) $invoice->cuf);
-        $xml = $this->xmlSigner->sign($this->xmlBuilder->build($payload), $sale);
-        $this->xmlValidator->validatePurchaseSale($xml);
+        $documentSectorCode = (int) $sale->document_sector_code;
+        $xml = $this->xmlSigner->sign($this->xmlBuilder->build($payload, $documentSectorCode), $sale);
+        $this->xmlValidator->validate($xml, $documentSectorCode);
         $gzip = gzencode($xml, 9);
         if ($gzip === false) {
             throw new RuntimeException('No se pudo comprimir el XML fiscal corregido.');
@@ -233,6 +265,32 @@ class InvoiceIssuanceService
     {
         if ($sale->sale_status !== SaleStatus::Confirmed) {
             return 'La venta no esta confirmada o ya fue procesada.';
+        }
+
+        $documentSectorCode = (int) $sale->document_sector_code;
+        if (! InvoiceDocumentSector::supports($documentSectorCode)) {
+            return 'El documento sector de la venta no está implementado para emisión.';
+        }
+
+        if ($documentSectorCode === InvoiceDocumentSector::ZERO_RATE) {
+            $allowedActivities = SinCatalogItem::query()->withoutGlobalScope('company')
+                ->where('company_id', $sale->company_id)
+                ->where('catalog_key', 'actividades_documento_sector')
+                ->active()
+                ->get(['classifier_code', 'raw_data'])
+                ->filter(fn (SinCatalogItem $item): bool => (int) data_get($item->raw_data, 'codigoDocumentoSector') === InvoiceDocumentSector::ZERO_RATE)
+                ->map(fn (SinCatalogItem $item): string => (string) data_get($item->raw_data, 'codigoActividad', $item->classifier_code))
+                ->all();
+            $invalidActivities = $sale->items->pluck('economic_activity_code')->map(static fn ($code): string => (string) $code)
+                ->diff($allowedActivities);
+
+            if ($allowedActivities === [] || $invalidActivities->isNotEmpty()) {
+                return 'Los productos de Tasa Cero deben pertenecer a una actividad habilitada para el documento sector 8. Sincronice Actividades por Documento Sector y revise la homologación.';
+            }
+
+            if (bccomp((string) $sale->total_amount_subject_to_vat, '0', 2) !== 0) {
+                return 'La Factura Tasa Cero debe registrar monto total sujeto a IVA igual a cero.';
+            }
         }
 
         if (! $sale->company?->is_active || ! $sale->pointOfSale?->is_active || ! $sale->pointOfSale?->branch?->is_active) {
@@ -271,7 +329,7 @@ class InvoiceIssuanceService
         }
 
         $cuis = SinCuis::query()->withoutGlobalScope('company')
-            ->successful()
+            ->usable()
             ->where('company_id', $sale->company_id)
             ->where('sin_point_of_sale_id', $sale->sin_point_of_sale_id)
             ->latest('requested_at')
@@ -282,7 +340,7 @@ class InvoiceIssuanceService
         }
 
         $cufd = SinCufd::query()->withoutGlobalScope('company')
-            ->successful()
+            ->usable()
             ->where('company_id', $sale->company_id)
             ->where('sin_point_of_sale_id', $sale->sin_point_of_sale_id)
             ->where('expires_at', '>', $sale->issued_at)
@@ -311,7 +369,7 @@ class InvoiceIssuanceService
         $hasCafc = SinCafcRange::query()->withoutGlobalScope('company')
             ->where('company_id', $sale->company_id)
             ->where('sin_point_of_sale_id', $sale->sin_point_of_sale_id)
-            ->where('document_sector_code', self::DOCUMENT_SECTOR)
+            ->where('document_sector_code', (int) $sale->document_sector_code)
             ->whereIn('range_status', [CafcRangeStatus::Available, CafcRangeStatus::InUse])
             ->whereDate('authorized_from', '<=', $sale->issued_at)
             ->whereDate('authorized_until', '>=', $sale->issued_at)
@@ -335,6 +393,14 @@ class InvoiceIssuanceService
                 InvoiceFiscalStatus::Observed,
                 InvoiceFiscalStatus::Rejected,
             ])
+            ->where(function ($query): void {
+                $query->whereNull('sin_significant_event_id')
+                    ->orWhereHas('significantEvent', fn ($event) => $event
+                        ->where(function ($status): void {
+                            $status->where('manual_review_required', false)
+                                ->orWhere('event_status', '!=', SignificantEventStatus::Failed);
+                        }));
+            })
             ->exists();
     }
 
@@ -349,6 +415,10 @@ class InvoiceIssuanceService
                 SignificantEventStatus::Completed,
                 SignificantEventStatus::Expired,
             ])
+            ->where(function ($query): void {
+                $query->where('event_status', '!=', SignificantEventStatus::Failed)
+                    ->orWhere('manual_review_required', false);
+            })
             ->latest('started_at')
             ->value('sin_cufd_id');
 
@@ -383,7 +453,9 @@ class InvoiceIssuanceService
                 return $existing;
             }
 
-            $number = $this->reserveNumber((int) $lockedSale->company_id);
+            $documentSectorCode = (int) $lockedSale->document_sector_code;
+            $invoiceDocumentTypeCode = InvoiceDocumentSector::invoiceDocumentTypeCode($documentSectorCode);
+            $number = $this->reserveNumber((int) $lockedSale->company_id, $documentSectorCode);
             $offline = $decision === InvoiceIssuanceDecision::OfflineDigital;
             $emissionCode = $offline ? self::EMISSION_OFFLINE : self::EMISSION_ONLINE;
             $cuf = $this->cufGenerator->generate(
@@ -392,20 +464,20 @@ class InvoiceIssuanceService
                 (int) $lockedSale->pointOfSale->branch->branch_code,
                 $authorization->modality_code->value,
                 $emissionCode,
-                self::INVOICE_DOCUMENT_TYPE,
-                self::DOCUMENT_SECTOR,
+                $invoiceDocumentTypeCode,
+                $documentSectorCode,
                 $number,
                 (int) $lockedSale->pointOfSale->point_of_sale_code,
                 (string) $cufd->control_code,
             );
             $payload = $this->invoicePayload($lockedSale, $authorization, $cufd, $number, $cuf);
-            $xml = $this->xmlSigner->sign($this->xmlBuilder->build($payload), $lockedSale);
+            $xml = $this->xmlSigner->sign($this->xmlBuilder->build($payload, $documentSectorCode), $lockedSale);
 
             if ($xml === '') {
                 throw ValidationException::withMessages(['xml' => 'No se pudo generar el XML fiscal.']);
             }
 
-            $this->xmlValidator->validatePurchaseSale($xml);
+            $this->xmlValidator->validate($xml, $documentSectorCode);
 
             $gzip = gzencode($xml, 9);
 
@@ -429,8 +501,8 @@ class InvoiceIssuanceService
                 'environment_code' => $authorization->environment_code,
                 'modality_code' => $authorization->modality_code,
                 'emission_type_code' => $emissionCode,
-                'document_sector_code' => self::DOCUMENT_SECTOR,
-                'invoice_document_type_code' => self::INVOICE_DOCUMENT_TYPE,
+                'document_sector_code' => $documentSectorCode,
+                'invoice_document_type_code' => $invoiceDocumentTypeCode,
                 'emission_mode' => $offline ? InvoiceEmissionMode::OfflineDigital : InvoiceEmissionMode::Online,
                 'commercial_status' => InvoiceCommercialStatus::Confirmed,
                 'fiscal_status' => $offline ? InvoiceFiscalStatus::OfflineIssued : InvoiceFiscalStatus::PendingOnlineSend,
@@ -448,7 +520,7 @@ class InvoiceIssuanceService
                 'subtotal_amount' => $lockedSale->subtotal_amount,
                 'discount_amount' => $lockedSale->discount_amount,
                 'total_amount' => $lockedSale->total_amount,
-                'taxable_amount' => $lockedSale->total_amount,
+                'taxable_amount' => $lockedSale->total_amount_subject_to_vat,
                 'payload' => $payload,
                 'issued_at' => $lockedSale->issued_at,
             ]);
@@ -500,7 +572,7 @@ class InvoiceIssuanceService
                 'operation' => SiatOperation::ReceiveInvoice,
                 'attempt_number' => $existing ? $existing->attempt_number + 1 : 1,
                 'attempt_status' => SiatAttemptStatus::Sending,
-                'endpoint' => 'purchase-sale-invoice',
+                'endpoint' => InvoiceDocumentSector::wsdlKey((int) $locked->document_sector_code),
                 'request_hash' => $correctedArtifact['hash'] ?? $locked->hash_file,
                 'request_payload' => ['cuf' => $locked->cuf, 'hash' => $correctedArtifact['hash'] ?? $locked->hash_file, ...$correctedArtifact],
                 'started_at' => now(),
@@ -617,22 +689,22 @@ class InvoiceIssuanceService
         }, 3);
     }
 
-    private function reserveNumber(int $companyId): int
+    private function reserveNumber(int $companyId, int $documentSectorCode): int
     {
         $maximum = (int) SinInvoiceIssue::query()->withoutGlobalScope('company')
             ->where('company_id', $companyId)
-            ->where('document_sector_code', self::DOCUMENT_SECTOR)
+            ->where('document_sector_code', $documentSectorCode)
             ->max('attempted_invoice_number');
         DB::table('sin_invoice_sequences')->insertOrIgnore([
             'company_id' => $companyId,
-            'document_sector_code' => self::DOCUMENT_SECTOR,
+            'document_sector_code' => $documentSectorCode,
             'next_number' => $maximum + 1,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         $sequence = SinInvoiceSequence::query()->withoutGlobalScope('company')
             ->where('company_id', $companyId)
-            ->where('document_sector_code', self::DOCUMENT_SECTOR)
+            ->where('document_sector_code', $documentSectorCode)
             ->lockForUpdate()
             ->firstOrFail();
         $number = $sequence->next_number;
@@ -644,6 +716,8 @@ class InvoiceIssuanceService
     /** @return array{cabecera: array<string, mixed>, detalle: array<int, array<string, mixed>>} */
     private function invoicePayload(Sale $sale, SinAuthorization $authorization, SinCufd $cufd, int $number, string $cuf): array
     {
+        $documentSectorCode = (int) $sale->document_sector_code;
+
         return [
             'cabecera' => [
                 'nitEmisor' => $authorization->tax_id,
@@ -656,7 +730,7 @@ class InvoiceIssuanceService
                 'codigoSucursal' => $sale->pointOfSale->branch->branch_code,
                 'direccion' => $cufd->address ?: $sale->company->address ?: 'Sin direccion registrada',
                 'codigoPuntoVenta' => $sale->pointOfSale->point_of_sale_code,
-                'fechaEmision' => $sale->issued_at->format('Y-m-d\TH:i:s.v'),
+                'fechaEmision' => SiatDateTime::extended($sale->issued_at),
                 'nombreRazonSocial' => $sale->customer->name,
                 'codigoTipoDocumentoIdentidad' => $sale->customer->identity_document_type_code,
                 'numeroDocumento' => $sale->customer->document_number,
@@ -665,7 +739,9 @@ class InvoiceIssuanceService
                 'codigoMetodoPago' => $sale->payment_method_code,
                 'numeroTarjeta' => $sale->payment_method_code === 2 ? $sale->masked_card_number : null,
                 'montoTotal' => $this->amount($sale->total_amount),
-                'montoTotalSujetoIva' => $this->amount($sale->total_amount_subject_to_vat),
+                'montoTotalSujetoIva' => $documentSectorCode === InvoiceDocumentSector::ZERO_RATE
+                    ? '0'
+                    : $this->amount($sale->total_amount_subject_to_vat),
                 'codigoMoneda' => $sale->currency_code,
                 'tipoCambio' => $this->amount($sale->exchange_rate),
                 'montoTotalMoneda' => $this->amount($sale->total_amount_currency),
@@ -673,23 +749,30 @@ class InvoiceIssuanceService
                 'descuentoAdicional' => $this->amount($sale->discount_amount),
                 'codigoExcepcion' => null,
                 'cafc' => null,
-                'leyenda' => $this->legend((int) $sale->company_id),
+                'leyenda' => $this->legend((int) $sale->company_id, (string) $sale->economic_activity_code),
                 'usuario' => Str::limit($sale->user->name ?: $sale->user->email, 50, ''),
-                'codigoDocumentoSector' => self::DOCUMENT_SECTOR,
+                'codigoDocumentoSector' => $documentSectorCode,
             ],
-            'detalle' => $sale->items->map(fn ($item): array => [
-                'actividadEconomica' => $item->economic_activity_code,
-                'codigoProductoSin' => $item->siat_product_code,
-                'codigoProducto' => $item->internal_code,
-                'descripcion' => $item->description,
-                'cantidad' => $this->quantity($item->quantity),
-                'unidadMedida' => $item->measurement_unit_code,
-                'precioUnitario' => $this->amount($item->unit_price),
-                'montoDescuento' => $this->amount($item->discount_amount),
-                'subTotal' => $this->amount($item->subtotal_amount),
-                'numeroSerie' => null,
-                'numeroImei' => null,
-            ])->all(),
+            'detalle' => $sale->items->map(function ($item) use ($documentSectorCode): array {
+                $detail = [
+                    'actividadEconomica' => $item->economic_activity_code,
+                    'codigoProductoSin' => $item->siat_product_code,
+                    'codigoProducto' => $item->internal_code,
+                    'descripcion' => $item->description,
+                    'cantidad' => $this->quantity($item->quantity),
+                    'unidadMedida' => $item->measurement_unit_code,
+                    'precioUnitario' => $this->amount($item->unit_price),
+                    'montoDescuento' => $this->amount($item->discount_amount),
+                    'subTotal' => $this->amount($item->subtotal_amount),
+                ];
+
+                if ($documentSectorCode === InvoiceDocumentSector::PURCHASE_SALE) {
+                    $detail['numeroSerie'] = null;
+                    $detail['numeroImei'] = null;
+                }
+
+                return $detail;
+            })->all(),
         ];
     }
 
@@ -879,11 +962,12 @@ class InvoiceIssuanceService
         return new InvoiceIssuanceResult(InvoiceIssuanceDecision::Blocked, null, $message);
     }
 
-    private function legend(int $companyId): string
+    private function legend(int $companyId, string $economicActivityCode): string
     {
         return SinCatalogItem::query()->withoutGlobalScope('company')
             ->where('company_id', $companyId)
             ->where('catalog_key', 'leyendas_factura')
+            ->where('classifier_code', $economicActivityCode)
             ->active()
             ->inRandomOrder()
             ->value('description')

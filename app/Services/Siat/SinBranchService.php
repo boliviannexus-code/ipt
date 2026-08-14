@@ -57,18 +57,6 @@ class SinBranchService
         });
     }
 
-    public function createPointOfSale(SinBranch $branch, array $data): SinPointOfSale
-    {
-        return SinPointOfSale::query()->create([
-            'company_id' => $branch->company_id,
-            'sin_branch_id' => $branch->id,
-            'point_of_sale_code' => (int) $data['point_of_sale_code'],
-            'name' => trim((string) $data['name']),
-            'is_default' => false,
-            'is_active' => true,
-        ]);
-    }
-
     private function createDefaultPoint(SinBranch $branch): SinPointOfSale
     {
         return SinPointOfSale::query()->create([

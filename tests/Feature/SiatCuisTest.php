@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\SinApiToken;
 use App\Models\SinAuthorization;
 use App\Models\SinBranch;
+use App\Models\SinCufd;
 use App\Models\SinCuis;
 use App\Models\SinPointOfSale;
 use App\Models\User;
@@ -139,6 +140,101 @@ class SiatCuisTest extends TestCase
             'company_id' => $user->company_id,
             'wsdl_url' => SiatWsdlRegistry::CODES,
             'cuis_code' => 'CUIS-CODES-WSDL-123',
+        ]);
+    }
+
+    public function test_replacing_token_or_system_code_uses_the_new_values_and_retires_existing_codes(): void
+    {
+        $user = $this->companyUser([
+            'siat-cuis.view',
+            'siat-cuis.request',
+            'sin-api-tokens.manage',
+            'sin-authorizations.manage',
+        ]);
+        [$apiToken, $authorization, $pointOfSale] = $this->siatConfiguration($user);
+        $previousCuis = SinCuis::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'transaccion' => true,
+            'cuis_code' => 'CUIS-ANTERIOR',
+        ]);
+        $previousCufd = SinCufd::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_branch_id' => $pointOfSale->sin_branch_id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'sin_cuis_id' => $previousCuis->id,
+        ]);
+
+        $this->actingAs($user)->put(route('sin-api-token.update'), [
+            'api_token' => 'TOKEN-NUEVO-654321',
+            'wsdl_url' => SiatWsdlRegistry::CODES,
+            'starts_at' => now()->subDay()->toDateString(),
+            'ends_at' => now()->addYear()->toDateString(),
+        ])->assertRedirect(route('sin-api-token.index'));
+
+        $this->actingAs($user)->put(route('parameters.authorization.update'), [
+            'tax_id' => '123456789',
+            'legal_name' => 'Empresa Demo SRL',
+            'system_code' => 'SISTEMA-NUEVO-456',
+            'environment_code' => SiatEnvironment::TestingAndPilot->value,
+            'modality_code' => SiatModality::ComputerizedOnline->value,
+            'branch_code' => 0,
+            'point_of_sale_code' => 0,
+        ])->assertRedirect(route('parameters.authorization.index'));
+
+        $factory = new class extends SiatSoapClientFactory
+        {
+            public ?string $token = null;
+
+            public array $payload = [];
+
+            public function make(string $wsdlUrl, string $apiToken, int $timeoutSeconds = 5): object
+            {
+                $this->token = $apiToken;
+
+                return new class($this)
+                {
+                    public function __construct(private readonly object $factory) {}
+
+                    public function cuis(array $params): object
+                    {
+                        $this->factory->payload = $params;
+
+                        return (object) ['RespuestaCuis' => (object) [
+                            'codigo' => 'CUIS-NUEVO-123',
+                            'transaccion' => true,
+                        ]];
+                    }
+                };
+            }
+        };
+        $this->instance(SiatSoapClientFactory::class, $factory);
+
+        $this->actingAs($user)->post(route('siat.cuis.request'), [
+            'sin_point_of_sale_id' => $pointOfSale->id,
+        ])->assertRedirect(route('siat.cuis.index'));
+
+        $this->assertSame('TOKEN-NUEVO-654321', $factory->token);
+        $this->assertSame('SISTEMA-NUEVO-456', $factory->payload['SolicitudCuis']['codigoSistema']);
+        $this->assertDatabaseHas('sin_cuis', [
+            'id' => $previousCuis->id,
+            'invalidation_reason' => 'Reemplazado al actualizar el token API.',
+        ]);
+        $this->assertDatabaseHas('sin_cufds', [
+            'id' => $previousCufd->id,
+            'invalidation_reason' => 'Reemplazado al actualizar el token API.',
+        ]);
+        $this->assertDatabaseHas('sin_cuis', [
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'cuis_code' => 'CUIS-NUEVO-123',
+            'invalidated_at' => null,
         ]);
     }
 

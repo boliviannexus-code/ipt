@@ -55,14 +55,39 @@ final class ContingencyDashboardService
         $location = fn (Builder $query): Builder => $this->location($query, $company->id, $branch?->id, $point?->id);
         $latestCommunication = $location(SinCommunicationLog::query()->withoutGlobalScope('company'))
             ->with(['pointOfSale', 'branch'])->latest('checked_at')->first();
-        $activeCuis = $location(SinCuis::query()->withoutGlobalScope('company')->successful())
+        $activeCuis = $location(SinCuis::query()->withoutGlobalScope('company')->usable())
             ->latest('requested_at')->first();
-        $currentCufd = $location(SinCufd::query()->withoutGlobalScope('company')->successful())
+        $currentCufd = $location(SinCufd::query()->withoutGlobalScope('company')->usable())
             ->latest('requested_at')->first();
         $openEvent = $location(SinSignificantEvent::query()->withoutGlobalScope('company'))
             ->with(['creator', 'cufd', 'recoveryCufd'])
+            ->withExists(['invoiceIssues as has_eligible_offline_invoices' => fn (Builder $query) => $query
+                ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
+                ->whereIn('fiscal_status', [InvoiceFiscalStatus::OfflineIssued, InvoiceFiscalStatus::PendingPackage])
+                ->whereNotNull('xml_path')
+                ->whereNotNull('cuf')
+                ->whereDoesntHave('packageItem')])
             ->whereNull('closed_at')
             ->whereNotIn('event_status', [SignificantEventStatus::Completed, SignificantEventStatus::Expired])
+            ->orderByRaw(
+                'CASE WHEN EXISTS (
+                    SELECT 1 FROM sin_invoice_issues
+                    WHERE sin_invoice_issues.sin_significant_event_id = sin_significant_events.id
+                      AND sin_invoice_issues.emission_mode = ?
+                      AND sin_invoice_issues.fiscal_status IN (?, ?)
+                      AND sin_invoice_issues.xml_path IS NOT NULL
+                      AND sin_invoice_issues.cuf IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM sin_invoice_package_items
+                          WHERE sin_invoice_package_items.sin_invoice_issue_id = sin_invoice_issues.id
+                      )
+                ) THEN 0 ELSE 1 END',
+                [
+                    InvoiceEmissionMode::OfflineDigital->value,
+                    InvoiceFiscalStatus::OfflineIssued->value,
+                    InvoiceFiscalStatus::PendingPackage->value,
+                ],
+            )
             ->latest('started_at')->first();
 
         $invoiceBase = $location(SinInvoiceIssue::query()->withoutGlobalScope('company'));

@@ -22,7 +22,7 @@ class Sale extends Model implements Auditable
 
     protected $fillable = [
         'company_id', 'user_id', 'customer_id', 'sin_point_of_sale_id',
-        'issuance_key', 'sale_status', 'economic_activity_code',
+        'issuance_key', 'sale_status', 'document_sector_code', 'economic_activity_code',
         'payment_method_code', 'masked_card_number', 'currency_code', 'subtotal_amount',
         'discount_amount', 'additional_discount_type', 'additional_discount_percentage',
         'total_amount', 'exchange_rate', 'gift_card_amount', 'total_amount_currency',
@@ -34,6 +34,7 @@ class Sale extends Model implements Auditable
     {
         return [
             'sale_status' => SaleStatus::class,
+            'document_sector_code' => 'integer',
             'economic_activity_code' => 'integer',
             'payment_method_code' => 'integer',
             'currency_code' => 'integer',

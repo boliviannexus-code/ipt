@@ -2,7 +2,7 @@
 
 @section('title', 'Sucursales SIAT | '.config('app.name', 'Base Admin'))
 @section('page-title', 'Sucursales SIAT')
-@section('page-subtitle', 'Registro de casa matriz, sucursales y puntos de venta')
+@section('page-subtitle', 'Registro y consulta de puntos de venta mediante los servicios SOAP del SIN')
 
 @section('content')
     @can('siat-branches.manage')
@@ -77,8 +77,8 @@
                     <tr>
                         <th>Sucursal</th>
                         <th>Tipo</th>
-                        <th>Puntos de venta</th>
-                        <th>Agregar punto de venta</th>
+                        <th>Puntos de venta informados por SIAT</th>
+                        <th>Operaciones SIN</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -98,29 +98,46 @@
                             <td>
                                 <div class="d-flex flex-column gap-1">
                                     @foreach ($branch->pointsOfSale as $point)
-                                        <div>
+                                        <div class="border rounded px-2 py-1">
                                             <span class="badge {{ $point->is_default ? 'bg-success-lt' : 'bg-secondary-lt' }}">
                                                 PV {{ $point->point_of_sale_code }}
                                             </span>
                                             <span class="ms-1">{{ $point->name }}</span>
+                                            @if ($point->point_of_sale_type)
+                                                <div class="small text-body-secondary mt-1">{{ $point->point_of_sale_type }}</div>
+                                            @endif
                                         </div>
                                     @endforeach
                                 </div>
                             </td>
                             <td>
                                 @can('siat-branches.manage')
+                                    <form class="mb-2" method="POST" action="{{ route('siat.branches.points.synchronize', $branch) }}">
+                                        @csrf
+                                        <button class="btn btn-outline-secondary btn-sm w-100" type="submit">
+                                            <i class="ti ti-refresh me-1" aria-hidden="true"></i>Consultar en SIN
+                                        </button>
+                                    </form>
                                     <form method="POST" action="{{ route('siat.branches.points.store', $branch) }}">
                                         @csrf
                                         <div class="row g-2">
-                                            <div class="col-md-4">
-                                                <input class="form-control form-control-sm @error('point_of_sale_code') is-invalid @enderror" name="point_of_sale_code" type="number" min="0" step="1" placeholder="Numero" required>
+                                            <div class="col-12">
+                                                <select class="form-select form-select-sm @error('point_of_sale_type_code') is-invalid @enderror" name="point_of_sale_type_code" required>
+                                                    <option value="">Tipo de punto de venta</option>
+                                                    @foreach ($pointOfSaleTypes as $code => $label)
+                                                        <option value="{{ $code }}" @selected((string) old('point_of_sale_type_code') === (string) $code)>{{ $code }}. {{ $label }}</option>
+                                                    @endforeach
+                                                </select>
                                             </div>
-                                            <div class="col-md-5">
-                                                <input class="form-control form-control-sm @error('name') is-invalid @enderror" name="name" type="text" maxlength="255" placeholder="Nombre" required>
+                                            <div class="col-12">
+                                                <input class="form-control form-control-sm @error('name') is-invalid @enderror" name="name" type="text" maxlength="255" value="{{ old('name') }}" placeholder="Nombre asignado al punto" required>
                                             </div>
-                                            <div class="col-md-3">
-                                                <button class="btn btn-outline-primary btn-sm w-100" type="submit">
-                                                    <i class="ti ti-plus me-1" aria-hidden="true"></i>Agregar
+                                            <div class="col-12">
+                                                <input class="form-control form-control-sm @error('description') is-invalid @enderror" name="description" type="text" maxlength="255" value="{{ old('description') }}" placeholder="Descripción para el SIN" required>
+                                            </div>
+                                            <div class="col-12">
+                                                <button class="btn btn-primary btn-sm w-100" type="submit">
+                                                    <i class="ti ti-cloud-upload me-1" aria-hidden="true"></i>Registrar en SIN
                                                 </button>
                                             </div>
                                         </div>

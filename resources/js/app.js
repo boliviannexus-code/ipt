@@ -464,12 +464,13 @@ function initInvoiceIssueForms(scope = document) {
         const cardField = form.querySelector('[data-invoice-card-field]');
         const cardNumberInput = form.querySelector('[data-invoice-card-number]');
         const giftCardInput = form.querySelector('[data-invoice-gift-card]');
+        const documentSectorCode = Number.parseInt(form.querySelector('[name="document_sector_code"]')?.value ?? '1', 10);
         const productUnit = form.querySelector('[data-product-unit]');
         const subtotalTarget = form.querySelector('[data-invoice-subtotal]');
         const totalTarget = form.querySelector('[data-invoice-total]');
         const taxableTotalTarget = form.querySelector('[data-invoice-taxable-total]');
         const fiscalStatus = form.querySelector('[data-invoice-fiscal-status]');
-        const communicationOk = fiscalStatus?.dataset.communicationOk === '1';
+        let communicationOk = fiscalStatus?.dataset.communicationOk === '1';
         const cufdRequestUrl = fiscalStatus?.dataset.cufdRequestUrl;
         const refreshCufdOnSelection = fiscalStatus?.dataset.refreshCufdOnSelection === '1';
         const cuisStatus = form.querySelector('[data-cuis-status]');
@@ -480,11 +481,19 @@ function initInvoiceIssueForms(scope = document) {
         const items = [];
 
         const money = (amount) => `BO ${Number(amount || 0).toFixed(2)}`;
-        const currentLocalDateTime = () => {
-            const now = new Date();
-            const offset = now.getTimezoneOffset() * 60000;
+        const currentBoliviaDateTime = () => {
+            const parts = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'America/La_Paz',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hourCycle: 'h23',
+            }).formatToParts(new Date());
+            const value = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
 
-            return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+            return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}`;
         };
         const numberValue = (input, fallback = 0) => {
             const value = Number.parseFloat(input?.value ?? '');
@@ -593,8 +602,29 @@ function initInvoiceIssueForms(scope = document) {
                 });
                 const payload = await response.json();
 
-                if (!response.ok || payload.success === false) {
+                if (!response.ok || (payload.success === false && !payload.contingency_suggested)) {
                     throw new Error(payload.message ?? 'No se pudo solicitar CUFD.');
+                }
+
+                if (payload.contingency_suggested) {
+                    communicationOk = false;
+                    if (fiscalStatus) fiscalStatus.dataset.communicationOk = '0';
+                    option.dataset.cufdValid = payload.data?.cufd?.is_current ? '1' : '0';
+                    option.dataset.cufdLabel = 'CUFD';
+                    option.dataset.cufdDetail = option.dataset.cufdValid === '1'
+                        ? ''
+                        : 'No existe un CUFD vigente para emitir fuera de línea';
+                    if (communicationMessage) {
+                        communicationMessage.textContent = payload.message;
+                        communicationMessage.classList.remove('d-none', 'alert-warning');
+                        communicationMessage.classList.add('alert-danger');
+                    }
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Emisión fuera de línea',
+                        text: payload.message,
+                    });
+                    return;
                 }
 
                 option.dataset.cufdValid = payload.data?.cufd?.is_current ? '1' : '0';
@@ -641,8 +671,8 @@ function initInvoiceIssueForms(scope = document) {
                 submitLabel.textContent = communicationOk ? 'Emitir' : 'Emitir fuera de linea';
             }
 
-            if (communicationMessage && communicationOk) {
-                communicationMessage.classList.toggle('d-none', !recoveryBlocked);
+            if (communicationMessage) {
+                communicationMessage.classList.toggle('d-none', communicationOk && !recoveryBlocked);
             }
 
             if (communicationOk && hasPointOfSale && cuisOk && !cufdOk) {
@@ -796,7 +826,7 @@ function initInvoiceIssueForms(scope = document) {
             const total = Math.max(0, subtotal - totalDiscount);
             const usesGiftCard = selectedOption(paymentMethodSelect)?.dataset.isGiftCard === '1';
             const giftCard = usesGiftCard ? Math.min(numberValue(giftCardInput), total) : 0;
-            const taxableTotal = Math.max(0, total - giftCard);
+            const taxableTotal = documentSectorCode === 8 ? 0 : Math.max(0, total - giftCard);
 
             if (subtotalTarget) {
                 subtotalTarget.textContent = money(subtotal);
@@ -879,7 +909,7 @@ function initInvoiceIssueForms(scope = document) {
             });
 
             if (issuedAtInput) {
-                issuedAtInput.value = currentLocalDateTime();
+                issuedAtInput.value = currentBoliviaDateTime();
             }
 
             updateCustomer();
@@ -913,7 +943,7 @@ function initInvoiceIssueForms(scope = document) {
 
             try {
                 if (issuedAtInput) {
-                    issuedAtInput.value = currentLocalDateTime();
+                    issuedAtInput.value = currentBoliviaDateTime();
                 }
 
                 const body = new FormData(form);
@@ -1410,6 +1440,25 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('submit', (event) => {
+    const singleSubmitForm = event.target.closest('form[data-disable-on-submit]');
+
+    if (singleSubmitForm) {
+        if (singleSubmitForm.dataset.submitting === '1') {
+            event.preventDefault();
+
+            return;
+        }
+
+        singleSubmitForm.dataset.submitting = '1';
+        singleSubmitForm.setAttribute('aria-busy', 'true');
+        const submitButton = singleSubmitForm.querySelector('button[type="submit"]');
+
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.querySelector('span')?.replaceChildren(submitButton.dataset.submittingLabel ?? 'Procesando…');
+        }
+    }
+
     const ajaxForm = event.target.closest('[data-ajax-form]');
     const deleteForm = event.target.closest('[data-confirm-delete]');
     const actionForm = event.target.closest('[data-confirm-action]');

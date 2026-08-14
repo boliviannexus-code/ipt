@@ -2,6 +2,7 @@
 
 namespace App\Services\Siat;
 
+use App\Services\Billing\InvoiceDocumentSector;
 use DOMDocument;
 use DOMElement;
 
@@ -10,15 +11,15 @@ class PurchaseSaleInvoiceXmlBuilder
     /**
      * @param  array<string, mixed>  $invoice
      */
-    public function build(array $invoice): string
+    public function build(array $invoice, int $documentSectorCode = InvoiceDocumentSector::PURCHASE_SALE): string
     {
         $document = new DOMDocument('1.0', 'UTF-8');
         $document->formatOutput = false;
         $document->preserveWhiteSpace = false;
 
-        $root = $document->createElement('facturaComputarizadaCompraVenta');
+        $root = $document->createElement(InvoiceDocumentSector::rootElement($documentSectorCode));
         $root->setAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-        $root->setAttribute('xsi:noNamespaceSchemaLocation', 'facturaComputarizadaCompraVenta.xsd');
+        $root->setAttribute('xsi:noNamespaceSchemaLocation', InvoiceDocumentSector::schemaFilename($documentSectorCode));
         $document->appendChild($root);
 
         $cabecera = $document->createElement('cabecera');

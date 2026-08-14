@@ -8,6 +8,7 @@ use App\Enums\SiatAlertSeverity;
 use App\Enums\SiatAlertStatus;
 use App\Enums\SiatAlertType;
 use App\Enums\SiatScheduledProcess;
+use App\Enums\SignificantEventStatus;
 use App\Jobs\DispatchSiatAlertNotificationJob;
 use App\Jobs\RunSiatScheduledProcessJob;
 use App\Models\Company;
@@ -60,6 +61,32 @@ final class SiatMonitoringTest extends TestCase
         self::assertSame(SiatAlertStatus::Active, $alert->alert_status);
         self::assertNotNull($alert->active_key);
         Queue::assertPushed(DispatchSiatAlertNotificationJob::class, 1);
+    }
+
+    public function test_failed_event_under_manual_review_is_not_reported_as_pending_registration(): void
+    {
+        Queue::fake();
+        $company = Company::factory()->create();
+        $event = SinSignificantEvent::factory()->create([
+            'company_id' => $company->id,
+            'event_status' => SignificantEventStatus::Failed,
+            'manual_review_required' => true,
+            'message' => 'EL EVENTO SIGNIFICATIVO NO CORRESPONDE AL CUFD DEL EVENTO REGISTRADO',
+        ]);
+
+        app(SiatAlertMonitorService::class)->scanOperationalAlerts();
+
+        $alert = SinMonitoringAlert::query()->withoutGlobalScope('company')
+            ->where('sin_significant_event_id', $event->id)
+            ->active()
+            ->sole();
+        self::assertSame('Evento rechazado — revisión manual requerida', $alert->title);
+        self::assertStringContainsString('no admite reintento automático', $alert->message);
+        self::assertDatabaseMissing('sin_monitoring_alerts', [
+            'sin_significant_event_id' => $event->id,
+            'title' => 'Evento pendiente de registro',
+            'alert_status' => SiatAlertStatus::Active->value,
+        ]);
     }
 
     public function test_internal_notification_channel_is_idempotent_when_job_runs_twice(): void

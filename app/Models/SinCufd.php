@@ -43,6 +43,8 @@ class SinCufd extends Model implements Auditable
         'response',
         'duration_ms',
         'requested_at',
+        'invalidated_at',
+        'invalidation_reason',
     ];
 
     protected function casts(): array
@@ -57,6 +59,7 @@ class SinCufd extends Model implements Auditable
             'response' => 'array',
             'duration_ms' => 'integer',
             'requested_at' => 'immutable_datetime',
+            'invalidated_at' => 'immutable_datetime',
         ];
     }
 
@@ -97,11 +100,20 @@ class SinCufd extends Model implements Auditable
 
     public function scopeCurrent(Builder $query): Builder
     {
-        return $query->successful()->where('expires_at', '>', now());
+        return $query->usable()->where('expires_at', '>', now());
+    }
+
+    public function scopeUsable(Builder $query): Builder
+    {
+        return $query->successful()->whereNull('invalidated_at');
     }
 
     public function getStatusLabelAttribute(): string
     {
+        if ($this->invalidated_at !== null) {
+            return 'Reemplazado';
+        }
+
         if (! $this->transaccion) {
             return 'Observado';
         }
@@ -111,6 +123,10 @@ class SinCufd extends Model implements Auditable
 
     public function getStatusBadgeAttribute(): string
     {
+        if ($this->invalidated_at !== null) {
+            return 'bg-secondary-lt';
+        }
+
         return match ($this->status_label) {
             'Vigente' => 'bg-success-lt',
             'Observado' => 'bg-yellow-lt',

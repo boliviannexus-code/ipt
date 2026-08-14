@@ -11,7 +11,6 @@ use App\Services\Billing\Contracts\InvoiceCancellationSiatClient;
 use App\Services\Siat\SiatErrorClassifier;
 use App\Services\Siat\SiatLogSanitizer;
 use App\Services\Siat\SiatSoapClientFactory;
-use App\Services\Siat\SiatWsdlRegistry;
 use Throwable;
 
 final readonly class SoapInvoiceCancellationSiatClient implements InvoiceCancellationSiatClient
@@ -20,6 +19,7 @@ final readonly class SoapInvoiceCancellationSiatClient implements InvoiceCancell
         private SiatSoapClientFactory $clients,
         private SiatErrorClassifier $classifier,
         private SiatLogSanitizer $sanitizer,
+        private ?InvoiceWsdlResolver $wsdls = null,
     ) {}
 
     public function cancel(SinInvoiceIssue $invoice, SinCufd $currentCufd, int $reasonCode): InvoiceSiatResponse
@@ -32,7 +32,11 @@ final readonly class SoapInvoiceCancellationSiatClient implements InvoiceCancell
         }
 
         try {
-            $client = $this->clients->make(SiatWsdlRegistry::PURCHASE_SALE_INVOICE, (string) $token->api_token, 30);
+            $client = $this->clients->make(
+                ($this->wsdls ?? new InvoiceWsdlResolver)->resolve((int) $invoice->document_sector_code, (int) $invoice->company_id),
+                (string) $token->api_token,
+                30,
+            );
             $startedAt = microtime(true);
             $response = $client->anulacionFactura([
                 'SolicitudServicioAnulacionFactura' => [

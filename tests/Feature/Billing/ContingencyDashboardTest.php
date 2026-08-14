@@ -18,6 +18,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\SinBranch;
 use App\Models\SinCafcRange;
+use App\Models\SinCatalogItem;
 use App\Models\SinCommunicationLog;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinInvoicePackage;
@@ -28,11 +29,13 @@ use App\Models\SinSignificantEvent;
 use App\Models\User;
 use App\Services\Siat\SiatCommunicationService;
 use App\Services\Siat\SiatHealthCheckResult;
+use App\Services\Siat\SignificantEventService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Mockery\MockInterface;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -112,7 +115,11 @@ final class ContingencyDashboardTest extends TestCase
             ->assertSee('Pagada')
             ->assertSee('Emitida fuera de línea')
             ->assertSee('Manuales por transcribir')
-            ->assertSee('Rangos CAFC disponibles');
+            ->assertSee('Rangos CAFC disponibles')
+            ->assertSee(
+                'data-start="'.\App\Services\Siat\SiatDateTime::localIso($this->event->started_at).'"',
+                escape: false,
+            );
     }
 
     public function test_open_event_exposes_manual_significant_event_registration_action(): void
@@ -140,6 +147,107 @@ final class ContingencyDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('Registrar evento significativo')
             ->assertSee(route('billing.contingencies.events.register', $this->event));
+    }
+
+    public function test_registering_an_event_marked_for_manual_review_returns_warning_instead_of_409(): void
+    {
+        $this->grant($this->user, 'contingencies.events.retry');
+        SinCatalogItem::factory()->create([
+            'company_id' => $this->company->id,
+            'catalog_key' => 'eventos_significativos',
+            'classifier_code' => '1',
+            'is_active' => true,
+        ]);
+        $this->event->forceFill([
+            'event_status' => SignificantEventStatus::Failed,
+            'manual_review_required' => true,
+            'message' => 'EL EVENTO SIGNIFICATIVO NO CORRESPONDE AL CUFD DEL EVENTO REGISTRADO',
+        ])->save();
+
+        $this->actingAs($this->user)
+            ->post(route('billing.contingencies.events.register', $this->event), [
+                'event_code' => 1,
+                'description' => 'Interrupción de comunicación con el SIN.',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('warning', fn (string $message): bool => str_contains($message, 'requiere revisión manual'));
+    }
+
+    public function test_dashboard_prioritizes_registered_event_over_a_newer_failed_event_for_package_processing(): void
+    {
+        $this->event->forceFill([
+            'event_status' => SignificantEventStatus::Registered,
+            'transaccion' => true,
+            'reception_code' => 'EVENTO-REGISTRADO-123',
+            'status_label' => 'Registrado en el SIN',
+            'message' => 'Evento significativo registrado en el SIN.',
+        ])->save();
+        SinSignificantEvent::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+            'event_status' => SignificantEventStatus::Failed,
+            'transaccion' => false,
+            'started_at' => now()->addMinute(),
+            'event_description' => 'Intento fallido más reciente',
+        ]);
+        $this->grant($this->user, 'contingencies.view', 'contingencies.events.retry', 'contingencies.packages.build');
+
+        $this->actingAs($this->user)->get($this->dashboardUrl())
+            ->assertOk()
+            ->assertSee('Evento confirmado por SIAT')
+            ->assertSee('Generar paquetes')
+            ->assertDontSee('Registrar evento significativo');
+    }
+
+    public function test_dashboard_prioritizes_the_event_with_the_offline_invoice_over_a_registered_empty_event(): void
+    {
+        SinSignificantEvent::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+            'event_status' => SignificantEventStatus::Registered,
+            'transaccion' => true,
+            'reception_code' => 'EVENTO-SIN-FACTURAS',
+            'started_at' => now()->addMinute(),
+            'event_description' => 'Evento registrado sin facturas pendientes',
+        ]);
+        $this->grant(
+            $this->user,
+            'contingencies.view',
+            'contingencies.events.retry',
+            'contingencies.packages.build',
+        );
+
+        $this->actingAs($this->user)->get($this->dashboardUrl())
+            ->assertOk()
+            ->assertSee('Corte de Internet monitoreado')
+            ->assertSee('Registrar evento significativo')
+            ->assertDontSee('Generar paquetes');
+    }
+
+    public function test_independent_registration_is_blocked_when_the_point_of_sale_has_an_offline_event_pending(): void
+    {
+        $eventsBefore = SinSignificantEvent::query()->count();
+
+        try {
+            app(SignificantEventService::class)->registerForPointOfSale($this->user, $this->point, [
+                'event_code' => 1,
+                'description' => 'No debe crear un evento duplicado.',
+                'started_at' => now()->subMinutes(10)->toDateTimeString(),
+                'ended_at' => now()->subMinute()->toDateTimeString(),
+            ]);
+            self::fail('Se esperaba bloquear el evento independiente duplicado.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString(
+                "evento #{$this->event->id}",
+                mb_strtolower($exception->errors()['sin_point_of_sale_id'][0]),
+            );
+        }
+
+        self::assertSame($eventsBefore, SinSignificantEvent::query()->count());
     }
 
     public function test_dashboard_displays_company_wide_alerts_with_a_location_selected(): void
@@ -219,7 +327,11 @@ final class ContingencyDashboardTest extends TestCase
 
         $this->event->forceFill(['event_status' => SignificantEventStatus::PendingRegistration])->save();
         $this->actingAs($this->user)->post(route('billing.contingencies.events.retry', $this->event))->assertRedirect();
-        $this->event->forceFill(['event_status' => SignificantEventStatus::Registered])->save();
+        $this->event->forceFill([
+            'event_status' => SignificantEventStatus::Registered,
+            'transaccion' => true,
+            'reception_code' => 'EVENTO-REGISTRADO-ACCIONES',
+        ])->save();
         $this->actingAs($this->user)->post(route('billing.contingencies.packages.build', $this->event))->assertRedirect();
         $this->actingAs($this->user)->post(route('billing.contingencies.packages.send', $this->package))->assertRedirect();
         $this->package->forceFill(['package_status' => InvoicePackageStatus::PendingValidation])->save();
@@ -244,6 +356,28 @@ final class ContingencyDashboardTest extends TestCase
             ->post(route('billing.contingencies.packages.build', $this->event))
             ->assertRedirect()
             ->assertSessionHas('warning', fn (string $message): bool => str_contains($message, 'ya fue procesado'));
+
+        Queue::assertNotPushed(BuildContingencyPackagesJob::class);
+    }
+
+    public function test_registered_event_without_eligible_offline_invoices_cannot_enqueue_package_generation(): void
+    {
+        Queue::fake();
+        $this->grant($this->user, 'contingencies.packages.build');
+        $this->event->forceFill([
+            'event_status' => SignificantEventStatus::Registered,
+            'transaccion' => true,
+            'reception_code' => 'EVENTO-REGISTRADO-SIN-PENDIENTES',
+        ])->save();
+        $this->offlineInvoice->forceFill([
+            'emission_mode' => InvoiceEmissionMode::Online,
+            'fiscal_status' => InvoiceFiscalStatus::Validated,
+        ])->save();
+
+        $this->actingAs($this->user)
+            ->post(route('billing.contingencies.packages.build', $this->event))
+            ->assertRedirect()
+            ->assertSessionHas('warning', fn (string $message): bool => str_contains($message, 'no tiene facturas fuera de línea pendientes'));
 
         Queue::assertNotPushed(BuildContingencyPackagesJob::class);
     }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Billing;
 
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Support\CompanyContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -20,6 +21,7 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
 
         $this->merge([
             'issued_at' => now()->format('Y-m-d H:i:s'),
+            'document_sector_code' => (int) ($this->input('document_sector_code') ?: InvoiceDocumentSector::PURCHASE_SALE),
             'card_number' => preg_replace('/\D+/', '', (string) $this->input('card_number')) ?: null,
         ]);
     }
@@ -37,6 +39,10 @@ class IssuePurchaseSaleInvoiceRequest extends FormRequest
         $companyId = CompanyContext::id($this->user());
 
         return [
+            'document_sector_code' => ['required', 'integer', Rule::in([
+                InvoiceDocumentSector::PURCHASE_SALE,
+                InvoiceDocumentSector::ZERO_RATE,
+            ])],
             'sin_point_of_sale_id' => [
                 'required',
                 'integer',

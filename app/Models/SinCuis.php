@@ -39,6 +39,8 @@ class SinCuis extends Model implements Auditable
         'response',
         'duration_ms',
         'requested_at',
+        'invalidated_at',
+        'invalidation_reason',
     ];
 
     protected function casts(): array
@@ -52,6 +54,7 @@ class SinCuis extends Model implements Auditable
             'response' => 'array',
             'duration_ms' => 'integer',
             'requested_at' => 'immutable_datetime',
+            'invalidated_at' => 'immutable_datetime',
         ];
     }
 
@@ -85,13 +88,26 @@ class SinCuis extends Model implements Auditable
         return $query->where('transaccion', true)->whereNotNull('cuis_code');
     }
 
+    public function scopeUsable(Builder $query): Builder
+    {
+        return $query->successful()->whereNull('invalidated_at');
+    }
+
     public function getStatusLabelAttribute(): string
     {
+        if ($this->invalidated_at !== null) {
+            return 'Reemplazado';
+        }
+
         return $this->transaccion ? 'Generado' : 'Observado';
     }
 
     public function getStatusBadgeAttribute(): string
     {
+        if ($this->invalidated_at !== null) {
+            return 'bg-secondary-lt';
+        }
+
         return $this->transaccion ? 'bg-success-lt' : 'bg-yellow-lt';
     }
 

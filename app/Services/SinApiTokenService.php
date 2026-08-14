@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\SinApiToken;
 use App\Models\User;
+use App\Services\Siat\SiatCredentialChangeService;
 use App\Support\CompanyContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
@@ -12,6 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class SinApiTokenService
 {
+    public function __construct(
+        private readonly SiatCredentialChangeService $credentialChanges,
+    ) {}
+
     public function current(): ?SinApiToken
     {
         return SinApiToken::query()->first();
@@ -57,7 +62,15 @@ class SinApiTokenService
 
             if ($apiToken) {
                 $apiToken->fill(Arr::except($data, ['company_id']));
+                $tokenChanged = $apiToken->isDirty('api_token');
                 $apiToken->save();
+
+                if ($tokenChanged) {
+                    $this->credentialChanges->invalidateCodes(
+                        $companyId,
+                        'Reemplazado al actualizar el token API.',
+                    );
+                }
 
                 return $apiToken->refresh();
             }
