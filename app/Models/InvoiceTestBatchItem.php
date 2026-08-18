@@ -15,8 +15,10 @@ final class InvoiceTestBatchItem extends Model
 
     protected $fillable = [
         'company_id', 'invoice_test_batch_id', 'sale_id', 'sin_invoice_issue_id',
-        'issuance_key', 'position', 'item_status', 'message', 'started_at', 'finished_at',
+        'sin_significant_event_id', 'sin_invoice_package_id',
+        'issuance_key', 'position', 'stage', 'item_status', 'message', 'started_at', 'finished_at',
         'cancellation_status', 'cancellation_message', 'cancellation_started_at', 'cancellation_finished_at',
+        'reversal_status', 'reversal_message', 'reversal_started_at', 'reversal_finished_at',
     ];
 
     protected function casts(): array
@@ -29,6 +31,9 @@ final class InvoiceTestBatchItem extends Model
             'cancellation_status' => InvoiceTestItemStatus::class,
             'cancellation_started_at' => 'immutable_datetime',
             'cancellation_finished_at' => 'immutable_datetime',
+            'reversal_status' => InvoiceTestItemStatus::class,
+            'reversal_started_at' => 'immutable_datetime',
+            'reversal_finished_at' => 'immutable_datetime',
         ];
     }
 
@@ -45,5 +50,15 @@ final class InvoiceTestBatchItem extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(SinInvoiceIssue::class, 'sin_invoice_issue_id');
+    }
+
+    public function significantEvent(): BelongsTo
+    {
+        return $this->belongsTo(SinSignificantEvent::class, 'sin_significant_event_id');
+    }
+
+    public function invoicePackage(): BelongsTo
+    {
+        return $this->belongsTo(SinInvoicePackage::class, 'sin_invoice_package_id');
     }
 }

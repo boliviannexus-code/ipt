@@ -28,6 +28,7 @@ use App\Models\SinPointOfSale;
 use App\Models\SinSignificantEvent;
 use App\Models\User;
 use App\Services\Siat\SiatCommunicationService;
+use App\Services\Siat\SiatDateTime;
 use App\Services\Siat\SiatHealthCheckResult;
 use App\Services\Siat\SignificantEventService;
 use Database\Seeders\RolePermissionSeeder;
@@ -117,7 +118,7 @@ final class ContingencyDashboardTest extends TestCase
             ->assertSee('Manuales por transcribir')
             ->assertSee('Rangos CAFC disponibles')
             ->assertSee(
-                'data-start="'.\App\Services\Siat\SiatDateTime::localIso($this->event->started_at).'"',
+                'data-start="'.SiatDateTime::localIso($this->event->started_at).'"',
                 escape: false,
             );
     }
@@ -171,6 +172,57 @@ final class ContingencyDashboardTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHas('warning', fn (string $message): bool => str_contains($message, 'requiere revisión manual'));
+    }
+
+    public function test_authorized_user_can_regularize_a_zero_duration_event_and_requeue_it(): void
+    {
+        Queue::fake();
+        $this->grant($this->user, 'contingencies.events.view', 'contingencies.events.retry');
+        $startedAt = $this->event->started_at;
+        $this->event->forceFill([
+            'event_status' => SignificantEventStatus::Failed,
+            'ended_at' => $startedAt,
+            'recovery_detected_at' => $startedAt,
+            'manual_review_required' => true,
+            'message' => 'RANGO DE FECHAS DE EVENTO SIGNIFICATIVO INVALIDO',
+        ])->save();
+
+        $this->actingAs($this->user)
+            ->get(route('billing.contingencies.events.show', $this->event))
+            ->assertOk()
+            ->assertSee('Regularización administrativa')
+            ->assertSee(route('billing.contingencies.events.regularize', $this->event));
+
+        $this->actingAs($this->user)
+            ->post(route('billing.contingencies.events.regularize', $this->event), [
+                'reason' => 'Corrección autorizada del intervalo fiscal inválido.',
+                'confirmation' => '1',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $event = $this->event->refresh();
+        self::assertSame(SignificantEventStatus::PendingRegistration, $event->event_status);
+        self::assertTrue($event->ended_at?->equalTo($startedAt->addSecond()));
+        self::assertFalse($event->manual_review_required);
+        self::assertNull($event->recovery_sin_cufd_id);
+        self::assertSame($this->user->id, $event->administratively_corrected_by_user_id);
+        Queue::assertPushed(RegisterSignificantEventJob::class, fn (RegisterSignificantEventJob $job): bool => $job->significantEventId === $event->id);
+    }
+
+    public function test_regularization_requires_explicit_confirmation(): void
+    {
+        Queue::fake();
+        $this->grant($this->user, 'contingencies.events.retry');
+        $this->event->forceFill(['event_status' => SignificantEventStatus::Failed])->save();
+
+        $this->actingAs($this->user)
+            ->post(route('billing.contingencies.events.regularize', $this->event), [
+                'reason' => 'Corrección autorizada del evento fiscal.',
+            ])
+            ->assertSessionHasErrors('confirmation');
+
+        Queue::assertNothingPushed();
     }
 
     public function test_dashboard_prioritizes_registered_event_over_a_newer_failed_event_for_package_processing(): void

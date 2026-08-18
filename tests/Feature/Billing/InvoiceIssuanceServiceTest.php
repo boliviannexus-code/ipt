@@ -36,6 +36,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mockery\MockInterface;
+use Spatie\Permission\Models\Permission;
 use Tests\Fakes\SequenceInvoiceSiatClient;
 use Tests\TestCase;
 
@@ -115,6 +116,27 @@ final class InvoiceIssuanceServiceTest extends TestCase
         self::assertStringContainsString('<leyenda>Leyenda correspondiente a venta de libros.</leyenda>', $xml);
         self::assertStringNotContainsString('numeroSerie', $xml);
         self::assertStringNotContainsString('numeroImei', $xml);
+    }
+
+    public function test_pilot_laboratory_can_force_offline_invoice_without_checking_communication(): void
+    {
+        $context = $this->context();
+        Permission::findOrCreate('invoice-tests.run');
+        $context['user']->givePermissionTo('invoice-tests.run');
+        $this->mock(SiatCommunicationService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('verify');
+        });
+
+        $result = app(InvoiceIssuanceService::class)->issueOfflineTest($context['sale']);
+
+        self::assertSame(InvoiceIssuanceDecision::OfflineDigital, $result->decision);
+        self::assertSame(InvoiceFiscalStatus::OfflineIssued, $result->invoice?->fiscal_status);
+        self::assertNotNull($result->invoice?->sin_significant_event_id);
+        $this->assertDatabaseHas('sin_fiscal_status_history', [
+            'sin_invoice_issue_id' => $result->invoice?->id,
+            'reason_code' => 'TEST_FORCED_CONTINGENCY',
+        ]);
+        Queue::assertNotPushed(SynchronizeOfflineInvoiceJob::class);
     }
 
     public function test_observed_invoice_preserves_number_cuf_and_messages(): void

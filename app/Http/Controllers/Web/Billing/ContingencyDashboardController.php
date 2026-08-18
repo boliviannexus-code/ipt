@@ -11,6 +11,7 @@ use App\Enums\SignificantEventStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\MonitorContingenciesRequest;
 use App\Http\Requests\Billing\RegisterOpenSignificantEventRequest;
+use App\Http\Requests\Billing\RegularizeSignificantEventRequest;
 use App\Jobs\BuildContingencyPackagesJob;
 use App\Jobs\CheckPackageValidationJob;
 use App\Jobs\RegisterSignificantEventJob;
@@ -110,6 +111,39 @@ final class ContingencyDashboardController extends Controller
         RegisterSignificantEventJob::dispatch((int) $event->company_id, (int) $event->id, $actorId);
 
         return back()->with('success', 'Registro del evento significativo encolado.');
+    }
+
+    public function regularizeEvent(
+        RegularizeSignificantEventRequest $request,
+        SinSignificantEvent $event,
+    ): RedirectResponse {
+        $this->owned($request, (int) $event->company_id);
+
+        try {
+            $regularized = $this->recovery->regularizeForRetry(
+                $event,
+                $request->user(),
+                (string) $request->validated('reason'),
+            );
+            RegisterSignificantEventJob::dispatch(
+                (int) $regularized->company_id,
+                (int) $regularized->id,
+                (int) $request->user()->id,
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->with(
+                'error',
+                $this->sanitizer->text($exception->getMessage())
+                    ?: 'No se pudo preparar el evento para su regularización.',
+            );
+        }
+
+        return back()->with(
+            'success',
+            "Evento #{$regularized->id} corregido administrativamente y encolado para registro ante el SIAT.",
+        );
     }
 
     public function registerEvent(RegisterOpenSignificantEventRequest $request, SinSignificantEvent $event): RedirectResponse

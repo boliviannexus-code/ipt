@@ -45,6 +45,42 @@
         @endif
     </div>
     <div class="col-12">
+        @php
+            $canRegularize = ! $event->transaccion
+                && in_array($event->event_status, [
+                    \App\Enums\SignificantEventStatus::RecoveryDetected,
+                    \App\Enums\SignificantEventStatus::PendingRegistration,
+                    \App\Enums\SignificantEventStatus::Failed,
+                ], true)
+                && ($event->manual_review_required || ! $event->ended_at || $event->ended_at->lessThanOrEqualTo($event->started_at));
+        @endphp
+        @can('contingencies.events.retry')
+            @if($canRegularize)
+                <div class="card border-warning mb-3">
+                    <div class="card-body">
+                        <h4 class="card-title mb-2"><i class="ti ti-tool me-1" aria-hidden="true"></i>Regularización administrativa</h4>
+                        <p class="text-secondary mb-3">Corrige un intervalo de duración cero, descarta el CUFD de recuperación rechazado y vuelve a registrar este mismo evento. La factura original no se duplica y el cambio queda auditado.</p>
+                        <form method="POST" action="{{ route('billing.contingencies.events.regularize', $event) }}"
+                              data-confirm-title="¿Regularizar y reenviar el evento?"
+                              data-confirm-text="Se corregirá el intervalo fiscal, se solicitará un nuevo CUFD de recuperación y se reenviará el evento al SIAT."
+                              data-confirm-button="Sí, regularizar y reenviar">
+                            @csrf
+                            <div class="mb-3">
+                                <label class="form-label" for="regularization-reason-{{ $event->id }}">Motivo de la regularización</label>
+                                <textarea class="form-control" id="regularization-reason-{{ $event->id }}" name="reason" rows="2" minlength="10" maxlength="500" required>Corrección del intervalo inválido y renovación del CUFD de recuperación.</textarea>
+                            </div>
+                            <label class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="confirmation" value="1" required>
+                                <span class="form-check-label">Revisé el resultado anterior y autorizo un nuevo intento de registro.</span>
+                            </label>
+                            <button class="btn btn-warning" type="submit">
+                                <i class="ti ti-refresh-alert me-1" aria-hidden="true"></i>Corregir y reintentar
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            @endif
+        @endcan
         <div class="alert alert-info" role="status">
             <strong>Flujo de regularización:</strong>
             el evento debe obtener un código de recepción de SIAT antes de generar los paquetes. Después, los paquetes se envían y consultan hasta obtener el resultado final de cada factura.

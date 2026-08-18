@@ -87,6 +87,27 @@ final class ContingencyRecoveryServiceTest extends TestCase
         Queue::assertPushed(BuildContingencyPackagesJob::class, fn ($job): bool => $job->significantEventId === $context['event']->id);
     }
 
+    public function test_recovery_detected_in_the_starting_second_uses_a_minimum_one_second_duration(): void
+    {
+        $context = $this->context();
+        $this->travelTo($context['event']->started_at);
+        $this->availableHealthCheck();
+
+        $detected = app(ContingencyRecoveryService::class)
+            ->detectRecovery($context['event'], $context['user']);
+
+        self::assertTrue($detected->recoveryDetected);
+        self::assertTrue(
+            $detected->event->ended_at?->equalTo($context['event']->started_at->addSecond()),
+        );
+        self::assertTrue(
+            $detected->event->recovery_detected_at?->equalTo($context['event']->started_at->addSecond()),
+        );
+        self::assertSame(1.0, $detected->event->started_at->diffInSeconds($detected->event->ended_at));
+
+        $this->travelBack();
+    }
+
     public function test_operator_selects_official_event_before_recovery_registration(): void
     {
         $context = $this->context();

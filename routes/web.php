@@ -84,6 +84,8 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->middleware('permission:contingencies.communication.check')->name('communication.check');
             Route::post('eventos/{event}/reintentar-registro', [ContingencyDashboardController::class, 'retryEvent'])
                 ->whereNumber('event')->middleware('permission:contingencies.events.retry')->name('events.retry');
+            Route::post('eventos/{event}/regularizar', [ContingencyDashboardController::class, 'regularizeEvent'])
+                ->whereNumber('event')->middleware('permission:contingencies.events.retry')->name('events.regularize');
             Route::post('eventos/{event}/registrar', [ContingencyDashboardController::class, 'registerEvent'])
                 ->whereNumber('event')->middleware('permission:contingencies.events.retry')->name('events.register');
             Route::post('eventos/{event}/generar-paquetes', [ContingencyDashboardController::class, 'buildPackages'])
@@ -158,6 +160,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::post('pruebas/{batch}/anular', [InvoiceTestBatchController::class, 'cancel'])
                 ->whereNumber('batch')->middleware('permission:invoice-tests.run')
                 ->name('invoice-tests.cancel');
+            Route::post('pruebas/{batch}/revertir-anulaciones', [InvoiceTestBatchController::class, 'reverse'])
+                ->whereNumber('batch')->middleware('permission:invoice-tests.run')
+                ->name('invoice-tests.reverse');
             Route::post('emitir/cufd/request', [InvoiceIssueController::class, 'requestCufd'])
                 ->middleware('permission:invoices.issue')
                 ->name('invoices.issue.cufd.request');

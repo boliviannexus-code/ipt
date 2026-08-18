@@ -8,12 +8,14 @@ use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoiceTestBatchStatus;
 use App\Enums\InvoiceTestItemStatus;
+use App\Enums\InvoiceTestMode;
 use App\Enums\SiatEnvironment;
 use App\Enums\SignificantEventStatus;
 use App\Models\InvoiceTestBatch;
 use App\Models\InvoiceTestBatchItem;
 use App\Models\Product;
 use App\Models\SinAuthorization;
+use App\Models\SinCatalogItem;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinSignificantEvent;
 use App\Models\User;
@@ -24,6 +26,10 @@ use Illuminate\Validation\ValidationException;
 
 final class InvoiceTestBatchService
 {
+    public function __construct(
+        private readonly InvoiceCancellationReversalService $reversals,
+    ) {}
+
     /** @return Collection<int, InvoiceTestBatchItem> */
     public function prepareCancellation(InvoiceTestBatch $batch, int $reasonCode): Collection
     {
@@ -37,7 +43,10 @@ final class InvoiceTestBatchService
 
             $items = $locked->items()->withoutGlobalScope('company')
                 ->where('item_status', InvoiceTestItemStatus::Succeeded)
-                ->whereHas('invoice', fn ($query) => $query->where('fiscal_status', InvoiceFiscalStatus::Validated))
+                ->whereHas('invoice', fn ($query) => $query->whereIn('fiscal_status', [
+                    InvoiceFiscalStatus::Validated,
+                    InvoiceFiscalStatus::ValidatedAfterContingency,
+                ]))
                 ->get();
             if ($items->isEmpty()) {
                 throw ValidationException::withMessages(['cancellation' => 'El lote no tiene facturas validadas pendientes de anulación.']);
@@ -49,6 +58,55 @@ final class InvoiceTestBatchService
                 'cancellation_failed_count' => 0, 'cancellation_started_at' => null, 'cancellation_finished_at' => null]);
             $items->each->update(['cancellation_status' => InvoiceTestItemStatus::Pending,
                 'cancellation_message' => null, 'cancellation_started_at' => null, 'cancellation_finished_at' => null]);
+
+            return $items;
+        }, 3);
+    }
+
+    /** @return Collection<int, InvoiceTestBatchItem> */
+    public function prepareReversal(InvoiceTestBatch $batch): Collection
+    {
+        $this->assertPilotEnvironment((int) $batch->company_id);
+
+        return DB::transaction(function () use ($batch): Collection {
+            $locked = InvoiceTestBatch::query()->withoutGlobalScope('company')->lockForUpdate()->findOrFail($batch->id);
+            if ($locked->reversal_status?->isActive()) {
+                throw ValidationException::withMessages(['reversal' => 'La reversión de este lote ya está en ejecución.']);
+            }
+
+            $items = $locked->items()->withoutGlobalScope('company')
+                ->with('invoice.customer')
+                ->where('cancellation_status', InvoiceTestItemStatus::Succeeded)
+                ->whereHas('invoice', fn ($query) => $query
+                    ->where('fiscal_status', InvoiceFiscalStatus::CancelledInSiat)
+                    ->where('cancellation_status_code', 905)
+                    ->whereNull('reversed_at')
+                    ->whereHas('customer', fn ($customer) => $customer->whereNotNull('email')->where('email', '!=', '')))
+                ->get()
+                ->filter(fn (InvoiceTestBatchItem $item): bool => now()->lte($this->reversals->deadline($item->invoice)))
+                ->values();
+
+            if ($items->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'reversal' => 'El lote no tiene facturas anuladas que cumplan las condiciones para reversión.',
+                ]);
+            }
+
+            $locked->update([
+                'reversal_status' => InvoiceTestBatchStatus::Pending,
+                'reversal_requested_count' => $items->count(),
+                'reversal_processed_count' => 0,
+                'reversal_successful_count' => 0,
+                'reversal_failed_count' => 0,
+                'reversal_started_at' => null,
+                'reversal_finished_at' => null,
+            ]);
+            $items->each->update([
+                'reversal_status' => InvoiceTestItemStatus::Pending,
+                'reversal_message' => null,
+                'reversal_started_at' => null,
+                'reversal_finished_at' => null,
+            ]);
 
             return $items;
         }, 3);
@@ -77,12 +135,47 @@ final class InvoiceTestBatchService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $data, $companyId, $product): InvoiceTestBatch {
+        $mode = InvoiceTestMode::from((string) ($data['test_mode'] ?? InvoiceTestMode::Online->value));
+        $count = (int) $data['invoice_count'];
+        $invoicesPerCycle = $mode === InvoiceTestMode::OfflineContingency ? (int) ($data['invoices_per_cycle'] ?? 1) : 1;
+        $maximumCount = $mode === InvoiceTestMode::OfflineContingency ? 10 : 25;
+        $eventDescription = null;
+
+        if ($mode === InvoiceTestMode::OfflineContingency) {
+            $eventDescription = SinCatalogItem::query()->withoutGlobalScope('company')
+                ->where('company_id', $companyId)
+                ->where('catalog_key', 'eventos_significativos')
+                ->where('classifier_code', (string) $data['event_code'])
+                ->where('is_active', true)
+                ->value('description');
+
+            if (! filled($eventDescription)) {
+                throw ValidationException::withMessages([
+                    'event_code' => 'El evento seleccionado no tiene una descripción oficial vigente del SIN.',
+                ]);
+            }
+        }
+
+        if ($count < 1 || $count > $maximumCount) {
+            throw ValidationException::withMessages([
+                'invoice_count' => $mode === InvoiceTestMode::OfflineContingency
+                    ? 'La prueba de contingencia admite entre 1 y 10 ciclos.'
+                    : 'La prueba en línea admite entre 1 y 25 facturas.',
+            ]);
+        }
+        if ($invoicesPerCycle < 1 || $invoicesPerCycle > 500) {
+            throw ValidationException::withMessages([
+                'invoices_per_cycle' => 'Cada ciclo admite entre 1 y 500 facturas.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $data, $companyId, $product, $mode, $count, $invoicesPerCycle, $eventDescription): InvoiceTestBatch {
             $active = InvoiceTestBatch::query()->withoutGlobalScope('company')
                 ->where('company_id', $companyId)
                 ->where(function ($query): void {
                     $query->whereIn('batch_status', [InvoiceTestBatchStatus::Pending, InvoiceTestBatchStatus::Running])
-                        ->orWhereIn('cancellation_status', [InvoiceTestBatchStatus::Pending, InvoiceTestBatchStatus::Running]);
+                        ->orWhereIn('cancellation_status', [InvoiceTestBatchStatus::Pending, InvoiceTestBatchStatus::Running])
+                        ->orWhereIn('reversal_status', [InvoiceTestBatchStatus::Pending, InvoiceTestBatchStatus::Running]);
                 })
                 ->lockForUpdate()
                 ->exists();
@@ -101,7 +194,12 @@ final class InvoiceTestBatchService
                 'product_id' => $product->id,
                 'batch_key' => (string) Str::uuid(),
                 'batch_status' => InvoiceTestBatchStatus::Pending,
-                'requested_count' => (int) $data['invoice_count'],
+                'test_mode' => $mode,
+                'requested_count' => $count,
+                'invoices_per_cycle' => $invoicesPerCycle,
+                'document_sector_code' => (int) $data['document_sector_code'],
+                'event_code' => $mode === InvoiceTestMode::OfflineContingency ? (int) $data['event_code'] : null,
+                'event_description' => $eventDescription,
                 'economic_activity_code' => (int) $data['economic_activity_code'],
                 'payment_method_code' => (int) $data['payment_method_code'],
                 'currency_code' => (int) $data['currency_code'],

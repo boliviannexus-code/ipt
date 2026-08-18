@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Billing;
 
+use App\Enums\InvoiceTestMode;
 use App\Models\Product;
 use App\Models\SinCatalogItem;
 use App\Models\SinPointOfSale;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Support\CompanyContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -25,6 +27,11 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
         $companyId = CompanyContext::id($this->user());
 
         return [
+            'test_mode' => ['required', Rule::enum(InvoiceTestMode::class)],
+            'document_sector_code' => ['required', 'integer', Rule::in([
+                InvoiceDocumentSector::PURCHASE_SALE,
+                InvoiceDocumentSector::ZERO_RATE,
+            ])],
             'sin_branch_id' => ['required', 'integer', Rule::exists('sin_branches', 'id')
                 ->where('company_id', $companyId)->where('is_active', true)],
             'sin_point_of_sale_id' => ['required', 'integer', Rule::exists('sin_points_of_sale', 'id')
@@ -41,6 +48,16 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
             'quantity' => ['required', 'numeric', 'gt:0'],
             'unit_price' => ['required', 'numeric', 'min:0'],
             'invoice_count' => ['required', 'integer', 'between:1,25'],
+            'invoices_per_cycle' => ['nullable', 'integer', 'between:1,500'],
+            'event_code' => [
+                Rule::requiredIf($this->input('test_mode') === InvoiceTestMode::OfflineContingency->value),
+                'nullable', 'integer', Rule::exists('sin_catalog_items', 'classifier_code')
+                    ->where('company_id', $companyId)->where('catalog_key', 'eventos_significativos')->where('is_active', true),
+            ],
+            'event_description' => [
+                Rule::requiredIf($this->input('test_mode') === InvoiceTestMode::OfflineContingency->value),
+                'nullable', 'string', 'max:500',
+            ],
         ];
     }
 
@@ -48,6 +65,10 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
     {
         return [function (Validator $validator): void {
             $companyId = CompanyContext::id($this->user());
+            if ($this->input('test_mode') === InvoiceTestMode::OfflineContingency->value
+                && (int) $this->input('invoice_count') > 10) {
+                $validator->errors()->add('invoice_count', 'La prueba de contingencia admite entre 1 y 10 ciclos.');
+            }
             $pointMatchesBranch = SinPointOfSale::query()->withoutGlobalScope('company')
                 ->where('company_id', $companyId)
                 ->whereKey((int) $this->input('sin_point_of_sale_id'))
@@ -72,6 +93,21 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
                 $validator->errors()->add('economic_activity_code', 'Selecciona una actividad económica vigente.');
             }
 
+            if ((int) $this->input('document_sector_code') === InvoiceDocumentSector::ZERO_RATE) {
+                $activityAllowed = SinCatalogItem::query()->withoutGlobalScope('company')
+                    ->where('company_id', $companyId)
+                    ->where('catalog_key', 'actividades_documento_sector')
+                    ->where('is_active', true)
+                    ->get(['classifier_code', 'raw_data'])
+                    ->contains(fn (SinCatalogItem $item): bool => (int) data_get($item->raw_data, 'codigoDocumentoSector') === InvoiceDocumentSector::ZERO_RATE
+                        && (string) data_get($item->raw_data, 'codigoActividad', $item->classifier_code) === $activityCode
+                    );
+
+                if (! $activityAllowed) {
+                    $validator->errors()->add('economic_activity_code', 'La actividad debe estar habilitada para Factura Tasa Cero (sector 8).');
+                }
+            }
+
             $productMatchesActivity = Product::query()->withoutGlobalScope('company')
                 ->where('company_id', $companyId)
                 ->whereKey((int) $this->input('product_id'))
@@ -89,6 +125,11 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
     {
         return [
             'sin_branch_id.required' => 'Selecciona una sucursal.',
+            'test_mode.required' => 'Selecciona una modalidad de prueba.',
+            'event_code.required' => 'Selecciona el evento significativo para la contingencia.',
+            'event_description.required' => 'Describe la contingencia de prueba.',
+            'document_sector_code.required' => 'Selecciona el tipo de facturación.',
+            'document_sector_code.in' => 'El tipo de facturación seleccionado no está habilitado.',
             'economic_activity_code.required' => 'Selecciona una actividad económica.',
             'invoice_count.between' => 'La prueba debe contener entre 1 y 25 facturas.',
             'payment_method_code.not_in' => 'Las pruebas masivas no admiten tarjeta porque requieren un número individual.',

@@ -11,6 +11,7 @@ use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoiceIssuanceDecision;
 use App\Enums\SaleStatus;
 use App\Enums\SiatAttemptStatus;
+use App\Enums\SiatEnvironment;
 use App\Enums\SiatErrorType;
 use App\Enums\SiatMessageSeverity;
 use App\Enums\SiatModality;
@@ -38,9 +39,9 @@ use App\Services\Siat\InvoiceXmlValidator;
 use App\Services\Siat\PurchaseSaleInvoiceXmlBuilder;
 use App\Services\Siat\SiatCommunicationService;
 use App\Services\Siat\SiatCufGenerator;
+use App\Services\Siat\SiatDateTime;
 use App\Services\Siat\SiatHealthCheckResult;
 use App\Services\Siat\SiatLogSanitizer;
-use App\Services\Siat\SiatDateTime;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -146,6 +147,59 @@ class InvoiceIssuanceService
         }
 
         return $this->sendOnline($invoice);
+    }
+
+    /**
+     * Emite una factura de contingencia simulada únicamente para el laboratorio SIAT.
+     * No consulta el estado de comunicación y nunca debe usarse desde una venta normal.
+     */
+    public function issueOfflineTest(Sale $sale): InvoiceIssuanceResult
+    {
+        $sale = Sale::query()->withoutGlobalScope('company')
+            ->with(['company', 'user', 'customer', 'pointOfSale.branch', 'items'])
+            ->findOrFail($sale->getKey());
+
+        if ($existing = $this->existingInvoice($sale)) {
+            return $this->existingResult($existing);
+        }
+
+        if (! $sale->user?->can('invoice-tests.run')) {
+            return $this->blocked('El usuario no tiene permiso para forzar una contingencia de laboratorio.');
+        }
+
+        $configuration = $this->configuration($sale);
+        if (is_string($configuration)) {
+            return $this->blocked($configuration);
+        }
+
+        [$token, $authorization, $cuis, $cufd] = $configuration;
+        if ($authorization->environment_code !== SiatEnvironment::TestingAndPilot) {
+            return $this->blocked('La contingencia forzada solo está permitida en el ambiente Piloto del SIN.');
+        }
+        if (! $cufd) {
+            return $this->blocked('No existe un CUFD utilizable para la prueba de contingencia.');
+        }
+
+        try {
+            $invoice = $this->prepareInvoice(
+                $sale,
+                $token,
+                $authorization,
+                $cuis,
+                $cufd,
+                InvoiceIssuanceDecision::OfflineDigital,
+                SiatErrorType::SiatUnavailable,
+                testForced: true,
+            );
+        } catch (ValidationException|RuntimeException $exception) {
+            return $this->blocked($exception->getMessage());
+        }
+
+        return new InvoiceIssuanceResult(
+            decision: InvoiceIssuanceDecision::OfflineDigital,
+            invoice: $invoice->refresh(),
+            message: 'Factura de laboratorio emitida fuera de línea.',
+        );
     }
 
     /**
@@ -441,8 +495,9 @@ class InvoiceIssuanceService
         SinCufd $cufd,
         InvoiceIssuanceDecision $decision,
         SiatErrorType $communicationError,
+        bool $testForced = false,
     ): SinInvoiceIssue {
-        return DB::transaction(function () use ($sale, $token, $authorization, $cuis, $cufd, $decision, $communicationError): SinInvoiceIssue {
+        return DB::transaction(function () use ($sale, $token, $authorization, $cuis, $cufd, $decision, $communicationError, $testForced): SinInvoiceIssue {
             $lockedSale = Sale::query()->withoutGlobalScope('company')
                 ->with(['company', 'user', 'customer', 'pointOfSale.branch', 'items'])
                 ->where('company_id', $sale->company_id)
@@ -543,8 +598,8 @@ class InvoiceIssuanceService
                 'from_status' => InvoiceFiscalStatus::NotIssued,
                 'to_status' => $invoice->fiscal_status,
                 'emission_mode' => $invoice->emission_mode,
-                'reason_code' => $offline ? 'COMMUNICATION_CONTINGENCY' : 'ONLINE_PREPARED',
-                'reason' => $offline ? 'Factura emitida localmente durante contingencia.' : 'Factura preparada para envio en linea.',
+                'reason_code' => $testForced ? 'TEST_FORCED_CONTINGENCY' : ($offline ? 'COMMUNICATION_CONTINGENCY' : 'ONLINE_PREPARED'),
+                'reason' => $testForced ? 'Factura fuera de línea forzada por el laboratorio SIAT.' : ($offline ? 'Factura emitida localmente durante contingencia.' : 'Factura preparada para envio en linea.'),
                 'changed_at' => now(),
             ]);
             $this->commercialEffects->confirmLocked($lockedSale);

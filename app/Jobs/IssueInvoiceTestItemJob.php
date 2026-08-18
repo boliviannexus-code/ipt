@@ -10,7 +10,6 @@ use App\Enums\InvoiceTestBatchStatus;
 use App\Enums\InvoiceTestItemStatus;
 use App\Models\InvoiceTestBatch;
 use App\Models\InvoiceTestBatchItem;
-use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceIssuanceService;
 use App\Services\Billing\InvoiceTestBatchService;
 use App\Services\Billing\SaleCreationService;
@@ -52,7 +51,7 @@ final class IssueInvoiceTestItemJob implements ShouldQueue
         }
 
         $batch = $item->batch;
-        $item->update(['item_status' => InvoiceTestItemStatus::Running, 'started_at' => now()]);
+        $item->update(['stage' => 'ISSUING_ONLINE', 'item_status' => InvoiceTestItemStatus::Running, 'started_at' => now()]);
         $batch->update([
             'batch_status' => InvoiceTestBatchStatus::Running,
             'started_at' => $batch->started_at ?? now(),
@@ -61,7 +60,7 @@ final class IssueInvoiceTestItemJob implements ShouldQueue
         try {
             $testBatches->assertPilotEnvironment($this->companyId);
             $sale = $sales->create($batch->user, [
-                'document_sector_code' => InvoiceDocumentSector::PURCHASE_SALE,
+                'document_sector_code' => $batch->document_sector_code,
                 'sin_point_of_sale_id' => $batch->sin_point_of_sale_id,
                 'customer_id' => $batch->customer_id,
                 'issuance_key' => $item->issuance_key,
@@ -90,6 +89,7 @@ final class IssueInvoiceTestItemJob implements ShouldQueue
                 'sale_id' => $sale->id,
                 'sin_invoice_issue_id' => $invoice?->id,
                 'item_status' => $successful ? InvoiceTestItemStatus::Succeeded : InvoiceTestItemStatus::Failed,
+                'stage' => $successful ? 'COMPLETED' : 'FAILED',
                 'message' => $result->message,
                 'finished_at' => now(),
             ]);
@@ -97,6 +97,7 @@ final class IssueInvoiceTestItemJob implements ShouldQueue
             report($exception);
             $item->update([
                 'item_status' => InvoiceTestItemStatus::Failed,
+                'stage' => 'FAILED',
                 'message' => $exception->getMessage(),
                 'finished_at' => now(),
             ]);

@@ -18,6 +18,15 @@ final class InvoiceDocumentSector
         return in_array($code, [self::PURCHASE_SALE, self::ZERO_RATE], true);
     }
 
+    /** @return array<int, string> */
+    public static function supported(): array
+    {
+        return [
+            self::PURCHASE_SALE => self::title(self::PURCHASE_SALE),
+            self::ZERO_RATE => self::title(self::ZERO_RATE),
+        ];
+    }
+
     public static function rootElement(int $code): string
     {
         return match ($code) {

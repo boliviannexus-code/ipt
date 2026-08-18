@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\Siat\Recovery\Contracts\RecoveryCufdProvider;
 use App\Services\Siat\Recovery\Contracts\SignificantEventRegistrar;
 use App\Services\Siat\Recovery\SignificantEventRegistrationRequest;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -159,10 +160,14 @@ final class ContingencyRecoveryService
                 ->findOrFail($event->id);
 
             if ($locked->event_status === SignificantEventStatus::Open) {
+                $minimumRecoveredAt = $locked->started_at->addSecond();
+                $effectiveRecoveredAt = $recoveredAt->lessThan($minimumRecoveredAt)
+                    ? $minimumRecoveredAt
+                    : $recoveredAt;
                 $locked->update([
                     'event_status' => SignificantEventStatus::RecoveryDetected,
-                    'ended_at' => $recoveredAt,
-                    'recovery_detected_at' => $recoveredAt,
+                    'ended_at' => $effectiveRecoveredAt,
+                    'recovery_detected_at' => $effectiveRecoveredAt,
                     'updated_by_user_id' => $actor?->id,
                     'status_label' => 'Recuperacion detectada',
                     'message' => 'La comunicacion con SIAT fue restablecida.',
@@ -365,6 +370,8 @@ final class ContingencyRecoveryService
                     throw new DomainException('El registro del evento perdio su claim de idempotencia.');
                 }
 
+                $finishedAt = $this->attemptFinishedAt($attempt);
+                $durationMs = max(0, $registration->durationMs);
                 $attempt->update([
                     'attempt_status' => $registration->successful
                         ? SiatAttemptStatus::Succeeded
@@ -373,10 +380,10 @@ final class ContingencyRecoveryService
                         ? null
                         : $this->errorClassifier->classifyResponse($registration->response)->failureCategory(),
                     'reception_code' => $registration->receptionCode,
-                    'duration_ms' => $registration->durationMs,
+                    'duration_ms' => $durationMs,
                     'message' => $safeMessage,
                     'response' => $safeResponse,
-                    'finished_at' => now(),
+                    'finished_at' => $finishedAt,
                 ]);
                 $this->storeMessages($attempt, $safeMessages, $safeMessage, $registration->successful);
 
@@ -391,8 +398,8 @@ final class ContingencyRecoveryService
                         : ($requiresManualReview ? 'Revisión manual requerida' : 'Pendiente de reintento'),
                     'response' => $safeResponse,
                     'message' => $safeMessage,
-                    'duration_ms' => $registration->durationMs,
-                    'registered_at' => $registration->successful ? now() : null,
+                    'duration_ms' => $durationMs,
+                    'registered_at' => $registration->successful ? $finishedAt : null,
                     'registered_by_user_id' => $registration->successful ? $actor->id : null,
                     'updated_by_user_id' => $actor->id,
                     'registration_claim' => null,
@@ -426,7 +433,7 @@ final class ContingencyRecoveryService
                     'attempt_status' => SiatAttemptStatus::Failed,
                     'failure_category' => $errorType->failureCategory(),
                     'message' => $safeMessage,
-                    'finished_at' => now(),
+                    'finished_at' => $this->attemptFinishedAt($attempt),
                 ]);
 
                 SinSignificantEvent::query()
@@ -509,6 +516,67 @@ final class ContingencyRecoveryService
         }, 3);
     }
 
+    public function regularizeForRetry(
+        SinSignificantEvent $significantEvent,
+        User $administrator,
+        string $reason,
+    ): SinSignificantEvent {
+        $event = $this->eventForCompany($significantEvent);
+        $administrator = $this->safeActor($event, $administrator)
+            ?? throw new DomainException('El administrador no pertenece a la empresa del evento.');
+
+        if ($this->isTerminal($event) || $event->transaccion) {
+            throw new DomainException('Un evento ya registrado o cerrado no admite regularización.');
+        }
+
+        if (! in_array($event->event_status, [
+            SignificantEventStatus::RecoveryDetected,
+            SignificantEventStatus::PendingRegistration,
+            SignificantEventStatus::Failed,
+        ], true)) {
+            throw new DomainException('El evento no se encuentra en un estado regularizable.');
+        }
+
+        if (mb_strlen(trim($reason)) < 10) {
+            throw new DomainException('La regularización exige un motivo de al menos 10 caracteres.');
+        }
+
+        return DB::transaction(function () use ($event, $administrator, $reason): SinSignificantEvent {
+            $locked = SinSignificantEvent::query()
+                ->withoutGlobalScope('company')
+                ->where('company_id', $event->company_id)
+                ->lockForUpdate()
+                ->findOrFail($event->id);
+
+            $endedAt = $locked->ended_at;
+            if ($endedAt === null || $endedAt->lessThanOrEqualTo($locked->started_at)) {
+                $endedAt = $locked->started_at->addSecond();
+            }
+
+            $changes = [
+                'ended_at' => $endedAt,
+                'recovery_detected_at' => $endedAt,
+                'recovery_sin_cufd_id' => null,
+                'event_status' => SignificantEventStatus::PendingRegistration,
+                'status_label' => 'Regularización administrativa encolada',
+                'message' => 'Datos corregidos; pendiente de un nuevo registro ante el SIAT.',
+                'administrative_correction_reason' => trim($reason),
+                'administratively_corrected_by_user_id' => $administrator->id,
+                'administratively_corrected_at' => now(),
+                'updated_by_user_id' => $administrator->id,
+                'manual_review_required' => false,
+                'registration_claim' => null,
+                'registration_claimed_at' => null,
+            ];
+            $oldValues = array_intersect_key($locked->getAttributes(), $changes);
+
+            SinSignificantEvent::withoutAuditing(fn () => $locked->update($changes));
+            $this->recordAdministrativeAudit($locked, $administrator, $oldValues, $changes);
+
+            return $locked->refresh();
+        }, 3);
+    }
+
     private function claimRegistration(
         SinSignificantEvent $event,
         User $actor,
@@ -549,7 +617,7 @@ final class ContingencyRecoveryService
                     $inFlight->update([
                         'attempt_status' => SiatAttemptStatus::Uncertain,
                         'message' => $message,
-                        'finished_at' => now(),
+                        'finished_at' => $this->attemptFinishedAt($inFlight),
                     ]);
                     $locked->update([
                         'event_status' => SignificantEventStatus::Failed,
@@ -689,6 +757,15 @@ final class ContingencyRecoveryService
      * @param  array<string, mixed>  $oldValues
      * @param  array<string, mixed>  $newValues
      */
+    private function attemptFinishedAt(SinSiatAttempt $attempt): CarbonImmutable
+    {
+        $finishedAt = now()->toImmutable();
+
+        return $attempt->started_at && $finishedAt->lessThan($attempt->started_at)
+            ? $attempt->started_at
+            : $finishedAt;
+    }
+
     private function recordAdministrativeAudit(
         SinSignificantEvent $event,
         User $administrator,
