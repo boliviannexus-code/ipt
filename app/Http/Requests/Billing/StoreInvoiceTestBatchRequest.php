@@ -47,7 +47,7 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
                 ->where('company_id', $companyId)->where('catalog_key', 'tipos_moneda')->where('is_active', true)],
             'quantity' => ['required', 'numeric', 'gt:0'],
             'unit_price' => ['required', 'numeric', 'min:0'],
-            'invoice_count' => ['required', 'integer', 'between:1,25'],
+            'invoice_count' => ['required', 'integer', 'between:1,500'],
             'invoices_per_cycle' => ['nullable', 'integer', 'between:1,500'],
             'event_code' => [
                 Rule::requiredIf($this->input('test_mode') === InvoiceTestMode::OfflineContingency->value),
@@ -131,7 +131,7 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
             'document_sector_code.required' => 'Selecciona el tipo de facturación.',
             'document_sector_code.in' => 'El tipo de facturación seleccionado no está habilitado.',
             'economic_activity_code.required' => 'Selecciona una actividad económica.',
-            'invoice_count.between' => 'La prueba debe contener entre 1 y 25 facturas.',
+            'invoice_count.between' => 'La prueba en línea debe contener entre 1 y 500 facturas.',
             'payment_method_code.not_in' => 'Las pruebas masivas no admiten tarjeta porque requieren un número individual.',
         ];
     }

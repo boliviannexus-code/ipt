@@ -8,17 +8,19 @@ use App\Enums\SignificantEventStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\RecordManualCafcInvoiceRequest;
 use App\Http\Requests\Billing\TranscribeManualCafcInvoiceRequest;
-use App\Jobs\SendManualCafcInvoiceJob;
+use App\Jobs\BuildContingencyPackagesJob;
 use App\Models\Customer;
-use App\Models\Product;
 use App\Models\SinCafcRange;
 use App\Models\SinManualContingencyInvoice;
 use App\Models\SinPointOfSale;
 use App\Models\SinSignificantEvent;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\ManualCafcService;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\ValidationException;
 
 class ManualCafcInvoiceController extends Controller
 {
@@ -55,29 +57,57 @@ class ManualCafcInvoiceController extends Controller
     public function edit(SinManualContingencyInvoice $manualInvoice): View
     {
         abort_unless($manualInvoice->manual_status === ManualContingencyInvoiceStatus::PendingTranscription, 404);
+        abort_unless(InvoiceDocumentSector::supports((int) $manualInvoice->document_sector_code), 422, 'El sector documental de este CAFC todavía no admite transcripción.');
 
-        return view('billing.manual-cafc.transcribe', [
-            'manual' => $manualInvoice->load(['cafcRange', 'pointOfSale.branch', 'significantEvent']),
-            'customers' => Customer::query()->active()->orderBy('name')->get(),
-            'products' => Product::query()->active()->orderBy('description')->get(),
+        $manual = $manualInvoice->load(['cafcRange', 'pointOfSale.branch', 'significantEvent']);
+        $normalForm = app(InvoiceIssueController::class)->show((string) $manual->document_sector_code);
+
+        return view('billing.invoices.issue.purchase-sale', [
+            ...$normalForm->getData(),
+            'manualCafc' => $manual,
         ]);
     }
 
-    public function update(TranscribeManualCafcInvoiceRequest $request, SinManualContingencyInvoice $manualInvoice): RedirectResponse
+    public function update(TranscribeManualCafcInvoiceRequest $request, SinManualContingencyInvoice $manualInvoice): RedirectResponse|JsonResponse
     {
         $customer = Customer::query()->findOrFail((int) $request->validated('customer_id'));
         $manual = $this->cafc->transcribe($manualInvoice, $customer, $request->safe()->except(['items', 'document_image']), $request->validated('items'), $request->user(), $request->file('document_image'));
-        if (in_array($manual->significantEvent?->event_status, [SignificantEventStatus::Registered, SignificantEventStatus::Packaging, SignificantEventStatus::Sending, SignificantEventStatus::Validating], true)) {
-            SendManualCafcInvoiceJob::dispatch((int) $manual->company_id, (int) $manual->id, (int) $request->user()->id);
+        $rangeHasPendingTranscriptions = $manual->cafcRange()->whereHas(
+            'manualInvoices',
+            fn ($query) => $query->where('manual_status', ManualContingencyInvoiceStatus::PendingTranscription->value),
+        )->exists();
+        if (! $rangeHasPendingTranscriptions && in_array($manual->significantEvent?->event_status, [SignificantEventStatus::Registered, SignificantEventStatus::Packaging, SignificantEventStatus::Sending, SignificantEventStatus::Validating], true)) {
+            BuildContingencyPackagesJob::dispatch((int) $manual->company_id, (int) $manual->sin_significant_event_id, (int) $request->user()->id);
         }
 
-        return redirect()->route('billing.manual-cafc.index')->with('success', 'Factura transcrita y XML guardado. El envío iniciará cuando el evento esté registrado ante el SIAT.');
+        $message = 'Factura transcrita y XML guardado. El envío iniciará cuando el evento esté registrado ante el SIAT.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'redirect_url' => route('billing.cafc-contingencies.show', $manual->sin_cafc_range_id),
+                'data' => ['invoice' => [
+                    'id' => $manual->invoice?->id,
+                    'invoice_number' => $manual->manual_invoice_number,
+                    'status_label' => $manual->manual_status->label(),
+                    'print_url' => $manual->invoice ? route('billing.invoices.print', $manual->invoice) : null,
+                ]],
+            ], 201);
+        }
+
+        return redirect()->route('billing.cafc-contingencies.show', $manual->sin_cafc_range_id)->with('success', $message);
     }
 
     public function send(SinManualContingencyInvoice $manualInvoice): RedirectResponse
     {
-        SendManualCafcInvoiceJob::dispatch((int) $manualInvoice->company_id, (int) $manualInvoice->id, (int) request()->user()->id);
+        $manualInvoice->loadMissing(['invoice', 'significantEvent']);
+        if (! $manualInvoice->significantEvent || (int) $manualInvoice->invoice?->emission_type_code !== 2) {
+            throw ValidationException::withMessages(['manual_invoice' => 'La factura no tiene un evento registrado o fue generada con el flujo anterior y requiere corrección técnica.']);
+        }
 
-        return back()->with('success', 'Reintento de envío encolado usando la misma factura y XML.');
+        BuildContingencyPackagesJob::dispatch((int) $manualInvoice->company_id, (int) $manualInvoice->sin_significant_event_id, (int) request()->user()->id);
+
+        return back()->with('success', 'Generación y envío del paquete CAFC encolados.');
     }
 }

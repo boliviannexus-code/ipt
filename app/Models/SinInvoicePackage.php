@@ -27,7 +27,7 @@ class SinInvoicePackage extends Model implements Auditable
         'sin_significant_event_id', 'sin_branch_id', 'sin_point_of_sale_id',
         'sin_cuis_id', 'sin_cufd_id', 'created_by_user_id', 'sent_by_user_id',
         'validated_by_user_id', 'package_key', 'package_number', 'emission_mode',
-        'package_status', 'invoice_count', 'file_path', 'file_hash', 'reception_code',
+        'package_status', 'invoice_count', 'cafc_code', 'file_path', 'file_hash', 'reception_code',
         'tax_id', 'environment_code', 'modality_code', 'emission_type_code',
         'document_sector_code', 'invoice_document_type_code', 'branch_code',
         'point_of_sale_code', 'file_size', 'siat_status_code', 'send_claim',

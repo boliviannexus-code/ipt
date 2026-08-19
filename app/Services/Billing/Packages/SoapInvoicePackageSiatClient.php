@@ -8,10 +8,10 @@ use App\Enums\SiatErrorType;
 use App\Models\SinInvoicePackage;
 use App\Services\Billing\InvoiceWsdlResolver;
 use App\Services\Billing\Packages\Contracts\InvoicePackageSiatClient;
+use App\Services\Siat\SiatDateTime;
 use App\Services\Siat\SiatErrorClassifier;
 use App\Services\Siat\SiatLogSanitizer;
 use App\Services\Siat\SiatSoapClientFactory;
-use App\Services\Siat\SiatDateTime;
 use SoapVar;
 use Throwable;
 
@@ -39,6 +39,7 @@ final readonly class SoapInvoicePackageSiatClient implements InvoicePackageSiatC
                 'hashArchivo' => $package->file_hash,
                 'cantidadFacturas' => $package->invoice_count,
                 'codigoEvento' => (string) $package->significantEvent->reception_code,
+                ...($package->cafc_code ? ['cafc' => $package->cafc_code] : []),
             ],
         ];
 

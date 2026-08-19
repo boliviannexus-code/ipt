@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use OwenIt\Auditing\Contracts\Auditable;
 
 class SinSignificantEvent extends Model implements Auditable
@@ -140,5 +141,10 @@ class SinSignificantEvent extends Model implements Auditable
     public function manualInvoices(): HasMany
     {
         return $this->hasMany(SinManualContingencyInvoice::class, 'sin_significant_event_id');
+    }
+
+    public function cafcRange(): HasOne
+    {
+        return $this->hasOne(SinCafcRange::class, 'sin_significant_event_id');
     }
 }

@@ -7,6 +7,7 @@ namespace App\Services\Billing;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoicePackageStatus;
+use App\Enums\ManualContingencyInvoiceStatus;
 use App\Enums\PackageValidationOutcome;
 use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatErrorType;
@@ -301,7 +302,11 @@ final class InvoicePackageService
 
         /** @var SinInvoiceIssue $first */
         $first = $invoices->first();
+        $invoices->loadMissing('manualContingency.cafcRange');
         $this->assertSameScope($event, $invoices, $first);
+        $cafcCode = $first->emission_mode === InvoiceEmissionMode::ManualCafc
+            ? $first->manualContingency?->cafcRange?->cafc_code
+            : null;
         $packageKey = (string) Str::uuid();
         $files = [];
 
@@ -331,9 +336,10 @@ final class InvoicePackageService
             'created_by_user_id' => $actor?->id,
             'package_key' => $packageKey,
             'package_number' => $this->reservePackageNumber($event),
-            'emission_mode' => InvoiceEmissionMode::OfflineDigital,
+            'emission_mode' => $first->emission_mode,
             'package_status' => InvoicePackageStatus::Created,
             'invoice_count' => $invoices->count(),
+            'cafc_code' => $cafcCode,
             'tax_id' => $first->tax_id,
             'environment_code' => $first->environment_code,
             'modality_code' => $first->modality_code,
@@ -476,6 +482,7 @@ final class InvoicePackageService
                 'message' => $message,
                 'response' => $invoiceResponse,
             ])->save();
+            $this->syncManualStatus($invoice, $to);
             $this->recordTransition($invoice, $from, $to, $attempt, $message);
         }
     }
@@ -691,7 +698,7 @@ final class InvoicePackageService
                 ])
                 ->exists();
             $hasUnfinishedInvoices = $this->eventInvoicesQuery($event)
-                ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
+                ->whereIn('emission_mode', [InvoiceEmissionMode::OfflineDigital, InvoiceEmissionMode::ManualCafc])
                 ->whereNotIn('fiscal_status', [
                     InvoiceFiscalStatus::ValidatedAfterContingency,
                     InvoiceFiscalStatus::Observed,
@@ -731,7 +738,7 @@ final class InvoicePackageService
     private function eligibleInvoices(SinSignificantEvent $event): EloquentCollection
     {
         return $this->eventInvoicesQuery($event)
-            ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
+            ->whereIn('emission_mode', [InvoiceEmissionMode::OfflineDigital, InvoiceEmissionMode::ManualCafc])
             ->whereIn('fiscal_status', [
                 InvoiceFiscalStatus::OfflineIssued,
                 InvoiceFiscalStatus::PendingPackage,
@@ -799,7 +806,10 @@ final class InvoicePackageService
                 && (int) $invoice->emission_type_code === (int) $first->emission_type_code
                 && (int) $invoice->document_sector_code === (int) $first->document_sector_code
                 && (int) $invoice->invoice_document_type_code === (int) $first->invoice_document_type_code
-                && $invoice->emission_mode === InvoiceEmissionMode::OfflineDigital
+                && in_array($invoice->emission_mode, [InvoiceEmissionMode::OfflineDigital, InvoiceEmissionMode::ManualCafc], true)
+                && ($invoice->emission_mode !== InvoiceEmissionMode::ManualCafc
+                    || ($invoice->manualContingency?->cafcRange?->cafc_code !== null
+                        && $invoice->manualContingency->cafcRange->cafc_code === $first->manualContingency?->cafcRange?->cafc_code))
                 && ! in_array($invoice->fiscal_status, [
                     InvoiceFiscalStatus::Validated,
                     InvoiceFiscalStatus::ValidatedAfterContingency,
@@ -827,6 +837,23 @@ final class InvoicePackageService
             $invoice->document_sector_code,
             $invoice->invoice_document_type_code,
         ]);
+    }
+
+    private function syncManualStatus(SinInvoiceIssue $invoice, InvoiceFiscalStatus $status): void
+    {
+        if ($invoice->emission_mode !== InvoiceEmissionMode::ManualCafc) {
+            return;
+        }
+
+        $manualStatus = match ($status) {
+            InvoiceFiscalStatus::ValidatedAfterContingency => ManualContingencyInvoiceStatus::Validated,
+            InvoiceFiscalStatus::Observed, InvoiceFiscalStatus::Rejected => ManualContingencyInvoiceStatus::Rejected,
+            default => null,
+        };
+
+        if ($manualStatus !== null) {
+            $invoice->manualContingency()->update(['manual_status' => $manualStatus->value]);
+        }
     }
 
     private function originalXml(SinInvoiceIssue $invoice): string

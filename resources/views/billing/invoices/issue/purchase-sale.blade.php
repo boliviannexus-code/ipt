@@ -14,18 +14,20 @@
     <form
         class="invoice-workspace"
         method="POST"
-        action="{{ route('billing.invoices.issue.purchase-sale.store') }}"
+        action="{{ isset($manualCafc) ? route('billing.manual-cafc.transcribe.update', $manualCafc) : route('billing.invoices.issue.purchase-sale.store') }}"
         autocomplete="off"
         novalidate
         data-invoice-issue-form
+        @isset($manualCafc) data-manual-cafc="1" data-preserve-issued-at="1" @endisset
     >
         @csrf
+        @isset($manualCafc) @method('PUT') @endisset
         <input name="issuance_key" type="hidden" value="{{ $issuanceKey }}">
         <input name="document_sector_code" type="hidden" value="{{ $documentSectorCode }}">
 
         <header class="invoice-ribbon">
             <div>
-                <div class="invoice-ribbon-kicker">{{ $invoiceTitle }}</div>
+                <div class="invoice-ribbon-kicker">{{ isset($manualCafc) ? 'Transcripción CAFC · '.$invoiceTitle : $invoiceTitle }}</div>
                 <h2 class="invoice-ribbon-title">{{ $legalName }}</h2>
             </div>
             <div
@@ -58,6 +60,13 @@
             </div>
         </header>
 
+        @isset($manualCafc)
+            <div class="alert alert-info" role="status">
+                <strong>CAFC {{ $manualCafc->cafcRange->cafc_code }} · Factura N.º {{ $manualCafc->manual_invoice_number }}</strong>
+                <span class="ms-2">Evento {{ $manualCafc->significantEvent?->event_code }} · {{ $manualCafc->significantEvent?->event_description }} · Fecha original {{ $manualCafc->issued_manually_at->format('d/m/Y H:i:s') }}</span>
+            </div>
+        @endisset
+
         <div class="alert {{ $communicationStatus['ok'] ? 'alert-warning d-none' : 'alert-danger' }}" role="alert" data-invoice-communication-message>
             {{ $communicationStatus['ok']
                 ? 'La emision esta bloqueada hasta registrar la contingencia y procesar las facturas fuera de linea pendientes.'
@@ -77,13 +86,17 @@
                     <div class="row g-3">
                         <div class="col-lg-6">
                             <label class="form-label" for="invoice-point-of-sale">Sucursal / punto de venta</label>
-                            <select class="form-select" id="invoice-point-of-sale" name="sin_point_of_sale_id" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar sucursal o PV" data-invoice-point-of-sale>
+                            @isset($manualCafc)
+                                <input type="hidden" name="sin_point_of_sale_id" value="{{ $manualCafc->sin_point_of_sale_id }}">
+                            @endisset
+                            <select class="form-select" id="invoice-point-of-sale" @unless(isset($manualCafc)) name="sin_point_of_sale_id" @endunless data-tom-select data-allow-empty-option="false" data-placeholder="Buscar sucursal o PV" data-invoice-point-of-sale @disabled(isset($manualCafc))>
                                 <option value="" disabled selected>Seleccionar sucursal / PV</option>
                                 @foreach ($branches as $branch)
                                     @forelse ($branch->activePointsOfSale as $point)
                                         @php($status = $fiscalStatuses[(string) $point->id] ?? null)
                                         <option
                                             value="{{ $point->id }}"
+                                            @selected(isset($manualCafc) && $manualCafc->sin_point_of_sale_id === $point->id)
                                             data-cuis-valid="{{ ($status['cuis_valid'] ?? false) ? '1' : '0' }}"
                                             data-cuis-label="{{ $status['cuis_label'] ?? 'CUIS' }}"
                                             data-cuis-detail="{{ $status['cuis_detail'] ?? 'CUIS no vigente' }}"
@@ -294,7 +307,7 @@
             <aside class="invoice-summary" aria-labelledby="invoice-summary-heading">
                 <h3 id="invoice-summary-heading">Resumen</h3>
 
-                <input id="invoice-issued-at" name="issued_at" type="hidden" value="{{ now()->format('Y-m-d\\TH:i') }}">
+                <input id="invoice-issued-at" name="issued_at" type="hidden" value="{{ isset($manualCafc) ? $manualCafc->issued_manually_at->format('Y-m-d\\TH:i:s') : now()->format('Y-m-d\\TH:i') }}">
 
                 <label class="form-label" for="invoice-payment-method">Método de pago</label>
                 <select class="form-select" id="invoice-payment-method" name="payment_method_code" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar metodo de pago">
@@ -358,14 +371,14 @@
                 </div>
 
                 <div class="invoice-actions">
-                    <a class="btn btn-outline-secondary" href="{{ route('billing.invoices.issue.index') }}">
+                    <a class="btn btn-outline-secondary" href="{{ isset($manualCafc) ? route('billing.cafc-contingencies.show', $manualCafc->sin_cafc_range_id) : route('billing.invoices.issue.index') }}">
                         <i class="ti ti-arrow-left me-1" aria-hidden="true"></i>Volver
                     </a>
                     <button class="btn btn-warning" type="reset" data-invoice-clear>
                         <i class="ti ti-eraser me-1" aria-hidden="true"></i>Limpiar
                     </button>
                     <button class="btn btn-success" type="button" data-invoice-submit disabled>
-                        <i class="ti ti-send me-1" aria-hidden="true"></i><span data-invoice-submit-label>Emitir</span>
+                        <i class="ti ti-send me-1" aria-hidden="true"></i><span data-invoice-submit-label>{{ isset($manualCafc) ? 'Transcribir' : 'Emitir' }}</span>
                     </button>
                 </div>
             </aside>

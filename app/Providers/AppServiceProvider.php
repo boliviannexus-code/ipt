@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Contracts\DatabaseBackupManager;
 use App\Models\CashRegister;
 use App\Models\Customer;
 use App\Models\Product;
@@ -16,6 +17,7 @@ use App\Policies\ProductPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\SinApiTokenPolicy;
 use App\Policies\SinAuthorizationPolicy;
+use App\Services\Backup\PostgresDatabaseBackupManager;
 use App\Services\Billing\ComputerizedOnlineXmlSigner;
 use App\Services\Billing\Contracts\InvoiceCancellationReversalSiatClient;
 use App\Services\Billing\Contracts\InvoiceCancellationSiatClient;
@@ -51,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(DatabaseBackupManager::class, PostgresDatabaseBackupManager::class);
         $this->app->bind(InvoiceSiatClient::class, SoapInvoiceSiatClient::class);
         $this->app->bind(InvoiceCancellationSiatClient::class, SoapInvoiceCancellationSiatClient::class);
         $this->app->bind(InvoiceCancellationReversalSiatClient::class, SoapInvoiceCancellationReversalSiatClient::class);

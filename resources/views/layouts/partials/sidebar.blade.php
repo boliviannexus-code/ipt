@@ -1,6 +1,6 @@
 @php
     $organizationOpen = request()->routeIs('companies.*');
-    $adminOpen = request()->routeIs('users.*', 'roles.*', 'permissions.*', 'audits.*');
+    $adminOpen = request()->routeIs('users.*', 'roles.*', 'permissions.*', 'audits.*', 'backups.*');
     $cashRegistersOpen = request()->routeIs('cash-registers.*');
     $billingOpen = request()->routeIs('billing.*');
     $apiTokenOpen = request()->routeIs('sin-api-token.*');
@@ -45,7 +45,8 @@
     $canAdmin = auth()->user()?->can('users.view')
         || auth()->user()?->can('roles.view')
         || auth()->user()?->can('permissions.view')
-        || auth()->user()?->can('audits.view');
+        || auth()->user()?->can('audits.view')
+        || auth()->user()?->can('backups.view');
     $sidebarCompany = \App\Support\CompanyContext::activeCompany(auth()->user());
 @endphp
 
@@ -270,6 +271,12 @@
                                     </li>
                                 @endcan
                                 @can('cafc-ranges.view')
+                                    <li class="nav-item {{ request()->routeIs('billing.cafc-contingencies.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.cafc-contingencies.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-file-invoice"></i></span>
+                                            <span class="nav-link-title">Contingencias 2</span>
+                                        </a>
+                                    </li>
                                     <li class="nav-item {{ request()->routeIs('billing.cafc-ranges.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('billing.cafc-ranges.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-number"></i></span>
@@ -340,6 +347,15 @@
                                         <a class="nav-link" href="{{ route('audits.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-list-search"></i></span>
                                             <span class="nav-link-title">Auditoria</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('backups.view')
+                                    <li class="nav-item {{ request()->routeIs('backups.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('backups.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-database-export"></i></span>
+                                            <span class="nav-link-title">Respaldos</span>
                                         </a>
                                     </li>
                                 @endcan

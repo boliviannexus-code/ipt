@@ -20,10 +20,12 @@ use App\Models\Customer;
 use App\Models\SinApiToken;
 use App\Models\SinAuthorization;
 use App\Models\SinBranch;
+use App\Models\SinCafcRange;
 use App\Models\SinCufd;
 use App\Models\SinCuis;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinInvoicePackage;
+use App\Models\SinManualContingencyInvoice;
 use App\Models\SinPointOfSale;
 use App\Models\SinSiatAttempt;
 use App\Models\SinSignificantEvent;
@@ -111,6 +113,42 @@ final class InvoicePackageServiceTest extends TestCase
         self::assertSame($first->pluck('id')->all(), $second->pluck('id')->all());
         self::assertSame(1, SinInvoicePackage::query()->withoutGlobalScope('company')->count());
         self::assertSame(2, DB::table('sin_invoice_package_items')->count());
+    }
+
+    public function test_builds_manual_cafc_invoice_as_offline_package_with_cafc_code(): void
+    {
+        $context = $this->context(1);
+        $invoice = $context['invoices']->firstOrFail();
+        $invoice->forceFill([
+            'emission_mode' => InvoiceEmissionMode::ManualCafc,
+            'fiscal_status' => InvoiceFiscalStatus::PendingPackage,
+        ])->save();
+        $range = SinCafcRange::factory()->create([
+            'company_id' => $context['company']->id,
+            'sin_branch_id' => $context['branch']->id,
+            'sin_point_of_sale_id' => $context['point']->id,
+            'created_by_user_id' => $context['user']->id,
+            'sin_significant_event_id' => $context['event']->id,
+            'cafc_code' => 'CAFC-PACKAGE-TEST',
+        ]);
+        SinManualContingencyInvoice::factory()->create([
+            'company_id' => $context['company']->id,
+            'sin_cafc_range_id' => $range->id,
+            'sin_significant_event_id' => $context['event']->id,
+            'sin_invoice_issue_id' => $invoice->id,
+            'sin_branch_id' => $context['branch']->id,
+            'sin_point_of_sale_id' => $context['point']->id,
+            'created_by_user_id' => $context['user']->id,
+        ]);
+
+        $package = $this->service(new SequenceInvoicePackageSiatClient)
+            ->buildForEvent($context['event'], $context['user'])
+            ->firstOrFail();
+
+        self::assertSame(InvoiceEmissionMode::ManualCafc, $package->emission_mode);
+        self::assertSame('CAFC-PACKAGE-TEST', $package->cafc_code);
+        self::assertSame(2, $package->emission_type_code);
+        self::assertSame($invoice->id, $package->items()->firstOrFail()->sin_invoice_issue_id);
     }
 
     public function test_excludes_manual_and_already_validated_invoices_from_digital_packages(): void

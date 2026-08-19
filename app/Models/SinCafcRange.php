@@ -20,7 +20,7 @@ class SinCafcRange extends Model implements Auditable
     use AuditsCompanyChanges, BelongsToCompany, HasFactory;
 
     protected $fillable = [
-        'company_id', 'sin_branch_id', 'sin_point_of_sale_id', 'created_by_user_id',
+        'company_id', 'sin_branch_id', 'sin_point_of_sale_id', 'sin_significant_event_id', 'created_by_user_id',
         'updated_by_user_id', 'cafc_code', 'document_sector_code', 'range_start',
         'range_end', 'next_number', 'range_status', 'authorized_from', 'authorized_until', 'notes',
         'used_count', 'cancelled_count',
@@ -50,6 +50,11 @@ class SinCafcRange extends Model implements Auditable
     public function pointOfSale(): BelongsTo
     {
         return $this->belongsTo(SinPointOfSale::class, 'sin_point_of_sale_id');
+    }
+
+    public function significantEvent(): BelongsTo
+    {
+        return $this->belongsTo(SinSignificantEvent::class, 'sin_significant_event_id');
     }
 
     public function creator(): BelongsTo

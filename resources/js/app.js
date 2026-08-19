@@ -470,6 +470,8 @@ function initInvoiceIssueForms(scope = document) {
         const totalTarget = form.querySelector('[data-invoice-total]');
         const taxableTotalTarget = form.querySelector('[data-invoice-taxable-total]');
         const fiscalStatus = form.querySelector('[data-invoice-fiscal-status]');
+        const manualCafc = form.dataset.manualCafc === '1';
+        const preserveIssuedAt = form.dataset.preserveIssuedAt === '1';
         let communicationOk = fiscalStatus?.dataset.communicationOk === '1';
         const cufdRequestUrl = fiscalStatus?.dataset.cufdRequestUrl;
         const refreshCufdOnSelection = fiscalStatus?.dataset.refreshCufdOnSelection === '1';
@@ -664,18 +666,18 @@ function initInvoiceIssueForms(scope = document) {
             );
 
             if (submitButton) {
-                submitButton.disabled = !(cuisOk && cufdOk) || recoveryBlocked;
+                submitButton.disabled = manualCafc ? false : (!(cuisOk && cufdOk) || recoveryBlocked);
             }
 
             if (submitLabel) {
-                submitLabel.textContent = communicationOk ? 'Emitir' : 'Emitir fuera de linea';
+                submitLabel.textContent = manualCafc ? 'Transcribir' : (communicationOk ? 'Emitir' : 'Emitir fuera de linea');
             }
 
             if (communicationMessage) {
                 communicationMessage.classList.toggle('d-none', communicationOk && !recoveryBlocked);
             }
 
-            if (communicationOk && hasPointOfSale && cuisOk && !cufdOk) {
+            if (!manualCafc && communicationOk && hasPointOfSale && cuisOk && !cufdOk) {
                 requestCufd(option);
             }
         };
@@ -908,7 +910,7 @@ function initInvoiceIssueForms(scope = document) {
                 select.tomselect?.clear(true);
             });
 
-            if (issuedAtInput) {
+            if (issuedAtInput && !preserveIssuedAt) {
                 issuedAtInput.value = currentBoliviaDateTime();
             }
 
@@ -942,7 +944,7 @@ function initInvoiceIssueForms(scope = document) {
             submitButton.classList.add('disabled');
 
             try {
-                if (issuedAtInput) {
+                if (issuedAtInput && !preserveIssuedAt) {
                     issuedAtInput.value = currentBoliviaDateTime();
                 }
 
@@ -975,8 +977,10 @@ function initInvoiceIssueForms(scope = document) {
                     resetInvoiceForm();
                     const result = await Swal.fire({
                         icon: 'success',
-                        title: offline ? 'Factura emitida fuera de linea' : 'Factura validada',
-                        text: offline
+                        title: manualCafc ? 'Factura CAFC transcrita' : (offline ? 'Factura emitida fuera de linea' : 'Factura validada'),
+                        text: manualCafc
+                            ? (payload.message ?? 'La factura fue transcrita y quedó preparada para su regularización.')
+                            : offline
                             ? `Factura ${invoice?.invoice_number ?? ''} emitida localmente y pendiente de sincronizacion con el SIN.`
                             : `Factura ${invoice?.invoice_number ?? ''} validada por el SIN. Codigo de recepcion: ${invoice?.reception_code ?? '-'}`,
                         confirmButtonText: invoice?.print_url ? 'Imprimir PDF' : 'Aceptar',
@@ -986,6 +990,10 @@ function initInvoiceIssueForms(scope = document) {
 
                     if (result.isConfirmed && invoice?.print_url) {
                         window.open(invoice.print_url, '_blank', 'noopener');
+                    }
+
+                    if (manualCafc && payload.redirect_url) {
+                        window.location.assign(payload.redirect_url);
                     }
 
                     return;

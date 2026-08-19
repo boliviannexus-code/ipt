@@ -3,6 +3,7 @@
 use App\Http\Controllers\Web\AdminDataTableController;
 use App\Http\Controllers\Web\AuditController;
 use App\Http\Controllers\Web\AuthController;
+use App\Http\Controllers\Web\Billing\CafcContingencyController;
 use App\Http\Controllers\Web\Billing\CafcRangeController;
 use App\Http\Controllers\Web\Billing\ContingencyDashboardController;
 use App\Http\Controllers\Web\Billing\FiscalArtifactController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Web\Billing\SignificantEventController;
 use App\Http\Controllers\Web\CashRegisterController;
 use App\Http\Controllers\Web\CompanyController;
 use App\Http\Controllers\Web\DashboardController;
+use App\Http\Controllers\Web\DatabaseBackupController;
 use App\Http\Controllers\Web\NotificationController;
 use App\Http\Controllers\Web\Parameters\CustomerController;
 use App\Http\Controllers\Web\Parameters\ProductCategoryController;
@@ -46,6 +48,21 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         ->whereUuid('notification')->name('notifications.read');
     Route::get('audits', [AuditController::class, 'index'])->middleware('permission:audits.view')->name('audits.index');
     Route::get('audits/{audit}', [AuditController::class, 'show'])->middleware('permission:audits.view')->name('audits.show');
+    Route::prefix('backups')->name('backups.')->group(function (): void {
+        Route::get('/', [DatabaseBackupController::class, 'index'])->middleware('permission:backups.view')->name('index');
+        Route::post('/', [DatabaseBackupController::class, 'store'])->middleware('permission:backups.create')->name('store');
+        Route::post('upload-restore', [DatabaseBackupController::class, 'uploadAndRestore'])
+            ->middleware(['permission:backups.restore', 'throttle:3,10'])->name('upload-restore');
+        Route::get('{backup}/download', [DatabaseBackupController::class, 'download'])
+            ->where('backup', 'facturacion-[0-9]{8}-[0-9]{6}-[a-f0-9]{6}\\.sql\\.gz')
+            ->middleware('permission:backups.download')->name('download');
+        Route::post('{backup}/restore', [DatabaseBackupController::class, 'restore'])
+            ->where('backup', 'facturacion-[0-9]{8}-[0-9]{6}-[a-f0-9]{6}\\.sql\\.gz')
+            ->middleware(['permission:backups.restore', 'throttle:3,10'])->name('restore');
+        Route::delete('{backup}', [DatabaseBackupController::class, 'destroy'])
+            ->where('backup', 'facturacion-[0-9]{8}-[0-9]{6}-[a-f0-9]{6}\\.sql\\.gz')
+            ->middleware('permission:backups.delete')->name('destroy');
+    });
     Route::prefix('companies')->name('companies.')->group(function (): void {
         Route::get('/', [CompanyController::class, 'index'])->middleware('permission:companies.view')->name('index');
         Route::get('create', [CompanyController::class, 'create'])->middleware('permission:companies.create')->name('create');
@@ -132,6 +149,16 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->middleware('permission:cafc-ranges.view')->name('cafc-ranges.index');
             Route::post('cafc', [CafcRangeController::class, 'store'])
                 ->middleware('permission:cafc-ranges.manage')->name('cafc-ranges.store');
+            Route::get('contingencias-2', [CafcContingencyController::class, 'index'])
+                ->middleware('permission:cafc-ranges.view')->name('cafc-contingencies.index');
+            Route::post('contingencias-2', [CafcContingencyController::class, 'storeRange'])
+                ->middleware('permission:cafc-ranges.manage')->name('cafc-contingencies.store');
+            Route::get('contingencias-2/{cafcRange}', [CafcContingencyController::class, 'show'])
+                ->whereNumber('cafcRange')->middleware('permission:manual-cafc.view')->name('cafc-contingencies.show');
+            Route::post('contingencias-2/{cafcRange}/facturas', [CafcContingencyController::class, 'storeInvoice'])
+                ->whereNumber('cafcRange')->middleware('permission:manual-cafc.use')->name('cafc-contingencies.invoices.store');
+            Route::post('contingencias-2/{cafcRange}/finalizar', [CafcContingencyController::class, 'finalize'])
+                ->whereNumber('cafcRange')->middleware('permission:manual-cafc.use')->name('cafc-contingencies.finalize');
             Route::get('manuales-cafc', [ManualCafcInvoiceController::class, 'index'])
                 ->middleware('permission:manual-cafc.view')->name('manual-cafc.index');
             Route::post('manuales-cafc', [ManualCafcInvoiceController::class, 'store'])

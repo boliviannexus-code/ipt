@@ -165,8 +165,8 @@
                         <div class="invoice-test-launch">
                             <div class="invoice-test-launch-field">
                                 <label class="form-label mb-1" for="test-count" data-count-label>Número de facturas</label>
-                                <div class="text-secondary small" data-count-help>Entre 1 y 25. La prueba se detiene de forma natural al terminar la cola.</div>
-                                <input class="form-control form-control-lg @error('invoice_count') is-invalid @enderror" id="test-count" name="invoice_count" type="number" min="1" max="25" value="{{ old('invoice_count', 25) }}" required @disabled(! $pilotEnabled)>
+                                <div class="text-secondary small" data-count-help>Entre 1 y 500. La prueba se detiene de forma natural al terminar la cola.</div>
+                                <input class="form-control form-control-lg @error('invoice_count') is-invalid @enderror" id="test-count" name="invoice_count" type="number" min="1" max="500" value="{{ old('invoice_count', 1) }}" required @disabled(! $pilotEnabled)>
                                 @error('invoice_count')<div class="invalid-feedback">{{ $message }}</div>@enderror
                             </div>
                             <div class="invoice-test-launch-field" data-contingency-count-field hidden>
@@ -371,9 +371,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (count) {
             count.readOnly = false;
             if (offline && Number(count.value) > 10) count.value = '10';
-            count.max = offline ? '10' : '25';
+            count.max = offline ? '10' : '500';
         }
-        if (countHelp) countHelp.textContent = offline ? 'Entre 1 y 10 ciclos, procesados secuencialmente.' : 'Entre 1 y 25 facturas en línea.';
+        if (countHelp) countHelp.textContent = offline ? 'Entre 1 y 10 ciclos, procesados secuencialmente.' : 'Entre 1 y 500 facturas en línea.';
         if (countLabel) countLabel.textContent = offline ? 'Número de ciclos' : 'Número de facturas';
         if (invoicesPerCycle) {
             invoicesPerCycle.readOnly = false;

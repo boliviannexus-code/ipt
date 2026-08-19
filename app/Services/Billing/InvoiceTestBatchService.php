@@ -138,7 +138,7 @@ final class InvoiceTestBatchService
         $mode = InvoiceTestMode::from((string) ($data['test_mode'] ?? InvoiceTestMode::Online->value));
         $count = (int) $data['invoice_count'];
         $invoicesPerCycle = $mode === InvoiceTestMode::OfflineContingency ? (int) ($data['invoices_per_cycle'] ?? 1) : 1;
-        $maximumCount = $mode === InvoiceTestMode::OfflineContingency ? 10 : 25;
+        $maximumCount = $mode === InvoiceTestMode::OfflineContingency ? 10 : 500;
         $eventDescription = null;
 
         if ($mode === InvoiceTestMode::OfflineContingency) {
@@ -160,7 +160,7 @@ final class InvoiceTestBatchService
             throw ValidationException::withMessages([
                 'invoice_count' => $mode === InvoiceTestMode::OfflineContingency
                     ? 'La prueba de contingencia admite entre 1 y 10 ciclos.'
-                    : 'La prueba en línea admite entre 1 y 25 facturas.',
+                    : 'La prueba en línea admite entre 1 y 500 facturas.',
             ]);
         }
         if ($invoicesPerCycle < 1 || $invoicesPerCycle > 500) {

@@ -7,6 +7,32 @@ use Illuminate\Validation\Rule;
 
 class TranscribeManualCafcInvoiceRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $items = $this->input('items');
+        if (is_string($items)) {
+            $items = json_decode($items, true);
+        }
+
+        if (is_array($items)) {
+            $items = array_map(static fn (array $item): array => [
+                ...$item,
+                'discount_amount' => $item['discount'] ?? $item['discount_amount'] ?? 0,
+            ], $items);
+            $subtotal = array_sum(array_map(static fn (array $item): float => max(0, (float) ($item['quantity'] ?? 0) * (float) ($item['unit_price'] ?? 0) - (float) ($item['discount_amount'] ?? 0)), $items));
+            $enteredDiscount = (float) ($this->input('total_discount') ?? $this->input('discount_amount') ?? 0);
+            $discount = $this->input('additional_discount_type') === 'PERCENTAGE'
+                ? $subtotal * $enteredDiscount / 100
+                : $enteredDiscount;
+
+            $this->merge([
+                'items' => $items,
+                'discount_amount' => $discount,
+                'total_amount' => max(0, $subtotal - $discount),
+            ]);
+        }
+    }
+
     public function authorize(): bool
     {
         return $this->user()?->can('manual-cafc.transcribe') ?? false;

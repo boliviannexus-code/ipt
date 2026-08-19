@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\InvoiceEmissionMode;
+use App\Enums\InvoiceFiscalStatus;
 use App\Enums\ManualContingencyInvoiceStatus;
-use App\Enums\SignificantEventStatus;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -15,14 +16,10 @@ use App\Models\SinManualContingencyInvoice;
 use App\Models\SinPointOfSale;
 use App\Models\SinSignificantEvent;
 use App\Models\User;
-use App\Services\Billing\Contracts\InvoiceSiatClient;
-use App\Services\Billing\InvoiceSiatResponse;
-use App\Services\Billing\ManualCafcInvoiceSender;
 use App\Services\Billing\ManualCafcService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
-use Tests\Fakes\SequenceInvoiceSiatClient;
 use Tests\TestCase;
 
 class ManualCafcModuleTest extends TestCase
@@ -72,6 +69,26 @@ class ManualCafcModuleTest extends TestCase
         self::assertSame(ManualContingencyInvoiceStatus::PendingTranscription, $manual->manual_status);
         self::assertSame(1, $this->range->refresh()->used_count);
         self::assertSame(101, $this->range->next_number);
+    }
+
+    public function test_cafc_allows_transcription_before_event_registration(): void
+    {
+        $range = $this->service->registerRange([
+            'cafc_code' => 'CAFC-EVENT-'.fake()->unique()->numerify('####'),
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+            'document_sector_code' => 1,
+            'range_start' => 200,
+            'range_end' => 205,
+            'authorized_from' => today()->subDay(),
+            'authorized_until' => today()->addDay(),
+        ], $this->user);
+
+        $manual = $this->service->recordUsed($range, $this->point, 200, now(), $this->user);
+
+        self::assertNull($range->sin_significant_event_id);
+        self::assertNull($manual->sin_significant_event_id);
+        self::assertSame(ManualContingencyInvoiceStatus::PendingTranscription, $manual->manual_status);
     }
 
     public function test_number_outside_range_is_rejected(): void
@@ -148,7 +165,7 @@ class ManualCafcModuleTest extends TestCase
         self::assertSame(1, SinManualContingencyInvoice::query()->withoutGlobalScope('company')->where('sin_cafc_range_id', $this->range->id)->count());
     }
 
-    public function test_transcribed_invoice_is_sent_once_with_simulated_client(): void
+    public function test_transcribed_invoice_is_prepared_for_offline_cafc_package(): void
     {
         $manual = $this->useNumber(100);
         $customer = Customer::factory()->create(['company_id' => $this->company->id, 'identity_document_type_code' => 1]);
@@ -158,22 +175,10 @@ class ManualCafcModuleTest extends TestCase
         ], [[
             'product_id' => $product->id, 'quantity' => 1, 'unit_price' => 25, 'discount_amount' => 0,
         ]], $this->user);
-        $this->event->forceFill(['event_status' => SignificantEventStatus::Registered])->save();
-
-        $client = new SequenceInvoiceSiatClient([new InvoiceSiatResponse([
-            'RespuestaServicioFacturacion' => ['codigoEstado' => 908, 'transaccion' => true, 'codigoRecepcion' => 'MANUAL-908'],
-        ], 35)]);
-        $this->app->instance(InvoiceSiatClient::class, $client);
-        $sender = app(ManualCafcInvoiceSender::class);
-
-        $first = $sender->send($manual, $this->user);
-        $second = $sender->send($first, $this->user);
-
-        self::assertSame(ManualContingencyInvoiceStatus::Validated, $first->manual_status);
-        self::assertSame(ManualContingencyInvoiceStatus::Validated, $second->manual_status);
-        self::assertSame(100, $first->invoice->invoice_number);
-        self::assertSame('MANUAL-908', $first->invoice->reception_code);
-        self::assertSame(1, $client->calls);
+        self::assertSame(ManualContingencyInvoiceStatus::PendingSend, $manual->manual_status);
+        self::assertSame(2, $manual->invoice->emission_type_code);
+        self::assertSame(InvoiceEmissionMode::ManualCafc, $manual->invoice->emission_mode);
+        self::assertSame(InvoiceFiscalStatus::PendingPackage, $manual->invoice->fiscal_status);
     }
 
     private function useNumber(int $number): SinManualContingencyInvoice

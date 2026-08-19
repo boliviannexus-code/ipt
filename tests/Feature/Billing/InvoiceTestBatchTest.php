@@ -164,13 +164,27 @@ final class InvoiceTestBatchTest extends TestCase
         Bus::assertNothingDispatched();
     }
 
-    public function test_batch_cannot_exceed_twenty_five_invoices(): void
+    public function test_online_batch_can_exceed_twenty_five_invoices(): void
+    {
+        Bus::fake();
+
+        $this->actingAs($this->user)
+            ->post(route('billing.invoice-tests.store'), $this->payload(26))
+            ->assertRedirectContains(route('billing.invoice-tests.index'));
+
+        $batch = InvoiceTestBatch::query()->with('items')->firstOrFail();
+        self::assertSame(26, $batch->requested_count);
+        self::assertCount(26, $batch->items);
+        Bus::assertChained(array_fill(0, 26, IssueInvoiceTestItemJob::class));
+    }
+
+    public function test_online_batch_cannot_exceed_five_hundred_invoices(): void
     {
         Bus::fake();
 
         $this->actingAs($this->user)
             ->from(route('billing.invoice-tests.index'))
-            ->post(route('billing.invoice-tests.store'), $this->payload(26))
+            ->post(route('billing.invoice-tests.store'), $this->payload(501))
             ->assertRedirect(route('billing.invoice-tests.index'))
             ->assertSessionHasErrors('invoice_count');
 

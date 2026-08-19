@@ -59,6 +59,21 @@ final class ManualCafcService
                 $this->pointOfSale((int) $actor->company_id, $branchId, $pointId);
             }
 
+            $eventId = isset($attributes['sin_significant_event_id']) ? (int) $attributes['sin_significant_event_id'] : null;
+            if ($eventId !== null) {
+                $eventIsValid = SinSignificantEvent::query()->withoutGlobalScope('company')
+                    ->whereKey($eventId)
+                    ->where('company_id', $actor->company_id)
+                    ->where('sin_branch_id', $branchId)
+                    ->where('sin_point_of_sale_id', $pointId)
+                    ->where('transaccion', true)
+                    ->exists();
+
+                if (! $eventIsValid) {
+                    throw ValidationException::withMessages(['event_code' => 'El evento debe estar registrado ante el SIN y corresponder al mismo punto de venta del CAFC.']);
+                }
+            }
+
             $start = (int) $attributes['range_start'];
             $end = (int) $attributes['range_end'];
             $from = CarbonImmutable::parse((string) $attributes['authorized_from'])->startOfDay();
@@ -72,6 +87,7 @@ final class ManualCafcService
                 'company_id' => $actor->company_id,
                 'sin_branch_id' => $branchId,
                 'sin_point_of_sale_id' => $pointId,
+                'sin_significant_event_id' => $eventId,
                 'created_by_user_id' => $actor->id,
                 'updated_by_user_id' => $actor->id,
                 'cafc_code' => trim((string) $attributes['cafc_code']),
@@ -180,9 +196,6 @@ final class ManualCafcService
             }
 
             $locked->loadMissing(['company', 'cafcRange', 'pointOfSale.branch', 'significantEvent']);
-            if (! $locked->significantEvent) {
-                throw ValidationException::withMessages(['significant_event_id' => 'La factura manual debe estar relacionada con un evento significativo.']);
-            }
             $this->validateRange($locked->cafcRange, $locked->pointOfSale, (int) $locked->manual_invoice_number, $locked->issued_manually_at);
             [$token, $authorization, $cuis, $cufd] = $this->fiscalConfiguration($locked);
 
@@ -191,7 +204,7 @@ final class ManualCafcService
                 $locked->issued_manually_at,
                 (int) $locked->pointOfSale->branch->branch_code,
                 $authorization->modality_code->value,
-                1,
+                2,
                 1,
                 (int) $locked->document_sector_code,
                 (int) $locked->manual_invoice_number,
@@ -226,12 +239,12 @@ final class ManualCafcService
                 'tax_id' => $authorization->tax_id,
                 'environment_code' => $authorization->environment_code,
                 'modality_code' => SiatModality::ComputerizedOnline,
-                'emission_type_code' => 1,
+                'emission_type_code' => 2,
                 'document_sector_code' => $locked->document_sector_code,
                 'invoice_document_type_code' => 1,
                 'emission_mode' => InvoiceEmissionMode::ManualCafc,
                 'commercial_status' => InvoiceCommercialStatus::Confirmed,
-                'fiscal_status' => InvoiceFiscalStatus::ManualPendingSend,
+                'fiscal_status' => InvoiceFiscalStatus::PendingPackage,
                 'branch_code' => $locked->pointOfSale->branch->branch_code,
                 'point_of_sale_code' => $locked->pointOfSale->point_of_sale_code,
                 'attempted_invoice_number' => $locked->manual_invoice_number,
