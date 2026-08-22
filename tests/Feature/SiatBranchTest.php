@@ -171,6 +171,12 @@ class SiatBranchTest extends TestCase
         $user = $this->companyUser(['siat-branches.view', 'siat-branches.manage']);
         $branch = SinBranch::factory()->create(['company_id' => $user->company_id, 'branch_code' => 4]);
         $this->prepareSiatCredentials($user, $branch);
+        SinPointOfSale::factory()->create([
+            'company_id' => $user->company_id,
+            'sin_branch_id' => $branch->id,
+            'point_of_sale_code' => 15,
+            'name' => 'Nombre anterior',
+        ]);
 
         $soap = new class
         {
@@ -194,13 +200,19 @@ class SiatBranchTest extends TestCase
         $this->actingAs($user)
             ->post(route('siat.branches.points.synchronize', $branch))
             ->assertRedirect(route('siat.branches.index'))
-            ->assertSessionHas('success', 'Consulta SIN completada: 2 punto(s) de venta recibido(s).');
+            ->assertSessionHas('success', 'Recuperación desde Impuestos completada: 2 recibido(s), 1 nuevo(s) y 1 actualizado(s).');
 
         $this->assertDatabaseHas('sin_points_of_sale', [
             'sin_branch_id' => $branch->id,
             'point_of_sale_code' => 12,
             'name' => 'Móvil Norte',
             'point_of_sale_type' => 'Punto de Venta Móvil',
+            'point_of_sale_type_code' => 3,
+        ]);
+        $this->assertDatabaseHas('sin_points_of_sale', [
+            'sin_branch_id' => $branch->id,
+            'point_of_sale_code' => 15,
+            'name' => 'Cajero Centro',
         ]);
     }
 

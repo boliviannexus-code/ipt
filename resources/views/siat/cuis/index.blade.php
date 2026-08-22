@@ -128,6 +128,40 @@
                             </div>
                         </form>
                     </div>
+                    <div class="card-footer">
+                        <details @if($errors->has('cuis_code')) open @endif>
+                            <summary class="fw-semibold">Registrar CUIS existente</summary>
+                            <p class="text-secondary small mt-2 mb-3">
+                                Úsalo al migrar a una base nueva cuando el SIN indique que el CUIS ya fue generado pero no devuelva el código.
+                            </p>
+                            <form method="POST" action="{{ route('siat.cuis.import') }}">
+                                @csrf
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-lg-5">
+                                        <label class="form-label" for="existing-cuis-point-of-sale">Sucursal / punto de venta</label>
+                                        <select class="form-select @error('sin_point_of_sale_id') is-invalid @enderror" id="existing-cuis-point-of-sale" name="sin_point_of_sale_id" required>
+                                            <option value="">Seleccionar</option>
+                                            @foreach ($pointOptions as $point)
+                                                <option value="{{ $point->id }}" @selected((string) old('sin_point_of_sale_id') === (string) $point->id)>
+                                                    Suc. {{ $point->branch->branch_code }} / PV {{ $point->point_of_sale_code }} - {{ $point->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div class="col-lg-5">
+                                        <label class="form-label" for="existing-cuis-code">CUIS vigente</label>
+                                        <input class="form-control @error('cuis_code') is-invalid @enderror" id="existing-cuis-code" name="cuis_code" value="{{ old('cuis_code') }}" maxlength="128" autocomplete="off" required>
+                                        @error('cuis_code')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                                    </div>
+                                    <div class="col-lg-2">
+                                        <button class="btn btn-outline-primary w-100" type="submit" @disabled(! $apiToken || ! $authorization || $pointOptions->isEmpty())>
+                                            <i class="ti ti-database-import me-1" aria-hidden="true"></i>Registrar
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </details>
+                    </div>
                 @else
                     <div class="card-footer d-flex flex-column flex-sm-row gap-2 justify-content-end">
                         @can('sin-api-tokens.view')

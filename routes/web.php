@@ -127,6 +127,10 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->whereNumber('invoice')
                 ->middleware('permission:invoices.view')
                 ->name('invoices.print');
+            Route::get('facturas/{invoice}/xml', [FiscalArtifactController::class, 'viewXml'])
+                ->whereNumber('invoice')
+                ->middleware('permission:invoices.view')
+                ->name('invoices.xml');
             Route::get('facturas/{invoice}/anular', [InvoiceController::class, 'cancelForm'])
                 ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel.form');
             Route::post('facturas/{invoice}/anular', [InvoiceController::class, 'cancel'])
@@ -263,6 +267,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::post('cuis/request', [SiatCuisController::class, 'request'])
                 ->middleware('permission:siat-cuis.request')
                 ->name('cuis.request');
+            Route::post('cuis/import', [SiatCuisController::class, 'importExisting'])
+                ->middleware('permission:siat-cuis.request')
+                ->name('cuis.import');
             Route::get('catalogs', [SiatCatalogController::class, 'index'])
                 ->middleware('permission:siat-catalogs.view')
                 ->name('catalogs.index');

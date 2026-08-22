@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RequestSinCuisRequest;
+use App\Http\Requests\ImportSinCuisRequest;
 use App\Services\Parameters\SinAuthorizationService;
 use App\Services\Siat\SiatCuisService;
 use App\Services\Siat\SinBranchService;
@@ -42,5 +43,18 @@ class SiatCuisController extends Controller
                 $attempt->transaccion ? 'success' : 'warning',
                 $attempt->message,
             );
+    }
+
+    public function importExisting(ImportSinCuisRequest $request): RedirectResponse
+    {
+        $this->cuis->importExisting(
+            $request->user(),
+            $request->pointOfSale(),
+            $request->validated('cuis_code'),
+        );
+
+        return redirect()
+            ->route('siat.cuis.index')
+            ->with('success', 'CUIS existente registrado correctamente. Ya puedes continuar con las operaciones SIAT.');
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature\CashRegisters;
 
 use App\Models\CashRegister;
 use App\Models\Company;
+use App\Models\Sale;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -278,6 +279,37 @@ class CashRegisterTest extends TestCase
             ->assertSessionHasErrors('company_id');
 
         $this->assertNotSame($newCompany->id, $cashier->refresh()->company_id);
+    }
+
+    public function test_user_with_sales_cannot_be_changed_to_no_company(): void
+    {
+        Permission::findOrCreate('users.edit');
+        $actor = User::factory()->create(['company_id' => null]);
+        Role::findOrCreate('super_admin');
+        $actor->assignRole('super_admin');
+        $actor->givePermissionTo('users.edit');
+
+        $seller = $this->companyUser([]);
+        Sale::factory()->create([
+            'company_id' => $seller->company_id,
+            'user_id' => $seller->id,
+        ]);
+
+        $this
+            ->actingAs($actor)
+            ->from(route('users.edit', $seller))
+            ->put(route('users.update', $seller), [
+                'company_id' => '',
+                'name' => $seller->name,
+                'email' => $seller->email,
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('users.edit', $seller))
+            ->assertSessionHasErrors([
+                'company_id' => 'No puedes cambiar ni quitar la empresa de un usuario que tiene ventas registradas.',
+            ]);
+
+        $this->assertNotNull($seller->refresh()->company_id);
     }
 
     public function test_company_with_cash_register_history_cannot_be_deleted(): void

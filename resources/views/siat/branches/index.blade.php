@@ -115,8 +115,9 @@
                                     <form class="mb-2" method="POST" action="{{ route('siat.branches.points.synchronize', $branch) }}">
                                         @csrf
                                         <button class="btn btn-outline-secondary btn-sm w-100" type="submit">
-                                            <i class="ti ti-refresh me-1" aria-hidden="true"></i>Consultar en SIN
+                                            <i class="ti ti-database-import me-1" aria-hidden="true"></i>Recuperar puntos de Impuestos
                                         </button>
+                                        <div class="form-hint mt-1">Importa puntos faltantes y actualiza los existentes.</div>
                                     </form>
                                     <form method="POST" action="{{ route('siat.branches.points.store', $branch) }}">
                                         @csrf

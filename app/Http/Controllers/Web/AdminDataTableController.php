@@ -220,31 +220,39 @@ class AdminDataTableController extends Controller
 
     private function invoiceActions(SinInvoiceIssue $invoice): string
     {
+        $xmlAction = $invoice->xml_path
+            ? '<a class="btn btn-outline-secondary btn-sm" href="'.e(route('billing.invoices.xml', $invoice)).'" target="_blank" rel="noopener">'
+                .'<i class="ti ti-file-code me-1" aria-hidden="true"></i>Ver XML</a>'
+            : '';
+
         if (auth()->user()?->can('invoices.issue')
             && $invoice->fiscal_status === InvoiceFiscalStatus::PendingOnlineSend
             && $invoice->emission_mode === InvoiceEmissionMode::Online) {
             return '<form class="d-inline" method="POST" data-disable-on-submit action="'.e(route('billing.invoices.resend', $invoice)).'">'
                 .csrf_field().'<button class="btn btn-outline-primary btn-sm" type="submit" data-submitting-label="Encolando…">'
-                .'<i class="ti ti-send me-1" aria-hidden="true"></i><span>Reenviar al SIN</span></button></form>';
+                .'<i class="ti ti-send me-1" aria-hidden="true"></i><span>Reenviar al SIN</span></button></form>'
+                .($xmlAction !== '' ? ' '.$xmlAction : '');
         }
 
         if (auth()->user()?->can('invoices.issue')
             && in_array($invoice->fiscal_status, [InvoiceFiscalStatus::Observed, InvoiceFiscalStatus::Rejected], true)
             && in_array($invoice->status_code, [904, 902], true)) {
             return '<a class="btn btn-outline-warning btn-sm" href="'.e(route('billing.invoices.payment.correct.form', $invoice)).'">'
-                .'<i class="ti ti-edit me-1" aria-hidden="true"></i>Corregir método de pago</a>';
+                .'<i class="ti ti-edit me-1" aria-hidden="true"></i>Corregir método de pago</a>'
+                .($xmlAction !== '' ? ' '.$xmlAction : '');
         }
 
         if (! ($invoice->status_code === 908 && $invoice->transaccion && $invoice->invoice_number)
             && ! in_array($invoice->fiscal_status, [InvoiceFiscalStatus::CancelledInSiat, InvoiceFiscalStatus::ReversedInSiat], true)) {
-            return '<span class="text-body-secondary small">-</span>';
+            return $xmlAction !== '' ? $xmlAction : '<span class="text-body-secondary small">-</span>';
         }
 
         $actions = '<a class="btn btn-outline-primary btn-sm" href="'
             .e(route('billing.invoices.print', $invoice))
             .'" target="_blank" rel="noopener">'
             .'<i class="ti ti-printer me-1" aria-hidden="true"></i>Reimprimir'
-            .'</a>';
+            .'</a>'
+            .($xmlAction !== '' ? ' '.$xmlAction : '');
 
         if (auth()->user()?->can('invoices.cancel')
             && in_array($invoice->fiscal_status, [InvoiceFiscalStatus::Validated, InvoiceFiscalStatus::ValidatedAfterContingency, InvoiceFiscalStatus::ManualValidated], true)) {

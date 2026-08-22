@@ -46,10 +46,13 @@ class SiatBranchController extends Controller
 
     public function synchronizePoints(SinBranch $branch): RedirectResponse
     {
-        $count = $this->pointsOfSale->synchronize($branch);
+        $result = $this->pointsOfSale->synchronize($branch);
 
         return redirect()
             ->route('siat.branches.index')
-            ->with('success', "Consulta SIN completada: {$count} punto(s) de venta recibido(s).");
+            ->with(
+                'success',
+                "Recuperación desde Impuestos completada: {$result->received} recibido(s), {$result->created} nuevo(s) y {$result->updated} actualizado(s).",
+            );
     }
 }

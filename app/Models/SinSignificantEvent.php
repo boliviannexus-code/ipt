@@ -27,7 +27,7 @@ class SinSignificantEvent extends Model implements Auditable
         'recovery_detected_at', 'reception_code', 'registration_claim', 'registration_claimed_at',
         'transaccion', 'status_label', 'request_payload', 'response', 'message',
         'duration_ms', 'registered_at', 'closed_at', 'expires_at',
-        'manual_review_required', 'administrative_correction_reason',
+        'manual_review_required', 'requires_manual_processing', 'administrative_correction_reason',
         'administratively_corrected_by_user_id', 'administratively_corrected_at',
     ];
 
@@ -49,6 +49,7 @@ class SinSignificantEvent extends Model implements Auditable
             'closed_at' => 'immutable_datetime',
             'expires_at' => 'immutable_datetime',
             'manual_review_required' => 'boolean',
+            'requires_manual_processing' => 'boolean',
             'administratively_corrected_at' => 'immutable_datetime',
         ];
     }

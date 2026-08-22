@@ -97,9 +97,8 @@ final class SiatPointOfSaleService
     /**
      * Consulta SIAT y refleja localmente la lista oficial de la sucursal.
      *
-     * @return int cantidad de puntos recibidos
      */
-    public function synchronize(SinBranch $branch): int
+    public function synchronize(SinBranch $branch): PointOfSaleSyncResult
     {
         [$token, $authorization, $cuis] = $this->credentials($branch);
 
@@ -131,7 +130,10 @@ final class SiatPointOfSaleService
 
         $points = $this->pointList($responseData);
 
-        DB::transaction(function () use ($branch, $points): void {
+        [$created, $updated] = DB::transaction(function () use ($branch, $points): array {
+            $created = 0;
+            $updated = 0;
+
             foreach ($points as $point) {
                 $code = (int) ($point['codigoPuntoVenta'] ?? 0);
 
@@ -140,24 +142,35 @@ final class SiatPointOfSaleService
                 }
 
                 $type = trim((string) ($point['tipoPuntoVenta'] ?? ''));
-                SinPointOfSale::query()->updateOrCreate(
+                $typeCode = array_search($type, self::TYPES, true);
+                $description = trim((string) ($point['descripcion'] ?? $point['descripcionPuntoVenta'] ?? ''));
+                $localPoint = SinPointOfSale::query()->firstOrNew(
                     [
                         'company_id' => $branch->company_id,
                         'sin_branch_id' => $branch->id,
                         'point_of_sale_code' => $code,
                     ],
-                    [
-                        'point_of_sale_type' => $type !== '' ? $type : null,
-                        'name' => trim((string) ($point['nombrePuntoVenta'] ?? "Punto de venta {$code}")),
-                        'is_default' => false,
-                        'is_active' => true,
-                        'last_synced_at' => now(),
-                    ],
                 );
+
+                $wasRecentlyDiscovered = ! $localPoint->exists;
+                $localPoint->fill([
+                    'point_of_sale_type_code' => $typeCode !== false ? $typeCode : $localPoint->point_of_sale_type_code,
+                    'point_of_sale_type' => $type !== '' ? $type : $localPoint->point_of_sale_type,
+                    'name' => trim((string) ($point['nombrePuntoVenta'] ?? "Punto de venta {$code}")),
+                    'description' => $description !== '' ? $description : $localPoint->description,
+                    'is_default' => false,
+                    'is_active' => true,
+                    'registered_at' => $localPoint->registered_at ?? now(),
+                    'last_synced_at' => now(),
+                ])->save();
+
+                $wasRecentlyDiscovered ? $created++ : $updated++;
             }
+
+            return [$created, $updated];
         });
 
-        return count($points);
+        return new PointOfSaleSyncResult(count($points), $created, $updated);
     }
 
     /**

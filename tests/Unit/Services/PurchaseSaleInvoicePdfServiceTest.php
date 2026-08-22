@@ -45,15 +45,15 @@ class PurchaseSaleInvoicePdfServiceTest extends TestCase
         $this->assertStringNotContainsString('/ca 0.130000', $productionPdf);
     }
 
-    public function test_representation_graphic_legend_uses_the_opposite_operation_mode(): void
+    public function test_representation_graphic_legend_matches_the_invoice_emission_mode(): void
     {
         $service = app(PurchaseSaleInvoicePdfService::class);
         $online = $this->invoice();
         $offline = $this->invoice();
         $offline->emission_mode = InvoiceEmissionMode::OfflineDigital;
 
-        $this->assertStringContainsString('emitido fuera de línea, verifique su envío', $service->representationGraphicLegend($online));
-        $this->assertStringContainsString('emitido en una modalidad de facturación en línea', $service->representationGraphicLegend($offline));
+        $this->assertStringContainsString('emitido en una modalidad de facturación en línea', $service->representationGraphicLegend($online));
+        $this->assertStringContainsString('emitido fuera de línea, verifique su envío', $service->representationGraphicLegend($offline));
     }
 
     private function invoice(?InvoicePrintFormat $printFormat = null, int $environmentCode = 2): SinInvoiceIssue

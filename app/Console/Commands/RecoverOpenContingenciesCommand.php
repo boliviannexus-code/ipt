@@ -49,6 +49,8 @@ final class RecoverOpenContingenciesCommand extends Command
 
         if ($this->option('event') !== null) {
             $query->whereKey((int) $this->option('event'));
+        } else {
+            $query->where('requires_manual_processing', false);
         }
 
         $events = $query->get();

@@ -348,8 +348,8 @@ class PurchaseSaleInvoicePdfService
     public function representationGraphicLegend(SinInvoiceIssue $invoice): string
     {
         return $invoice->emission_mode === InvoiceEmissionMode::OfflineDigital
-            ? '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea”'
-            : '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido fuera de línea, verifique su envío con su proveedor o en la página web www.impuestos.gob.bo”';
+            ? '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido fuera de línea, verifique su envío con su proveedor o en la página web www.impuestos.gob.bo”'
+            : '“Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea”';
     }
 
     private function rollPair(TCPDF $pdf, float $y, string $label, string $value): float

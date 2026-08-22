@@ -47,6 +47,15 @@
                         <dt>Vencimiento certificado</dt>
                         <dd>{{ $authorization->certificate_expires_at?->format('d/m/Y H:i') ?? 'No registrado' }}</dd>
 
+                        <dt>Modo de emisión</dt>
+                        <dd>
+                            @if ($authorization->force_offline_emission)
+                                <span class="badge bg-warning-lt text-warning"><i class="ti ti-wifi-off me-1"></i>Fuera de línea forzado</span>
+                            @else
+                                <span class="badge bg-success-lt text-success"><i class="ti ti-wifi me-1"></i>Automático</span>
+                            @endif
+                        </dd>
+
                         <dt>Actualizado</dt>
                         <dd>{{ $authorization->updated_at?->format('d/m/Y H:i') ?? '-' }}</dd>
                     </dl>

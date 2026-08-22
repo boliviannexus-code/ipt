@@ -139,7 +139,9 @@ final class SiatScheduledProcessService
     {
         $count = 0;
         SinSignificantEvent::query()->withoutGlobalScope('company')
-            ->whereNull('closed_at')->whereIn('event_status', $statuses)
+            ->whereNull('closed_at')
+            ->where('requires_manual_processing', false)
+            ->whereIn('event_status', $statuses)
             ->orderBy('id')->eachById(function (SinSignificantEvent $event) use ($dispatch, &$count): void {
                 $dispatch($event);
                 $count++;
@@ -154,6 +156,7 @@ final class SiatScheduledProcessService
         $count = 0;
         SinInvoicePackage::query()->withoutGlobalScope('company')
             ->whereIn('package_status', $statuses)
+            ->whereDoesntHave('significantEvent', fn ($query) => $query->where('requires_manual_processing', true))
             ->orderBy('id')->eachById(function (SinInvoicePackage $package) use ($dispatch, &$count): void {
                 $dispatch($package);
                 $count++;

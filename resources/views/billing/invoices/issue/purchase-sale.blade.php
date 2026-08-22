@@ -67,9 +67,17 @@
             </div>
         @endisset
 
+        @if ($authorization?->force_offline_emission && ! isset($manualCafc))
+            <div class="alert alert-warning" role="status">
+                <i class="ti ti-wifi-off me-1" aria-hidden="true"></i>
+                <strong>Emisión fuera de línea activada.</strong>
+                La factura se guardará localmente y quedará pendiente de regularización. Puedes cambiar este modo en Parámetros → Autorización.
+            </div>
+        @endif
+
         <div class="alert {{ $communicationStatus['ok'] ? 'alert-warning d-none' : 'alert-danger' }}" role="alert" data-invoice-communication-message>
             {{ $communicationStatus['ok']
-                ? 'La emision esta bloqueada hasta registrar la contingencia y procesar las facturas fuera de linea pendientes.'
+                ? 'Existe una contingencia pendiente. Las nuevas facturas continuaran emitiendose fuera de linea hasta registrar el evento significativo.'
                 : 'No existe comunicacion con SIAT. Las facturas se emitiran fuera de linea y quedaran pendientes de sincronizacion.' }}
         </div>
 

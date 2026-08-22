@@ -650,7 +650,7 @@ function initInvoiceIssueForms(scope = document) {
             const hasPointOfSale = Boolean(option?.value) && !String(option.value).startsWith('branch-');
             const cuisOk = hasPointOfSale && option?.dataset.cuisValid === '1';
             const cufdOk = hasPointOfSale && option?.dataset.cufdValid === '1';
-            const recoveryBlocked = communicationOk && option?.dataset.recoveryBlocked === '1';
+            const recoveryBlocked = false;
 
             setFiscalStatus(
                 cuisStatus,
@@ -984,12 +984,18 @@ function initInvoiceIssueForms(scope = document) {
                             ? `Factura ${invoice?.invoice_number ?? ''} emitida localmente y pendiente de sincronizacion con el SIN.`
                             : `Factura ${invoice?.invoice_number ?? ''} validada por el SIN. Codigo de recepcion: ${invoice?.reception_code ?? '-'}`,
                         confirmButtonText: invoice?.print_url ? 'Imprimir PDF' : 'Aceptar',
+                        showDenyButton: Boolean(invoice?.xml_url),
+                        denyButtonText: 'Ver XML',
                         showCancelButton: Boolean(invoice?.print_url),
                         cancelButtonText: 'Cerrar',
                     });
 
                     if (result.isConfirmed && invoice?.print_url) {
                         window.open(invoice.print_url, '_blank', 'noopener');
+                    }
+
+                    if (result.isDenied && invoice?.xml_url) {
+                        window.open(invoice.xml_url, '_blank', 'noopener');
                     }
 
                     if (manualCafc && payload.redirect_url) {

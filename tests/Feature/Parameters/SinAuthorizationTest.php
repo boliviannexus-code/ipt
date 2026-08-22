@@ -46,6 +46,31 @@ class SinAuthorizationTest extends TestCase
             ->assertSee('Parametro SIAT: codigoModalidad')
             ->assertSee('Pruebas y Piloto (2)')
             ->assertSee('Computarizada en Linea (2)');
+
+    }
+
+    public function test_company_user_can_enable_forced_offline_emission(): void
+    {
+        $user = $this->companyUser([
+            'sin-authorizations.view',
+            'sin-authorizations.manage',
+        ]);
+        SinAuthorization::factory()->create(['company_id' => $user->company_id]);
+
+        $this->actingAs($user)
+            ->put(route('parameters.authorization.update'), [
+                'tax_id' => '123456789',
+                'legal_name' => 'Empresa Demo SRL',
+                'system_code' => '',
+                'environment_code' => SiatEnvironment::TestingAndPilot->value,
+                'modality_code' => SiatModality::ComputerizedOnline->value,
+                'branch_code' => 0,
+                'point_of_sale_code' => '',
+                'force_offline_emission' => '1',
+            ])
+            ->assertRedirect(route('parameters.authorization.index'));
+
+        $this->assertTrue(SinAuthorization::query()->firstOrFail()->force_offline_emission);
     }
 
     public function test_company_user_can_save_audited_authorization_and_system_code_is_encrypted(): void

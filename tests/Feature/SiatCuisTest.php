@@ -334,6 +334,60 @@ class SiatCuisTest extends TestCase
         $this->assertFalse($attempt->response['RespuestaCuis']['transaccion']);
     }
 
+    public function test_existing_cuis_can_be_imported_when_new_database_has_no_local_copy(): void
+    {
+        $user = $this->companyUser([
+            'siat-cuis.view',
+            'siat-cuis.request',
+        ]);
+        [$apiToken, $authorization, $pointOfSale] = $this->siatConfiguration($user);
+
+        $this->actingAs($user)
+            ->post(route('siat.cuis.import'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+                'cuis_code' => 'abc123def456',
+            ])
+            ->assertRedirect(route('siat.cuis.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('sin_cuis', [
+            'company_id' => $user->company_id,
+            'sin_api_token_id' => $apiToken->id,
+            'sin_authorization_id' => $authorization->id,
+            'sin_point_of_sale_id' => $pointOfSale->id,
+            'cuis_code' => 'ABC123DEF456',
+            'transaccion' => true,
+            'message' => 'CUIS existente importado durante la recuperación de la base de datos.',
+        ]);
+    }
+
+    public function test_false_response_recovers_direct_alphanumeric_codigo_but_not_numeric_message_code(): void
+    {
+        $user = $this->companyUser(['siat-cuis.request']);
+        [, , $pointOfSale] = $this->siatConfiguration($user);
+
+        $this->fakeSoapClient(new class
+        {
+            public function cuis(array $params): object
+            {
+                return (object) ['RespuestaCuis' => (object) [
+                    'codigo' => 'CUISDIRECT123',
+                    'mensajesList' => (object) ['codigo' => 980],
+                    'transaccion' => false,
+                ]];
+            }
+        });
+
+        $this->actingAs($user)->post(route('siat.cuis.request'), [
+            'sin_point_of_sale_id' => $pointOfSale->id,
+        ]);
+
+        $this->assertDatabaseHas('sin_cuis', [
+            'cuis_code' => 'CUISDIRECT123',
+            'transaccion' => true,
+        ]);
+    }
+
     public function test_cuis_request_requires_token_and_authorization_configuration(): void
     {
         $user = $this->companyUser([

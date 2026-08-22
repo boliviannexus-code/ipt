@@ -57,8 +57,14 @@ final class SendContingencyPackageJob implements ShouldBeUnique, ShouldQueue
     {
         $package = SinInvoicePackage::query()
             ->withoutGlobalScope('company')
+            ->with('significantEvent')
             ->where('company_id', $this->companyId)
             ->findOrFail($this->packageId);
+
+        if ($package->significantEvent?->requires_manual_processing) {
+            return;
+        }
+
         $actor = $this->actor($package);
         $result = $packages->send($package, $actor);
 

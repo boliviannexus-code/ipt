@@ -52,6 +52,11 @@ final class BuildContingencyPackagesJob implements ShouldBeUnique, ShouldQueue
             ->withoutGlobalScope('company')
             ->where('company_id', $this->companyId)
             ->findOrFail($this->significantEventId);
+
+        if ($event->requires_manual_processing) {
+            return;
+        }
+
         $actor = $this->actorId === null
             ? null
             : User::query()->withoutGlobalScope('company')

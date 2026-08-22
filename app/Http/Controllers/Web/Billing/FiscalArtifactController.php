@@ -24,6 +24,18 @@ final class FiscalArtifactController extends Controller
         ]);
     }
 
+    public function viewXml(Request $request, SinInvoiceIssue $invoice): Response
+    {
+        $this->authorizeCompany($request, $invoice);
+        abort_unless($invoice->xml_path && Storage::disk('local')->exists($invoice->xml_path), 404);
+
+        return response(Storage::disk('local')->get($invoice->xml_path), 200, [
+            'Content-Type' => 'application/xml; charset=UTF-8',
+            'Content-Disposition' => 'inline; filename="factura-'.($invoice->invoice_number ?? $invoice->id).'.xml"',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function pdf(Request $request, SinInvoiceIssue $invoice, PurchaseSaleInvoicePdfService $pdf): Response
     {
         $this->authorizeCompany($request, $invoice);

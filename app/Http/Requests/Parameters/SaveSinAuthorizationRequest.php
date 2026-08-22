@@ -28,6 +28,7 @@ class SaveSinAuthorizationRequest extends FormRequest
             'modality_code' => ['required', 'integer', Rule::in(SiatModality::values())],
             'branch_code' => ['required', 'integer', 'min:0', 'max:2147483647'],
             'point_of_sale_code' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'force_offline_emission' => ['sometimes', 'boolean'],
             'certificate_expires_at' => ['nullable', 'date'],
         ];
     }

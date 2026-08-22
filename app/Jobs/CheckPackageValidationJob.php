@@ -56,8 +56,14 @@ final class CheckPackageValidationJob implements ShouldBeUnique, ShouldQueue
     {
         $package = SinInvoicePackage::query()
             ->withoutGlobalScope('company')
+            ->with('significantEvent')
             ->where('company_id', $this->companyId)
             ->findOrFail($this->packageId);
+
+        if ($package->significantEvent?->requires_manual_processing) {
+            return;
+        }
+
         $actor = $this->actorId === null
             ? null
             : User::query()->withoutGlobalScope('company')

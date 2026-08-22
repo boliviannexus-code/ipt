@@ -2,10 +2,8 @@
 
 namespace App\Http\Controllers\Web\Billing;
 
-use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatEnvironment;
-use App\Enums\SignificantEventStatus;
 use App\Services\Siat\SiatErrorClassifier;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\IssuePurchaseSaleInvoiceRequest;
@@ -16,7 +14,6 @@ use App\Models\SinAuthorization;
 use App\Models\SinBranch;
 use App\Models\SinCatalogItem;
 use App\Models\SinCuis;
-use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
 use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceIssuanceService;
@@ -217,6 +214,9 @@ class InvoiceIssueController extends Controller
                     'print_url' => ($validated || $offlineIssued)
                         ? route('billing.invoices.print', $issue)
                         : null,
+                    'xml_url' => $issue->xml_path
+                        ? route('billing.invoices.xml', $issue)
+                        : null,
                     'emission_mode' => $issue->emission_mode->value,
                     'commercial_status' => $issue->commercial_status->value,
                     'fiscal_status' => $issue->fiscal_status->value,
@@ -303,31 +303,8 @@ class InvoiceIssueController extends Controller
     private function fiscalStatuses(Collection $branches): array
     {
         $statuses = [];
-        $pointIds = $branches->flatMap(
-            fn (SinBranch $branch) => $branch->activePointsOfSale->pluck('id')
-        );
-        $blockedPointIds = SinInvoiceIssue::query()
-            ->withoutGlobalScope('company')
-            ->whereIn('sin_point_of_sale_id', $pointIds)
-            ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
-            ->whereNotIn('fiscal_status', [
-                InvoiceFiscalStatus::ValidatedAfterContingency,
-                InvoiceFiscalStatus::Observed,
-                InvoiceFiscalStatus::Rejected,
-            ])
-            ->where(function ($query): void {
-                $query->whereNull('sin_significant_event_id')
-                    ->orWhereHas('significantEvent', fn ($event) => $event
-                        ->where(function ($status): void {
-                            $status->where('manual_review_required', false)
-                                ->orWhere('event_status', '!=', SignificantEventStatus::Failed);
-                        }));
-            })
-            ->pluck('sin_point_of_sale_id')
-            ->mapWithKeys(static fn ($id): array => [(int) $id => true]);
-
-        $branches->each(function (SinBranch $branch) use (&$statuses, $blockedPointIds): void {
-            $branch->activePointsOfSale->each(function (SinPointOfSale $pointOfSale) use (&$statuses, $blockedPointIds): void {
+        $branches->each(function (SinBranch $branch) use (&$statuses): void {
+            $branch->activePointsOfSale->each(function (SinPointOfSale $pointOfSale) use (&$statuses): void {
                 $currentCuis = $this->currentCuisForPointOfSale($pointOfSale);
                 $currentCufd = $this->cufds->currentForPointOfSale($pointOfSale);
 
@@ -338,7 +315,7 @@ class InvoiceIssueController extends Controller
                     'cufd_valid' => $currentCufd !== null,
                     'cufd_label' => 'CUFD',
                     'cufd_detail' => $currentCufd ? '' : 'CUFD no vigente',
-                    'recovery_blocked' => $blockedPointIds->has((int) $pointOfSale->id),
+                    'recovery_blocked' => false,
                 ];
             });
         });

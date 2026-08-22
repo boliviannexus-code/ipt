@@ -121,6 +121,10 @@ class SinAuthorizationService
                 : (int) $data['point_of_sale_code'];
         }
 
+        if (array_key_exists('force_offline_emission', $data)) {
+            $data['force_offline_emission'] = (bool) $data['force_offline_emission'];
+        }
+
         if (array_key_exists('certificate_expires_at', $data) && blank($data['certificate_expires_at'])) {
             $data['certificate_expires_at'] = null;
         }

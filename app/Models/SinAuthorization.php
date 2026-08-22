@@ -26,6 +26,7 @@ class SinAuthorization extends Model implements Auditable
         'modality_code',
         'branch_code',
         'point_of_sale_code',
+        'force_offline_emission',
         'certificate_expires_at',
     ];
 
@@ -45,6 +46,7 @@ class SinAuthorization extends Model implements Auditable
             'modality_code' => SiatModality::class,
             'branch_code' => 'integer',
             'point_of_sale_code' => 'integer',
+            'force_offline_emission' => 'boolean',
             'certificate_expires_at' => 'immutable_datetime',
         ];
     }

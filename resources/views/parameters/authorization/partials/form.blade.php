@@ -199,6 +199,34 @@
         </div>
     </section>
 
+    <section class="authorization-form-section" aria-labelledby="authorization-emission-heading">
+        <div class="authorization-form-section-header">
+            <span class="authorization-form-section-icon authorization-form-section-icon-service" aria-hidden="true"><i class="ti ti-wifi-off"></i></span>
+            <div>
+                <h2 class="authorization-form-section-title" id="authorization-emission-heading">Modo de emisión</h2>
+            </div>
+        </div>
+
+        <input type="hidden" name="force_offline_emission" value="0">
+        <label class="form-check form-switch">
+            <input
+                class="form-check-input @error('force_offline_emission') is-invalid @enderror"
+                id="authorization-force-offline-emission"
+                name="force_offline_emission"
+                type="checkbox"
+                value="1"
+                @checked((bool) old('force_offline_emission', $authorization?->force_offline_emission ?? false))
+            >
+            <span class="form-check-label">Forzar emisión fuera de línea</span>
+        </label>
+        <div class="form-hint mt-2">
+            Mientras esté activo, las nuevas facturas se emitirán localmente con el CUFD vigente y quedarán pendientes de regularización en Contingencias. Desactívalo cuando se restablezca la operación en línea.
+        </div>
+        @error('force_offline_emission')
+            <div class="invalid-feedback d-block">{{ $message }}</div>
+        @enderror
+    </section>
+
     <div class="d-flex flex-column flex-sm-row gap-2 justify-content-end mt-4">
         <a class="btn btn-outline-secondary" href="{{ route('dashboard') }}">
             <i class="ti ti-arrow-left me-1" aria-hidden="true"></i>Volver

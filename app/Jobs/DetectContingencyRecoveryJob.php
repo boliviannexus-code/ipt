@@ -57,6 +57,11 @@ final class DetectContingencyRecoveryJob implements ShouldBeUnique, ShouldQueue
     {
         $event = SinSignificantEvent::query()->withoutGlobalScope('company')
             ->where('company_id', $this->companyId)->findOrFail($this->significantEventId);
+
+        if ($event->requires_manual_processing) {
+            return;
+        }
+
         $actor = $this->actorId === null ? null : User::query()->withoutGlobalScope('company')
             ->where('company_id', $this->companyId)->find($this->actorId);
 

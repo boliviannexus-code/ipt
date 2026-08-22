@@ -84,6 +84,7 @@ final class ContingencyRecoveryService
                 'updated_by_user_id' => $actor->id,
                 'status_label' => 'Pendiente de registro',
                 'message' => 'Evento fiscal seleccionado; pendiente de comunicación con SIAT.',
+                'requires_manual_processing' => false,
             ]);
 
             return $locked->refresh();

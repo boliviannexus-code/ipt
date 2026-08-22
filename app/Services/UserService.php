@@ -194,6 +194,12 @@ class UserService
                 'company_id' => 'No puedes cambiar la empresa de un usuario que tiene historial de cajas.',
             ]);
         }
+
+        if ($user->sales()->exists()) {
+            throw ValidationException::withMessages([
+                'company_id' => 'No puedes cambiar ni quitar la empresa de un usuario que tiene ventas registradas.',
+            ]);
+        }
     }
 
     private function ensureHasNoActiveCashRegister(User $user): void

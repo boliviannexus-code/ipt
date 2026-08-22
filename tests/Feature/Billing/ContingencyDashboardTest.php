@@ -467,6 +467,20 @@ final class ContingencyDashboardTest extends TestCase
         $this->actingAs($this->user)->get('/facturacion/contingencias/facturas/'.$otherInvoice->id.'/xml')->assertNotFound();
     }
 
+    public function test_invoice_xml_can_be_viewed_inline_from_the_general_invoice_module(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put($this->offlineInvoice->xml_path, '<factura>visible</factura>');
+        $this->grant($this->user, 'invoices.view');
+
+        $this->actingAs($this->user)
+            ->get(route('billing.invoices.xml', $this->offlineInvoice))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/xml; charset=UTF-8')
+            ->assertHeader('content-disposition', 'inline; filename="factura-'.$this->offlineInvoice->invoice_number.'.xml"')
+            ->assertSeeText('visible');
+    }
+
     public function test_contingency_routes_expose_no_delete_or_fiscal_edit_endpoint(): void
     {
         $routes = collect(Route::getRoutes()->getRoutes())

@@ -222,11 +222,29 @@ final class InvoiceIssuanceServiceTest extends TestCase
         self::assertSame(InvoiceFiscalStatus::OfflineIssued, $invoice?->fiscal_status);
         self::assertSame($issuedAt->format('Y-m-d H:i:s'), $invoice?->issued_at?->format('Y-m-d H:i:s'));
         self::assertNotNull($invoice?->sin_significant_event_id);
+        self::assertTrue($invoice?->significantEvent?->requires_manual_processing);
         self::assertNotNull($invoice?->pdf_hash);
         self::assertSame(0, $client->calls);
         Storage::disk('local')->assertExists((string) $invoice?->xml_path);
         Storage::disk('local')->assertExists((string) $invoice?->pdf_path);
         Queue::assertPushed(SynchronizeOfflineInvoiceJob::class, fn ($job): bool => $job->invoiceId === $invoice?->id);
+    }
+
+    public function test_parameter_can_force_offline_emission_without_checking_communication(): void
+    {
+        $context = $this->context();
+        $context['authorization']->update(['force_offline_emission' => true]);
+        $this->mock(SiatCommunicationService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('verify');
+        });
+
+        $result = app(InvoiceIssuanceService::class)->issue($context['sale']);
+
+        self::assertSame(InvoiceIssuanceDecision::OfflineDigital, $result->decision);
+        self::assertSame(InvoiceFiscalStatus::OfflineIssued, $result->invoice?->fiscal_status);
+        self::assertNotNull($result->invoice?->sin_significant_event_id);
+        self::assertTrue($result->invoice?->significantEvent?->requires_manual_processing);
+        Queue::assertPushed(SynchronizeOfflineInvoiceJob::class);
     }
 
     public function test_pilot_batch_mode_never_creates_an_offline_invoice_or_contingency(): void
@@ -285,7 +303,7 @@ final class InvoiceIssuanceServiceTest extends TestCase
         self::assertSame($firstInvoice?->cufd_code, $secondInvoice?->cufd_code);
     }
 
-    public function test_recovered_connection_blocks_new_invoices_until_offline_invoices_are_processed(): void
+    public function test_recovered_connection_continues_issuing_offline_until_user_processes_contingency(): void
     {
         $context = $this->context();
         $this->simulate(false, [], contingency: true, errorType: SiatErrorType::SiatUnavailable);
@@ -309,11 +327,12 @@ final class InvoiceIssuanceServiceTest extends TestCase
         ]));
         $client = $this->simulate(true, [$this->response(908, true, 'SHOULD-NOT-SEND')]);
 
-        $blocked = app(InvoiceIssuanceService::class)->issue($nextSale);
+        $continued = app(InvoiceIssuanceService::class)->issue($nextSale);
 
-        self::assertSame(InvoiceIssuanceDecision::Blocked, $blocked->decision);
-        self::assertNull($blocked->invoice);
-        self::assertStringContainsString('procesar todas las facturas emitidas fuera de linea', $blocked->message);
+        self::assertSame(InvoiceIssuanceDecision::OfflineDigital, $continued->decision);
+        self::assertSame(InvoiceFiscalStatus::OfflineIssued, $continued->invoice?->fiscal_status);
+        self::assertSame($offline?->sin_significant_event_id, $continued->invoice?->sin_significant_event_id);
+        self::assertSame($offline?->sin_cufd_id, $continued->invoice?->sin_cufd_id);
         self::assertSame(0, $client->calls);
         self::assertSame(InvoiceFiscalStatus::OfflineIssued, $offline?->refresh()->fiscal_status);
     }

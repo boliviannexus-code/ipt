@@ -86,15 +86,15 @@ class InvoiceIssuanceService
         }
 
         [$token, $authorization, $cuis, $cufd] = $configuration;
-        $health = $this->communication->verify($token, $sale->pointOfSale, $sale->user);
+        $health = $authorization->force_offline_emission
+            ? $this->forcedOfflineHealth()
+            : $this->communication->verify($token, $sale->pointOfSale, $sale->user);
 
-        if (($health->ok ?? false) === true && $this->hasPendingOfflineInvoices($sale)) {
-            return $this->blocked(
-                'La comunicacion con SIAT fue restablecida. Debe registrar la contingencia y procesar todas las facturas emitidas fuera de linea antes de emitir nuevas facturas.'
-            );
-        }
-
-        $decision = $this->decision($sale, $health, $cufd);
+        $continueOfflineContingency = ($health->ok ?? false) === true
+            && $this->hasPendingOfflineInvoices($sale);
+        $decision = $continueOfflineContingency
+            ? InvoiceIssuanceDecision::OfflineDigital
+            : $this->decision($sale, $health, $cufd);
 
         if (! $allowContingency && $decision !== InvoiceIssuanceDecision::Online) {
             return $this->blocked(
@@ -142,7 +142,9 @@ class InvoiceIssuanceService
             return new InvoiceIssuanceResult(
                 decision: $decision,
                 invoice: $invoice->refresh(),
-                message: 'Factura emitida fuera de linea y agregada a la cola de sincronizacion.',
+                message: $continueOfflineContingency
+                    ? 'Factura emitida fuera de linea y agregada a la contingencia pendiente.'
+                    : 'Factura emitida fuera de linea y agregada a la cola de sincronizacion.',
             );
         }
 
@@ -433,6 +435,23 @@ class InvoiceIssuanceService
         return $hasCafc
             ? InvoiceIssuanceDecision::ManualCafcRequired
             : InvoiceIssuanceDecision::Blocked;
+    }
+
+    private function forcedOfflineHealth(): SiatHealthCheckResult
+    {
+        return new SiatHealthCheckResult(
+            available: false,
+            errorType: SiatErrorType::NoInternet,
+            userMessage: 'La emisión fuera de línea está activada en Parámetros.',
+            technicalMessage: 'Emisión fuera de línea forzada por configuración de la empresa.',
+            operation: 'FORCED_OFFLINE_EMISSION',
+            wsdlUrl: '',
+            durationMs: 0,
+            requestDurationMs: 0,
+            attempts: 0,
+            shouldOpenContingency: true,
+            checkedAt: now()->toIso8601String(),
+        );
     }
 
     private function hasPendingOfflineInvoices(Sale $sale): bool
@@ -886,6 +905,10 @@ class InvoiceIssuanceService
             ->first();
 
         if ($event) {
+            if ($authorization->force_offline_emission && ! $event->requires_manual_processing) {
+                $event->update(['requires_manual_processing' => true]);
+            }
+
             return $event;
         }
 
@@ -917,6 +940,7 @@ class InvoiceIssuanceService
             'started_at' => $sale->issued_at,
             'detected_at' => now(),
             'status_label' => 'Pendiente de registro',
+            'requires_manual_processing' => true,
         ]);
     }
 

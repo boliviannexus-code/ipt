@@ -111,6 +111,7 @@ final class ContingencyRecoveryServiceTest extends TestCase
     public function test_operator_selects_official_event_before_recovery_registration(): void
     {
         $context = $this->context();
+        $context['event']->update(['requires_manual_processing' => true]);
         SinCatalogItem::factory()->create([
             'company_id' => $context['company']->id,
             'catalog_key' => 'eventos_significativos',
@@ -133,8 +134,10 @@ final class ContingencyRecoveryServiceTest extends TestCase
         self::assertSame('Descripción real indicada por el operador.', $result->event->event_description);
         self::assertSame(SignificantEventStatus::Registered, $result->event->event_status);
         self::assertSame('EVENT-MANUAL-7', $result->event->reception_code);
+        self::assertFalse($result->event->requires_manual_processing);
         self::assertSame(1, $registrar->calls);
         Queue::assertNotPushed(RegisterSignificantEventJob::class);
+        Queue::assertPushed(BuildContingencyPackagesJob::class);
     }
 
     public function test_cufd_failure_keeps_event_pending_without_calling_registrar(): void

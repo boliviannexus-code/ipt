@@ -108,15 +108,11 @@ class SiatCuisService
             $response = $client->cuis($this->payload($authorization, $pointOfSale));
             $responseData = $this->normalizeResponse($response);
             $siatTransaction = $this->findTransaction($responseData) ?? false;
-            $cuisCode = $this->findValue($responseData, ['codigoCUIS', 'codigoCuis', 'cuis']);
+            $cuisCode = $this->findCuisCode($responseData, $siatTransaction);
 
             // Keep compatibility with older responses/mocks that expose the
             // generated value as `codigo`, without mistaking an error-message
             // code for a CUIS in an unsuccessful response.
-            if ($cuisCode === null && $siatTransaction) {
-                $cuisCode = $this->findValue($responseData, ['codigo']);
-            }
-
             // SIAT can return an already-generated CUIS together with
             // transaccion=false. The returned code is still usable and must
             // be recovered when the local database does not contain it.
@@ -146,6 +142,33 @@ class SiatCuisService
                 $this->durationMs($startedAt),
             );
         }
+    }
+
+    public function importExisting(User $user, SinPointOfSale $pointOfSale, string $cuisCode): SinCuis
+    {
+        $companyId = CompanyContext::id($user);
+
+        if ($companyId === null || $companyId <= 0) {
+            throw ValidationException::withMessages([
+                'cuis_code' => 'Selecciona una empresa antes de registrar un CUIS existente.',
+            ]);
+        }
+
+        $apiToken = $this->apiTokens->current();
+        $authorization = $this->authorizations->current();
+        $this->ensureReady($apiToken, $authorization, $pointOfSale);
+
+        return $this->storeAttempt(
+            $companyId,
+            $apiToken,
+            $authorization,
+            $pointOfSale,
+            true,
+            strtoupper(trim($cuisCode)),
+            'CUIS existente importado durante la recuperación de la base de datos.',
+            ['source' => 'manual_database_recovery'],
+            0,
+        );
     }
 
     private function ensureReady(?SinApiToken $apiToken, ?SinAuthorization $authorization, SinPointOfSale $pointOfSale): void
@@ -288,6 +311,38 @@ class SiatCuisService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function findCuisCode(array $data, bool $transaction): ?string
+    {
+        $code = $this->findValue($data, ['codigoCUIS', 'codigoCuis', 'cuis']);
+
+        if ($code !== null) {
+            return $code;
+        }
+
+        foreach ($data as $key => $value) {
+            if (strcasecmp((string) $key, 'RespuestaCuis') === 0 && is_array($value)) {
+                $directCode = $value['codigo'] ?? null;
+
+                if (is_scalar($directCode) && preg_match('/[A-Za-z]/', (string) $directCode) === 1) {
+                    return trim((string) $directCode);
+                }
+            }
+
+            if (is_array($value)) {
+                $nested = $this->findCuisCode($value, $transaction);
+
+                if ($nested !== null) {
+                    return $nested;
+                }
+            }
+        }
+
+        return $transaction ? $this->findValue($data, ['codigo']) : null;
     }
 
     /**
