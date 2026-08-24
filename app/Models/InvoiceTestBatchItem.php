@@ -15,7 +15,7 @@ final class InvoiceTestBatchItem extends Model
 
     protected $fillable = [
         'company_id', 'invoice_test_batch_id', 'sale_id', 'sin_invoice_issue_id',
-        'sin_significant_event_id', 'sin_invoice_package_id',
+        'sin_significant_event_id', 'sin_invoice_package_id', 'sin_cafc_range_id',
         'issuance_key', 'position', 'stage', 'item_status', 'message', 'started_at', 'finished_at',
         'cancellation_status', 'cancellation_message', 'cancellation_started_at', 'cancellation_finished_at',
         'reversal_status', 'reversal_message', 'reversal_started_at', 'reversal_finished_at',
@@ -60,5 +60,10 @@ final class InvoiceTestBatchItem extends Model
     public function invoicePackage(): BelongsTo
     {
         return $this->belongsTo(SinInvoicePackage::class, 'sin_invoice_package_id');
+    }
+
+    public function cafcRange(): BelongsTo
+    {
+        return $this->belongsTo(SinCafcRange::class, 'sin_cafc_range_id');
     }
 }

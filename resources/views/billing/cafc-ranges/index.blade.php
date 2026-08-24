@@ -72,7 +72,7 @@
                     <a class="btn btn-outline-primary btn-sm" href="{{ route('billing.manual-cafc.index') }}">Facturas manuales</a>
                 </x-slot:actions>
                 <table class="table table-vcenter">
-                    <thead><tr><th>CAFC / asignación</th><th>Numeración</th><th>Uso</th><th>Vigencia</th><th>Estado</th></tr></thead>
+                    <thead><tr><th>CAFC / asignación</th><th>Numeración</th><th>Uso</th><th>Vigencia</th><th>Estado</th>@can('cafc-ranges.manage')<th class="text-end">Acciones</th>@endcan</tr></thead>
                     <tbody>
                     @forelse ($ranges as $range)
                         <tr>
@@ -85,9 +85,22 @@
                             </td>
                             <td class="text-nowrap">{{ $range->authorized_from->format('d/m/Y') }}<br><span class="text-secondary">hasta {{ $range->authorized_until->format('d/m/Y') }}</span></td>
                             <td><span class="badge {{ in_array($range->range_status->value, ['AVAILABLE','IN_USE']) ? 'bg-success-lt' : 'bg-secondary-lt' }}">{{ $range->range_status->label() }}</span></td>
+                            @can('cafc-ranges.manage')
+                                <td class="text-end">
+                                    @if ($range->canBeDeleted())
+                                        <form method="POST" action="{{ route('billing.cafc-ranges.destroy', $range) }}" class="d-inline" onsubmit="return confirm('¿Eliminar este CAFC? Esta acción no se puede deshacer.')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Eliminar CAFC {{ $range->cafc_code }}">
+                                                <i class="ti ti-trash me-1" aria-hidden="true"></i>Eliminar
+                                            </button>
+                                        </form>
+                                    @endif
+                                </td>
+                            @endcan
                         </tr>
                     @empty
-                        <x-ui.empty-row colspan="5" message="No hay rangos CAFC registrados." />
+                        <x-ui.empty-row colspan="{{ auth()->user()?->can('cafc-ranges.manage') ? 6 : 5 }}" message="No hay rangos CAFC registrados." />
                     @endforelse
                     </tbody>
                 </table>

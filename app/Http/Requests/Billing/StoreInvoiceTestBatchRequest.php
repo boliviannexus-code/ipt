@@ -6,6 +6,7 @@ namespace App\Http\Requests\Billing;
 
 use App\Enums\InvoiceTestMode;
 use App\Models\Product;
+use App\Models\SinCafcRange;
 use App\Models\SinCatalogItem;
 use App\Models\SinPointOfSale;
 use App\Services\Billing\InvoiceDocumentSector;
@@ -58,6 +59,12 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
                 Rule::requiredIf($this->input('test_mode') === InvoiceTestMode::OfflineContingency->value),
                 'nullable', 'string', 'max:500',
             ],
+            'sin_cafc_range_id' => [
+                Rule::requiredIf($this->usesManualCafc()),
+                'nullable',
+                'integer',
+                Rule::exists('sin_cafc_ranges', 'id')->where('company_id', $companyId),
+            ],
         ];
     }
 
@@ -68,6 +75,21 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
             if ($this->input('test_mode') === InvoiceTestMode::OfflineContingency->value
                 && (int) $this->input('invoice_count') > 10) {
                 $validator->errors()->add('invoice_count', 'La prueba de contingencia admite entre 1 y 10 ciclos.');
+            }
+            if ($this->usesManualCafc()) {
+                $range = SinCafcRange::query()->withoutGlobalScope('company')
+                    ->where('company_id', $companyId)
+                    ->whereKey((int) $this->input('sin_cafc_range_id'))
+                    ->where('sin_branch_id', (int) $this->input('sin_branch_id'))
+                    ->where('sin_point_of_sale_id', (int) $this->input('sin_point_of_sale_id'))
+                    ->where('is_test_copy', false)
+                    ->first();
+
+                if (! $range) {
+                    $validator->errors()->add('sin_cafc_range_id', 'Selecciona un CAFC vigente, sin uso y asignado al mismo punto de venta.');
+                } elseif (($range->range_end - $range->range_start + 1) < (int) $this->input('invoices_per_cycle', 1)) {
+                    $validator->errors()->add('invoices_per_cycle', 'La cantidad supera el tamaño total autorizado del CAFC.');
+                }
             }
             $pointMatchesBranch = SinPointOfSale::query()->withoutGlobalScope('company')
                 ->where('company_id', $companyId)
@@ -128,11 +150,18 @@ final class StoreInvoiceTestBatchRequest extends FormRequest
             'test_mode.required' => 'Selecciona una modalidad de prueba.',
             'event_code.required' => 'Selecciona el evento significativo para la contingencia.',
             'event_description.required' => 'Describe la contingencia de prueba.',
+            'sin_cafc_range_id.required' => 'Selecciona el CAFC para los eventos 5, 6 o 7.',
             'document_sector_code.required' => 'Selecciona el tipo de facturación.',
             'document_sector_code.in' => 'El tipo de facturación seleccionado no está habilitado.',
             'economic_activity_code.required' => 'Selecciona una actividad económica.',
             'invoice_count.between' => 'La prueba en línea debe contener entre 1 y 500 facturas.',
             'payment_method_code.not_in' => 'Las pruebas masivas no admiten tarjeta porque requieren un número individual.',
         ];
+    }
+
+    private function usesManualCafc(): bool
+    {
+        return $this->input('test_mode') === InvoiceTestMode::OfflineContingency->value
+            && in_array((int) $this->input('event_code'), [5, 6, 7], true);
     }
 }

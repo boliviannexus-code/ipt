@@ -10,7 +10,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-final class InvoiceCancelledNotification extends Notification
+final class InvoiceIssuedNotification extends Notification
 {
     use AttachesInvoiceArtifacts, Queueable;
 
@@ -28,14 +28,13 @@ final class InvoiceCancelledNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $message = (new MailMessage)
-            ->subject('Anulación de factura N° '.$this->invoice->invoice_number)
-            ->greeting('Notificación de anulación de documento fiscal')
-            ->line('Le informamos que el siguiente documento fiscal fue anulado ante el Servicio de Impuestos Nacionales:')
-            ->line('Código de autorización (CUF): '.$this->invoice->cuf)
+            ->subject('Factura N° '.$this->invoice->invoice_number)
+            ->greeting('Estimado(a) cliente:')
+            ->line('Adjuntamos la representación gráfica y el XML de su factura emitida.')
             ->line('Número de factura: '.$this->invoice->invoice_number)
-            ->line('Motivo: '.$this->invoice->cancellation_reason)
-            ->line('Adjuntamos la representación gráfica y el XML del documento anulado.')
-            ->line('Esta comunicación es privada y fue enviada al correo registrado para el comprador.');
+            ->line('Código de autorización (CUF): '.$this->invoice->cuf)
+            ->line('Monto total: Bs '.number_format((float) $this->invoice->total_amount, 2, '.', ','))
+            ->line('Conserve estos documentos para sus registros.');
 
         return $this->attachInvoiceArtifacts($message, $this->invoice, $this->halfPagePdf);
     }

@@ -65,7 +65,7 @@ class SaveSinApiTokenRequest extends FormRequest
      */
     private function allowedWsdlUrls(): array
     {
-        return (new SiatWsdlRegistry())->all()
+        return (new SiatWsdlRegistry)->all()
             ->pluck('url')
             ->all();
     }

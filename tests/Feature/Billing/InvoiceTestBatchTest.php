@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoiceTestItemStatus;
 use App\Enums\InvoiceTestMode;
@@ -19,9 +20,11 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SinAuthorization;
 use App\Models\SinBranch;
+use App\Models\SinCafcRange;
 use App\Models\SinCatalogItem;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinPointOfSale;
+use App\Models\SinSignificantEvent;
 use App\Models\User;
 use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceIssuanceService;
@@ -217,6 +220,66 @@ final class InvoiceTestBatchTest extends TestCase
         );
     }
 
+    public function test_manual_cafc_event_requires_and_persists_an_available_range(): void
+    {
+        Bus::fake();
+        SinCatalogItem::factory()->create([
+            'company_id' => $this->company->id,
+            'catalog_key' => 'eventos_significativos',
+            'classifier_code' => '5',
+            'description' => 'Virus informático o falla de software',
+            'is_active' => true,
+        ]);
+        $range = SinCafcRange::factory()->create([
+            'company_id' => $this->company->id,
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+            'created_by_user_id' => $this->user->id,
+            'range_start' => 100,
+            'range_end' => 110,
+            'next_number' => 100,
+            'used_count' => 0,
+            'cancelled_count' => 0,
+            'authorized_from' => today()->subDay(),
+            'authorized_until' => today()->addDay(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get(route('billing.invoice-tests.index'))
+            ->assertOk()
+            ->assertSee($range->cafc_code);
+
+        $payload = [
+            ...$this->payload(3),
+            'test_mode' => InvoiceTestMode::OfflineContingency->value,
+            'invoices_per_cycle' => 3,
+            'event_code' => 5,
+            'event_description' => 'La descripción enviada será reemplazada por la oficial.',
+        ];
+        $this->actingAs($this->user)
+            ->post(route('billing.invoice-tests.store'), $payload)
+            ->assertSessionHasErrors('sin_cafc_range_id');
+
+        $this->actingAs($this->user)
+            ->post(route('billing.invoice-tests.store'), [
+                ...$payload,
+                'sin_cafc_range_id' => $range->id,
+            ])->assertRedirectContains(route('billing.invoice-tests.index'));
+
+        $batch = InvoiceTestBatch::query()->with('items')->firstOrFail();
+        self::assertNotSame($range->id, $batch->sin_cafc_range_id);
+        self::assertTrue($batch->cafcRange->is_test_copy);
+        self::assertSame($range->id, $batch->cafcRange->source_sin_cafc_range_id);
+        self::assertSame($range->range_start, $batch->cafcRange->next_number);
+        self::assertSame(3, $batch->requested_count);
+        self::assertSame(3, $batch->invoices_per_cycle);
+        self::assertCount(3, $batch->items);
+        self::assertCount(3, $batch->items->pluck('sin_cafc_range_id')->unique());
+        self::assertTrue($batch->items->every(fn ($item): bool => $item->cafcRange->cafc_code === $range->cafc_code
+            && $item->cafcRange->next_number === $range->range_start));
+        Bus::assertDispatchedTimes(ProcessOfflineContingencyTestItemJob::class, 1);
+    }
+
     public function test_offline_contingency_rejects_more_than_ten_cycles(): void
     {
         Bus::fake();
@@ -311,6 +374,34 @@ final class InvoiceTestBatchTest extends TestCase
             ->assertSessionHasErrors('environment');
 
         self::assertSame(0, InvoiceTestBatch::query()->count());
+    }
+
+    public function test_pilot_batch_is_not_blocked_by_an_existing_open_contingency(): void
+    {
+        Bus::fake();
+        SinSignificantEvent::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+        ]);
+        SinInvoiceIssue::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'customer_id' => $this->customer->id,
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+            'emission_mode' => InvoiceEmissionMode::OfflineDigital,
+            'fiscal_status' => InvoiceFiscalStatus::PendingPackage,
+        ]);
+
+        $this->actingAs($this->user)
+            ->post(route('billing.invoice-tests.store'), $this->payload(1))
+            ->assertRedirectContains(route('billing.invoice-tests.index'))
+            ->assertSessionDoesntHaveErrors('environment');
+
+        self::assertSame(1, InvoiceTestBatch::query()->count());
+        Bus::assertChained([IssueInvoiceTestItemJob::class]);
     }
 
     public function test_user_without_permission_cannot_open_or_start_tests(): void

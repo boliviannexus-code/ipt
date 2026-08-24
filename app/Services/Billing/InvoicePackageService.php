@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Billing;
 
+use App\Enums\CafcRangeStatus;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoicePackageStatus;
@@ -14,6 +15,7 @@ use App\Enums\SiatErrorType;
 use App\Enums\SiatMessageSeverity;
 use App\Enums\SiatOperation;
 use App\Enums\SignificantEventStatus;
+use App\Models\SinCafcRange;
 use App\Models\SinFiscalStatusHistory;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinInvoicePackage;
@@ -221,6 +223,7 @@ final class InvoicePackageService
             if (! $response->accepted) {
                 $this->closeEventWhenProcessed($package, $actor);
             }
+            $this->markCafcRangesAsSent($package);
 
             return $this->processResult(
                 $package,
@@ -531,6 +534,9 @@ final class InvoicePackageService
         } elseif (! $exception->mayHaveReachedSiat) {
             $this->setEventStatus($package, SignificantEventStatus::Failed, 'El paquete requiere revision administrativa.');
         }
+        if ($exception->mayHaveReachedSiat) {
+            $this->markCafcRangesAsSent($package);
+        }
 
         return $this->processResult($package, true, $retryable, (string) $package->message);
     }
@@ -719,6 +725,34 @@ final class InvoicePackageService
                 'updated_by_user_id' => $actor?->id,
             ]);
         }, 3);
+    }
+
+    private function markCafcRangesAsSent(SinInvoicePackage $package): void
+    {
+        $manualPackages = SinInvoicePackage::query()
+            ->withoutGlobalScope('company')
+            ->where('company_id', $package->company_id)
+            ->where('sin_significant_event_id', $package->sin_significant_event_id)
+            ->where('emission_mode', InvoiceEmissionMode::ManualCafc);
+
+        if (! (clone $manualPackages)->exists() || (clone $manualPackages)
+            ->whereIn('package_status', [
+                InvoicePackageStatus::Created,
+                InvoicePackageStatus::PendingSend,
+                InvoicePackageStatus::Failed,
+            ])
+            ->exists()) {
+            return;
+        }
+
+        SinCafcRange::query()
+            ->withoutGlobalScope('company')
+            ->where('company_id', $package->company_id)
+            ->where('sin_significant_event_id', $package->sin_significant_event_id)
+            ->update([
+                'range_status' => CafcRangeStatus::Sent,
+                'updated_at' => now(),
+            ]);
     }
 
     private function setEventStatus(SinInvoicePackage $package, SignificantEventStatus $status, string $message): void

@@ -4,20 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Billing;
 
-use App\Enums\InvoiceEmissionMode;
+use App\Enums\CafcRangeStatus;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoiceTestBatchStatus;
 use App\Enums\InvoiceTestItemStatus;
 use App\Enums\InvoiceTestMode;
 use App\Enums\SiatEnvironment;
-use App\Enums\SignificantEventStatus;
 use App\Models\InvoiceTestBatch;
 use App\Models\InvoiceTestBatchItem;
 use App\Models\Product;
 use App\Models\SinAuthorization;
+use App\Models\SinCafcRange;
 use App\Models\SinCatalogItem;
-use App\Models\SinInvoiceIssue;
-use App\Models\SinSignificantEvent;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -117,7 +115,6 @@ final class InvoiceTestBatchService
     {
         $companyId = (int) $user->company_id;
         $this->assertPilotEnvironment($companyId);
-        $this->assertOperationalState($companyId);
 
         $product = Product::query()->withoutGlobalScope('company')
             ->where('company_id', $companyId)
@@ -136,6 +133,8 @@ final class InvoiceTestBatchService
         }
 
         $mode = InvoiceTestMode::from((string) ($data['test_mode'] ?? InvoiceTestMode::Online->value));
+        $manualCafc = $mode === InvoiceTestMode::OfflineContingency
+            && in_array((int) ($data['event_code'] ?? 0), [5, 6, 7], true);
         $count = (int) $data['invoice_count'];
         $invoicesPerCycle = $mode === InvoiceTestMode::OfflineContingency ? (int) ($data['invoices_per_cycle'] ?? 1) : 1;
         $maximumCount = $mode === InvoiceTestMode::OfflineContingency ? 10 : 500;
@@ -156,6 +155,22 @@ final class InvoiceTestBatchService
             }
         }
 
+        $sourceCafc = null;
+        if ($manualCafc) {
+            $range = SinCafcRange::query()->withoutGlobalScope('company')
+                ->where('company_id', $companyId)
+                ->whereKey((int) ($data['sin_cafc_range_id'] ?? 0))
+                ->where('sin_point_of_sale_id', (int) $data['sin_point_of_sale_id'])
+                ->where('is_test_copy', false)
+                ->first();
+            if (! $range || ($range->range_end - $range->range_start + 1) < $invoicesPerCycle) {
+                throw ValidationException::withMessages([
+                    'sin_cafc_range_id' => 'El CAFC debe pertenecer al punto de venta y tener un rango suficiente.',
+                ]);
+            }
+            $sourceCafc = $range;
+        }
+
         if ($count < 1 || $count > $maximumCount) {
             throw ValidationException::withMessages([
                 'invoice_count' => $mode === InvoiceTestMode::OfflineContingency
@@ -169,7 +184,7 @@ final class InvoiceTestBatchService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $data, $companyId, $product, $mode, $count, $invoicesPerCycle, $eventDescription): InvoiceTestBatch {
+        return DB::transaction(function () use ($user, $data, $companyId, $product, $mode, $manualCafc, $sourceCafc, $count, $invoicesPerCycle, $eventDescription): InvoiceTestBatch {
             $active = InvoiceTestBatch::query()->withoutGlobalScope('company')
                 ->where('company_id', $companyId)
                 ->where(function ($query): void {
@@ -186,10 +201,23 @@ final class InvoiceTestBatchService
                 ]);
             }
 
+            $testCafcs = collect();
+            if ($manualCafc) {
+                $testCafcs = collect(range(1, $count))->map(fn (int $cycle): SinCafcRange => SinCafcRange::query()
+                    ->withoutGlobalScope('company')->create([
+                        ...$sourceCafc->only(['company_id', 'sin_branch_id', 'sin_point_of_sale_id', 'cafc_code', 'document_sector_code', 'range_start', 'range_end', 'authorized_from', 'authorized_until']),
+                        'source_sin_cafc_range_id' => $sourceCafc->id, 'is_test_copy' => true,
+                        'created_by_user_id' => $user->id, 'updated_by_user_id' => $user->id,
+                        'next_number' => $sourceCafc->range_start, 'range_status' => CafcRangeStatus::Available,
+                        'used_count' => 0, 'cancelled_count' => 0,
+                        'notes' => "Copia aislada para ciclo de prueba {$cycle}",
+                    ]));
+            }
             $batch = InvoiceTestBatch::query()->create([
                 'company_id' => $companyId,
                 'user_id' => $user->id,
                 'sin_point_of_sale_id' => (int) $data['sin_point_of_sale_id'],
+                'sin_cafc_range_id' => $testCafcs->first()?->id,
                 'customer_id' => (int) $data['customer_id'],
                 'product_id' => $product->id,
                 'batch_key' => (string) Str::uuid(),
@@ -211,6 +239,7 @@ final class InvoiceTestBatchService
                 ->map(fn (int $position): array => [
                     'company_id' => $companyId,
                     'position' => $position,
+                    'sin_cafc_range_id' => $testCafcs->get($position - 1)?->id,
                     'issuance_key' => (string) Str::uuid(),
                 ])->all());
 
@@ -235,23 +264,4 @@ final class InvoiceTestBatchService
         }
     }
 
-    private function assertOperationalState(int $companyId): void
-    {
-        $openEvent = SinSignificantEvent::query()->withoutGlobalScope('company')
-            ->where('company_id', $companyId)
-            ->whereNull('closed_at')
-            ->whereNotIn('event_status', [SignificantEventStatus::Completed, SignificantEventStatus::Expired])
-            ->exists();
-        $offlinePending = SinInvoiceIssue::query()->withoutGlobalScope('company')
-            ->where('company_id', $companyId)
-            ->where('emission_mode', InvoiceEmissionMode::OfflineDigital)
-            ->whereIn('fiscal_status', [InvoiceFiscalStatus::OfflineIssued, InvoiceFiscalStatus::PendingPackage])
-            ->exists();
-
-        if ($openEvent || $offlinePending) {
-            throw ValidationException::withMessages([
-                'environment' => 'Regulariza la contingencia y las facturas fuera de línea antes de iniciar una prueba masiva.',
-            ]);
-        }
-    }
 }

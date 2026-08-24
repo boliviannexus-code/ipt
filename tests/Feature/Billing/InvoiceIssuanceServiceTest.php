@@ -11,6 +11,7 @@ use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatErrorType;
 use App\Enums\SignificantEventStatus;
 use App\Jobs\SynchronizeOfflineInvoiceJob;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -70,6 +71,7 @@ final class InvoiceIssuanceServiceTest extends TestCase
         $this->assertDatabaseHas('sin_siat_attempts', ['attempt_status' => SiatAttemptStatus::Succeeded->value]);
         $this->assertDatabaseHas('sin_response_messages', ['message_code' => '9080']);
         Storage::disk('local')->assertExists((string) $result->invoice?->xml_path);
+        Queue::assertPushed(SendInvoiceCustomerNotificationJob::class, fn ($job): bool => $job->invoiceId === $result->invoice?->id);
     }
 
     public function test_zero_rate_invoice_reuses_issuance_flow_with_sector_eight_xml(): void
@@ -228,6 +230,7 @@ final class InvoiceIssuanceServiceTest extends TestCase
         Storage::disk('local')->assertExists((string) $invoice?->xml_path);
         Storage::disk('local')->assertExists((string) $invoice?->pdf_path);
         Queue::assertPushed(SynchronizeOfflineInvoiceJob::class, fn ($job): bool => $job->invoiceId === $invoice?->id);
+        Queue::assertPushed(SendInvoiceCustomerNotificationJob::class, fn ($job): bool => $job->invoiceId === $invoice?->id);
     }
 
     public function test_parameter_can_force_offline_emission_without_checking_communication(): void
@@ -607,7 +610,12 @@ final class InvoiceIssuanceServiceTest extends TestCase
     {
         $company = Company::factory()->create(['is_active' => true]);
         $user = User::factory()->create(['company_id' => $company->id]);
-        $customer = Customer::factory()->create(['company_id' => $company->id, 'is_active' => true, 'identity_document_type_code' => 1]);
+        $customer = Customer::factory()->create([
+            'company_id' => $company->id,
+            'is_active' => true,
+            'identity_document_type_code' => 1,
+            'email' => 'cliente@example.test',
+        ]);
         $branch = SinBranch::factory()->create(['company_id' => $company->id, 'branch_code' => 1, 'is_active' => true]);
         $point = SinPointOfSale::factory()->create([
             'company_id' => $company->id,

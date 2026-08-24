@@ -135,14 +135,10 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel.form');
             Route::post('facturas/{invoice}/anular', [InvoiceController::class, 'cancel'])
                 ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel');
-            Route::post('facturas/{invoice}/notificar-anulacion', [InvoiceController::class, 'notifyCancellation'])
-                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.cancel.notify');
             Route::get('facturas/{invoice}/revertir-anulacion', [InvoiceController::class, 'reversalForm'])
                 ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.reversal.form');
             Route::post('facturas/{invoice}/revertir-anulacion', [InvoiceController::class, 'reverseCancellation'])
                 ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.reversal');
-            Route::post('facturas/{invoice}/notificar-reversion', [InvoiceController::class, 'notifyReversal'])
-                ->whereNumber('invoice')->middleware('permission:invoices.cancel')->name('invoices.reversal.notify');
             Route::get('facturas/{invoice}/corregir-pago', [InvoiceController::class, 'correctPaymentForm'])
                 ->whereNumber('invoice')->middleware('permission:invoices.issue')->name('invoices.payment.correct.form');
             Route::post('facturas/{invoice}/corregir-pago', [InvoiceController::class, 'correctPayment'])
@@ -153,12 +149,16 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->middleware('permission:cafc-ranges.view')->name('cafc-ranges.index');
             Route::post('cafc', [CafcRangeController::class, 'store'])
                 ->middleware('permission:cafc-ranges.manage')->name('cafc-ranges.store');
+            Route::delete('cafc/{cafcRange}', [CafcRangeController::class, 'destroy'])
+                ->whereNumber('cafcRange')->middleware('permission:cafc-ranges.manage')->name('cafc-ranges.destroy');
             Route::get('contingencias-2', [CafcContingencyController::class, 'index'])
                 ->middleware('permission:cafc-ranges.view')->name('cafc-contingencies.index');
             Route::post('contingencias-2', [CafcContingencyController::class, 'storeRange'])
                 ->middleware('permission:cafc-ranges.manage')->name('cafc-contingencies.store');
             Route::get('contingencias-2/{cafcRange}', [CafcContingencyController::class, 'show'])
                 ->whereNumber('cafcRange')->middleware('permission:manual-cafc.view')->name('cafc-contingencies.show');
+            Route::patch('contingencias-2/{cafcRange}/codigo', [CafcContingencyController::class, 'updateCode'])
+                ->whereNumber('cafcRange')->middleware('permission:cafc-ranges.manage')->name('cafc-contingencies.code.update');
             Route::post('contingencias-2/{cafcRange}/facturas', [CafcContingencyController::class, 'storeInvoice'])
                 ->whereNumber('cafcRange')->middleware('permission:manual-cafc.use')->name('cafc-contingencies.invoices.store');
             Route::post('contingencias-2/{cafcRange}/finalizar', [CafcContingencyController::class, 'finalize'])

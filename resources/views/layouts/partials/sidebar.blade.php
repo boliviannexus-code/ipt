@@ -2,7 +2,8 @@
     $organizationOpen = request()->routeIs('companies.*');
     $adminOpen = request()->routeIs('users.*', 'roles.*', 'permissions.*', 'audits.*', 'backups.*');
     $cashRegistersOpen = request()->routeIs('cash-registers.*');
-    $billingOpen = request()->routeIs('billing.*');
+    $invoicePrintSettingsOpen = request()->routeIs('billing.invoice-print-settings.*');
+    $billingOpen = request()->routeIs('billing.*') && ! $invoicePrintSettingsOpen;
     $apiTokenOpen = request()->routeIs('sin-api-token.*');
     $siatCommunicationOpen = request()->routeIs('siat.communication.*');
     $siatCuisOpen = request()->routeIs('siat.cuis.*');
@@ -10,7 +11,7 @@
     $siatBranchesOpen = request()->routeIs('siat.branches.*');
     $siatWsdlServicesOpen = request()->routeIs('siat.wsdl-services.*');
     $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen || $siatWsdlServicesOpen;
-    $parametersOpen = request()->routeIs('parameters.*');
+    $parametersOpen = request()->routeIs('parameters.*') || $invoicePrintSettingsOpen;
 
     $canOrganization = auth()->user()?->can('companies.view');
     $canCashRegisters = auth()->user()?->company_id !== null
@@ -41,6 +42,7 @@
             || auth()->user()?->can('customers.view')
             || auth()->user()?->can('products.view')
             || auth()->user()?->can('sin-authorizations.view')
+            || auth()->user()?->can('invoices.issue')
         );
     $canAdmin = auth()->user()?->can('users.view')
         || auth()->user()?->can('roles.view')
@@ -117,6 +119,15 @@
                                         <a class="nav-link" href="{{ route('parameters.authorization.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-certificate"></i></span>
                                             <span class="nav-link-title">Autorizacion</span>
+                                        </a>
+                                    </li>
+                                @endcan
+
+                                @can('invoices.issue')
+                                    <li class="nav-item {{ $invoicePrintSettingsOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('billing.invoice-print-settings.edit') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-printer"></i></span>
+                                            <span class="nav-link-title">Configuracion</span>
                                         </a>
                                     </li>
                                 @endcan
@@ -263,12 +274,6 @@
                                             </a>
                                         </li>
                                     @endcan
-                                    <li class="nav-item {{ request()->routeIs('billing.invoice-print-settings.*') ? 'active' : '' }}">
-                                        <a class="nav-link" href="{{ route('billing.invoice-print-settings.edit') }}">
-                                            <span class="nav-link-icon"><i class="ti ti-printer"></i></span>
-                                            <span class="nav-link-title">Configuracion</span>
-                                        </a>
-                                    </li>
                                 @endcan
                                 @can('cafc-ranges.view')
                                     <li class="nav-item {{ request()->routeIs('billing.cafc-contingencies.*') ? 'active' : '' }}">

@@ -76,6 +76,17 @@
                                 <input class="form-control @error('event_description') is-invalid @enderror" id="test-event-description" name="event_description" maxlength="500" value="{{ old('event_description') }}" data-contingency-input readonly @disabled(! $pilotEnabled)>
                                 @error('event_description')<div class="invalid-feedback">{{ $message }}</div>@enderror
                             </div>
+                            <div class="col-12" data-cafc-test-field hidden>
+                                <label class="form-label required" for="test-cafc-range">CAFC para la prueba manual</label>
+                                <select class="form-select @error('sin_cafc_range_id') is-invalid @enderror" id="test-cafc-range" name="sin_cafc_range_id" data-cafc-test-input @disabled(! $pilotEnabled)>
+                                    <option value="">Seleccionar CAFC</option>
+                                    @foreach($cafcRanges as $cafc)
+                                        <option value="{{ $cafc->id }}" data-branch-id="{{ $cafc->sin_branch_id }}" data-point-id="{{ $cafc->sin_point_of_sale_id }}" data-remaining="{{ $cafc->remaining_count }}" @selected((int) old('sin_cafc_range_id') === $cafc->id)>{{ $cafc->cafc_code }} · {{ $cafc->remaining_count }} disponibles · {{ $cafc->pointOfSale?->display_name }}</option>
+                                    @endforeach
+                                </select>
+                                <div class="form-hint">Se consumirá numeración real del rango y se generarán facturas manuales transcritas automáticamente.</div>
+                                @error('sin_cafc_range_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
                         </div>
                     </div>
                     <div class="col-12 col-lg-4">
@@ -336,6 +347,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const invoicesPerCycleHelp = document.querySelector('[data-invoices-per-cycle-help]');
     const eventSelect = document.querySelector('#test-event');
     const eventDescription = document.querySelector('#test-event-description');
+    const cafcField = document.querySelector('[data-cafc-test-field]');
+    const cafcSelect = document.querySelector('[data-cafc-test-input]');
 
     const filterOptions = (select, attribute, value, placeholder) => {
         if (!select) return;
@@ -349,6 +362,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const filterPoints = () => filterOptions(point, 'branchId', branch?.value ?? '', 'Seleccionar punto de venta');
+    const filterCafc = () => {
+        if (!cafcSelect) return;
+        [...cafcSelect.options].forEach((option, index) => {
+            if (index === 0) return;
+            option.hidden = !branch?.value || !point?.value || option.dataset.branchId !== branch.value || option.dataset.pointId !== point.value;
+        });
+        if (cafcSelect.options[cafcSelect.selectedIndex]?.hidden) cafcSelect.value = '';
+    };
     const filterProducts = () => filterOptions(product, 'activityCode', activity?.value ?? '', 'Seleccionar producto o servicio');
     const filterActivities = () => {
         if (!activity) return;
@@ -360,11 +381,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activity.options[activity.selectedIndex]?.hidden) activity.value = '';
         filterProducts();
     };
-    branch?.addEventListener('change', filterPoints);
+    branch?.addEventListener('change', () => { filterPoints(); filterCafc(); });
+    point?.addEventListener('change', filterCafc);
     activity?.addEventListener('change', filterProducts);
     sectors.forEach((sector) => sector.addEventListener('change', filterActivities));
     const toggleMode = () => {
         const offline = modes.find((mode) => mode.checked)?.value === 'OFFLINE_CONTINGENCY';
+        const manualCafc = offline && ['5', '6', '7'].includes(eventSelect?.value ?? '');
         if (contingencyFields) contingencyFields.hidden = !offline;
         if (contingencyCountField) contingencyCountField.hidden = !offline;
         contingencyInputs.forEach((input) => input.required = offline);
@@ -373,18 +396,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (offline && Number(count.value) > 10) count.value = '10';
             count.max = offline ? '10' : '500';
         }
-        if (countHelp) countHelp.textContent = offline ? 'Entre 1 y 10 ciclos, procesados secuencialmente.' : 'Entre 1 y 500 facturas en línea.';
+        if (countHelp) countHelp.textContent = manualCafc ? 'Entre 1 y 10 ciclos CAFC aislados, procesados secuencialmente.' : (offline ? 'Entre 1 y 10 ciclos, procesados secuencialmente.' : 'Entre 1 y 500 facturas en línea.');
         if (countLabel) countLabel.textContent = offline ? 'Número de ciclos' : 'Número de facturas';
         if (invoicesPerCycle) {
             invoicesPerCycle.readOnly = false;
             if (invoicesPerCycleHelp) invoicesPerCycleHelp.textContent = 'Cada ciclo genera un paquete de 1 a 500 facturas.';
         }
+        if (cafcField) cafcField.hidden = !manualCafc;
+        if (cafcSelect) cafcSelect.required = manualCafc;
+        filterCafc();
     };
     modes.forEach((mode) => mode.addEventListener('change', toggleMode));
     count?.addEventListener('input', toggleMode);
     const syncEventDescription = () => {
         if (!eventDescription || !eventSelect) return;
         eventDescription.value = eventSelect.options[eventSelect.selectedIndex]?.dataset.description ?? '';
+        toggleMode();
     };
     eventSelect?.addEventListener('change', syncEventDescription);
     filterPoints();

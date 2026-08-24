@@ -6,6 +6,7 @@ namespace App\Services\Billing;
 
 use App\Enums\CafcRangeStatus;
 use App\Enums\InvoiceCommercialStatus;
+use App\Enums\InvoiceCustomerNotificationType;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\InvoiceIssuanceDecision;
@@ -18,6 +19,7 @@ use App\Enums\SiatModality;
 use App\Enums\SiatOperation;
 use App\Enums\SignificantEventStatus;
 use App\Jobs\SynchronizeOfflineInvoiceJob;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Models\Sale;
 use App\Models\SinApiToken;
 use App\Models\SinAuthorization;
@@ -138,6 +140,7 @@ class InvoiceIssuanceService
 
         if ($decision === InvoiceIssuanceDecision::OfflineDigital) {
             SynchronizeOfflineInvoiceJob::dispatch((int) $sale->company_id, (int) $invoice->id);
+            $this->notifyBuyer($invoice);
 
             return new InvoiceIssuanceResult(
                 decision: $decision,
@@ -680,7 +683,7 @@ class InvoiceIssuanceService
         SinSiatAttempt $attempt,
         InvoiceSiatResponse $response,
     ): InvoiceIssuanceResult {
-        return DB::transaction(function () use ($invoice, $attempt, $response): InvoiceIssuanceResult {
+        $result = DB::transaction(function () use ($invoice, $attempt, $response): InvoiceIssuanceResult {
             $locked = SinInvoiceIssue::query()->withoutGlobalScope('company')->lockForUpdate()->findOrFail($invoice->id);
             $lockedAttempt = SinSiatAttempt::query()->withoutGlobalScope('company')->lockForUpdate()->findOrFail($attempt->id);
             $statusCode = $this->findInt($response->data, ['codigoEstado']);
@@ -723,6 +726,25 @@ class InvoiceIssuanceService
 
             return new InvoiceIssuanceResult(InvoiceIssuanceDecision::Online, $locked->refresh(), $message);
         }, 3);
+
+        if ($result->invoice?->fiscal_status === InvoiceFiscalStatus::Validated) {
+            $this->notifyBuyer($result->invoice);
+        }
+
+        return $result;
+    }
+
+    private function notifyBuyer(SinInvoiceIssue $invoice): void
+    {
+        $invoice->loadMissing('customer');
+        if (blank($invoice->customer?->email)) {
+            return;
+        }
+
+        SendInvoiceCustomerNotificationJob::dispatch(
+            (int) $invoice->id,
+            InvoiceCustomerNotificationType::Issued,
+        )->afterCommit();
     }
 
     private function failOnline(

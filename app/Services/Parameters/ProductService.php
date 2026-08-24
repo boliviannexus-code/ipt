@@ -11,6 +11,7 @@ use App\Support\SiatProductHomologation;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -31,7 +32,7 @@ class ProductService
     }
 
     /**
-     * @return array{categories: EloquentCollection<int, ProductCategory>, siatMeasurementUnits: \Illuminate\Support\Collection<int, array{code: string, description: string, is_active: bool}>, siatActivities: \Illuminate\Support\Collection<int, array{code: string, description: string, is_active: bool}>, siatProducts: \Illuminate\Support\Collection<int, array{activity_code: string, product_code: string, description: string, is_active: bool}>}
+     * @return array{categories: EloquentCollection<int, ProductCategory>, siatMeasurementUnits: Collection<int, array{code: string, description: string, is_active: bool}>, siatActivities: Collection<int, array{code: string, description: string, is_active: bool}>, siatProducts: Collection<int, array{activity_code: string, product_code: string, description: string, is_active: bool}>}
      */
     public function formOptions(?Product $product = null): array
     {

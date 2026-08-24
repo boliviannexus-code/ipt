@@ -87,7 +87,7 @@ class SiatIdentityDocumentTypes
     }
 
     /**
-     * @param iterable<int|string> $codes
+     * @param  iterable<int|string>  $codes
      * @return Collection<string, string>
      */
     public static function descriptionsFor(iterable $codes): Collection

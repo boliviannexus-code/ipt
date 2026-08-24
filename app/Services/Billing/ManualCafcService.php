@@ -108,6 +108,7 @@ final class ManualCafcService
     public function availableRanges(int $companyId, int $branchId, ?int $pointId, DateTimeInterface $at): Builder
     {
         return SinCafcRange::query()->withoutGlobalScope('company')
+            ->where('is_test_copy', false)
             ->where('company_id', $companyId)
             ->where('sin_branch_id', $branchId)
             ->where(fn (Builder $query) => $query->whereNull('sin_point_of_sale_id')->when(
@@ -118,6 +119,60 @@ final class ManualCafcService
             ->whereDate('authorized_from', '<=', $at)
             ->whereDate('authorized_until', '>=', $at)
             ->whereRaw('used_count + cancelled_count < range_end - range_start + 1');
+    }
+
+    public function updateCode(SinCafcRange $range, string $cafcCode, User $actor): SinCafcRange
+    {
+        return DB::transaction(function () use ($range, $cafcCode, $actor): SinCafcRange {
+            $locked = SinCafcRange::query()->withoutGlobalScope('company')->lockForUpdate()->findOrFail($range->id);
+
+            if ((int) $locked->company_id !== (int) $actor->company_id) {
+                throw ValidationException::withMessages(['cafc_code' => 'El CAFC no pertenece a la empresa activa.']);
+            }
+            if ($locked->sin_significant_event_id !== null || $locked->manualInvoices()->exists()) {
+                throw ValidationException::withMessages([
+                    'cafc_code' => 'El código CAFC no puede modificarse después de utilizar numeración o registrar el evento.',
+                ]);
+            }
+
+            $locked->forceFill([
+                'cafc_code' => trim($cafcCode),
+                'updated_by_user_id' => $actor->id,
+            ])->save();
+
+            return $locked->refresh();
+        }, 3);
+    }
+
+    public function deleteUnusedRange(SinCafcRange $range, User $actor): void
+    {
+        DB::transaction(function () use ($range, $actor): void {
+            $locked = SinCafcRange::query()
+                ->withoutGlobalScope('company')
+                ->withExists([
+                    'manualInvoices',
+                    'derivedCopies',
+                    'invoiceTestBatches',
+                    'invoiceTestBatchItems',
+                    'monitoringAlerts',
+                ])
+                ->lockForUpdate()
+                ->findOrFail($range->id);
+
+            if ((int) $locked->company_id !== (int) $actor->company_id) {
+                throw ValidationException::withMessages([
+                    'cafc_range' => 'El CAFC no pertenece a la empresa activa.',
+                ]);
+            }
+
+            if (! $locked->canBeDeleted()) {
+                throw ValidationException::withMessages([
+                    'cafc_range' => 'El CAFC no puede eliminarse porque ya fue utilizado o tiene registros vinculados.',
+                ]);
+            }
+
+            $locked->delete();
+        }, 3);
     }
 
     public function recordUsed(
@@ -198,6 +253,9 @@ final class ManualCafcService
             $locked->loadMissing(['company', 'cafcRange', 'pointOfSale.branch', 'significantEvent']);
             $this->validateRange($locked->cafcRange, $locked->pointOfSale, (int) $locked->manual_invoice_number, $locked->issued_manually_at);
             [$token, $authorization, $cuis, $cufd] = $this->fiscalConfiguration($locked);
+            $invoiceDocumentTypeCode = InvoiceDocumentSector::invoiceDocumentTypeCode(
+                (int) $locked->document_sector_code,
+            );
 
             $cuf = $this->cufGenerator->generate(
                 $authorization->tax_id,
@@ -205,7 +263,7 @@ final class ManualCafcService
                 (int) $locked->pointOfSale->branch->branch_code,
                 $authorization->modality_code->value,
                 2,
-                1,
+                $invoiceDocumentTypeCode,
                 (int) $locked->document_sector_code,
                 (int) $locked->manual_invoice_number,
                 (int) $locked->pointOfSale->point_of_sale_code,
@@ -241,7 +299,7 @@ final class ManualCafcService
                 'modality_code' => SiatModality::ComputerizedOnline,
                 'emission_type_code' => 2,
                 'document_sector_code' => $locked->document_sector_code,
-                'invoice_document_type_code' => 1,
+                'invoice_document_type_code' => $invoiceDocumentTypeCode,
                 'emission_mode' => InvoiceEmissionMode::ManualCafc,
                 'commercial_status' => InvoiceCommercialStatus::Confirmed,
                 'fiscal_status' => InvoiceFiscalStatus::PendingPackage,
@@ -339,6 +397,7 @@ final class ManualCafcService
                 'voided_by_user_id' => $cancelled ? $actor->id : null,
                 'manual_invoice_number' => $number,
                 'document_sector_code' => $locked->document_sector_code,
+                'is_test_copy' => $locked->is_test_copy,
                 'manual_status' => $cancelled ? ManualContingencyInvoiceStatus::Cancelled : ManualContingencyInvoiceStatus::PendingTranscription,
                 'issued_manually_at' => CarbonImmutable::instance($issuedAt),
                 'void_reason' => $cancelled ? trim((string) $reason) : null,

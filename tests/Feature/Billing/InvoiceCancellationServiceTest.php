@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\InvoiceCustomerNotificationType;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatOperation;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Models\SinCatalogItem;
 use App\Models\SinCufd;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinSiatAttempt;
 use App\Models\User;
-use App\Notifications\InvoiceCancelledNotification;
 use App\Services\Billing\Contracts\InvoiceCancellationSiatClient;
 use App\Services\Billing\InvoiceCancellationService;
 use App\Services\Billing\InvoiceSiatResponse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -27,7 +28,7 @@ final class InvoiceCancellationServiceTest extends TestCase
 
     public function test_cancels_valid_invoice_individually_and_notifies_buyer(): void
     {
-        Notification::fake();
+        Queue::fake();
         [$invoice, $actor, $cufd] = $this->context();
         SinSiatAttempt::factory()->create([
             'company_id' => $invoice->company_id,
@@ -58,11 +59,8 @@ final class InvoiceCancellationServiceTest extends TestCase
             'attempt_status' => SiatAttemptStatus::Succeeded->value,
             'attempt_number' => 2,
         ]);
-        Notification::assertSentOnDemand(InvoiceCancelledNotification::class, function ($notification, $channels, $notifiable) use ($invoice): bool {
-            return in_array('mail', $channels, true)
-                && $notifiable->routes['mail'] === $invoice->customer->email
-                && $notification->invoice->cuf === $invoice->cuf;
-        });
+        Queue::assertPushed(SendInvoiceCustomerNotificationJob::class, fn ($job): bool => $job->invoiceId === $invoice->id
+            && $job->type === InvoiceCustomerNotificationType::Cancelled);
     }
 
     public function test_rejects_cancellation_after_day_nine_of_following_month(): void
@@ -75,15 +73,20 @@ final class InvoiceCancellationServiceTest extends TestCase
         app(InvoiceCancellationService::class)->cancel($invoice, (int) $cufd->sin_point_of_sale_id, 1, $actor);
     }
 
-    public function test_requires_private_buyer_email_before_contacting_sin(): void
+    public function test_cancellation_succeeds_without_buyer_email_and_skips_notification(): void
     {
+        Queue::fake();
         [$invoice, $actor, $cufd] = $this->context();
         $invoice->customer->forceFill(['email' => null])->save();
+        $client = new RecordingCancellationClient(new InvoiceSiatResponse([
+            'RespuestaServicioFacturacion' => ['codigoEstado' => 905, 'transaccion' => true],
+        ], 45));
+        $this->app->instance(InvoiceCancellationSiatClient::class, $client);
 
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('correo registrado');
+        $result = app(InvoiceCancellationService::class)->cancel($invoice, (int) $cufd->sin_point_of_sale_id, 1, $actor);
 
-        app(InvoiceCancellationService::class)->cancel($invoice, (int) $cufd->sin_point_of_sale_id, 1, $actor);
+        self::assertSame(InvoiceFiscalStatus::CancelledInSiat, $result->fiscal_status);
+        Queue::assertNotPushed(SendInvoiceCustomerNotificationJob::class);
     }
 
     /** @param array<string, mixed> $overrides

@@ -9,6 +9,7 @@ use App\Models\SinCafcRange;
 use App\Services\Billing\ManualCafcService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 class CafcRangeController extends Controller
 {
@@ -17,7 +18,18 @@ class CafcRangeController extends Controller
     public function index(): View
     {
         return view('billing.cafc-ranges.index', [
-            'ranges' => SinCafcRange::query()->with(['branch', 'pointOfSale', 'creator'])->latest()->paginate(15),
+            'ranges' => SinCafcRange::query()
+                ->where('is_test_copy', false)
+                ->with(['branch', 'pointOfSale', 'creator'])
+                ->withExists([
+                    'manualInvoices',
+                    'derivedCopies',
+                    'invoiceTestBatches',
+                    'invoiceTestBatchItems',
+                    'monitoringAlerts',
+                ])
+                ->latest()
+                ->paginate(15),
             'branches' => SinBranch::query()->with('activePointsOfSale')->where('is_active', true)->orderBy('branch_code')->get(),
         ]);
     }
@@ -27,5 +39,12 @@ class CafcRangeController extends Controller
         $this->cafc->registerRange($request->validated(), $request->user());
 
         return back()->with('success', 'Rango CAFC registrado correctamente.');
+    }
+
+    public function destroy(Request $request, SinCafcRange $cafcRange): RedirectResponse
+    {
+        $this->cafc->deleteUnusedRange($cafcRange, $request->user());
+
+        return back()->with('success', 'Rango CAFC eliminado correctamente.');
     }
 }

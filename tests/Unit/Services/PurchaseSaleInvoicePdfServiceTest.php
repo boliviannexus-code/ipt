@@ -56,6 +56,45 @@ class PurchaseSaleInvoicePdfServiceTest extends TestCase
         $this->assertStringContainsString('emitido fuera de línea, verifique su envío', $service->representationGraphicLegend($offline));
     }
 
+    public function test_verification_url_uses_the_correct_siat_environment_and_invoice_data(): void
+    {
+        $service = app(PurchaseSaleInvoicePdfService::class);
+
+        $this->assertSame(
+            'https://pilotosiat.impuestos.gob.bo/consulta/QR?nit=123456789&cuf=ABC123&numero=1&t=2',
+            $service->verificationUrl($this->invoice(environmentCode: 2)),
+        );
+        $this->assertSame(
+            'https://siat.impuestos.gob.bo/consulta/QR?nit=123456789&cuf=ABC123&numero=1&t=2',
+            $service->verificationUrl($this->invoice(environmentCode: 1)),
+        );
+    }
+
+    public function test_zero_rate_invoice_uses_the_complete_official_sector_title(): void
+    {
+        $invoice = $this->invoice();
+        $invoice->company_id = PHP_INT_MAX;
+        $invoice->document_sector_code = 8;
+
+        $this->assertSame(
+            'FACTURA DE TASA CERO POR VENTA DE LIBROS Y TRANSPORTE INTERNACIONAL DE CARGA',
+            app(PurchaseSaleInvoicePdfService::class)->fiscalTitle($invoice),
+        );
+    }
+
+    public function test_long_issuer_name_renders_without_breaking_the_pdf(): void
+    {
+        $invoice = $this->invoice();
+        $payload = $invoice->payload;
+        $payload['cabecera']['razonSocialEmisor'] = 'EMPRESA DE SERVICIOS COMERCIALES Y TRANSPORTE INTERNACIONAL COPACABANA RESPONSABILIDAD LIMITADA';
+        $invoice->payload = $payload;
+
+        $pdf = app(PurchaseSaleInvoicePdfService::class)->render($invoice);
+
+        $this->assertStringStartsWith('%PDF', $pdf);
+        $this->assertGreaterThan(1000, strlen($pdf));
+    }
+
     private function invoice(?InvoicePrintFormat $printFormat = null, int $environmentCode = 2): SinInvoiceIssue
     {
         $company = new Company([

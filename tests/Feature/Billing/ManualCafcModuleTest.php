@@ -12,11 +12,15 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\SinBranch;
 use App\Models\SinCafcRange;
+use App\Models\SinCufd;
 use App\Models\SinManualContingencyInvoice;
 use App\Models\SinPointOfSale;
 use App\Models\SinSignificantEvent;
 use App\Models\User;
+use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\ManualCafcService;
+use App\Services\Siat\SignificantEventService;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -71,6 +75,87 @@ class ManualCafcModuleTest extends TestCase
         self::assertSame(101, $this->range->next_number);
     }
 
+    public function test_cafc_code_can_only_be_edited_before_using_the_range(): void
+    {
+        $updated = $this->service->updateCode($this->range, 'CAFC-CORREGIDO-001', $this->user);
+
+        self::assertSame('CAFC-CORREGIDO-001', $updated->cafc_code);
+        self::assertSame($this->user->id, $updated->updated_by_user_id);
+
+        $this->useNumber(100);
+
+        try {
+            $this->service->updateCode($this->range->refresh(), 'CAFC-NO-PERMITIDO', $this->user);
+            self::fail('Se esperaba impedir la edición de un CAFC utilizado.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('cafc_code', $exception->errors());
+        }
+
+        self::assertSame('CAFC-CORREGIDO-001', $this->range->refresh()->cafc_code);
+    }
+
+    public function test_unused_cafc_range_can_be_deleted(): void
+    {
+        $rangeId = $this->range->id;
+
+        $this->service->deleteUnusedRange($this->range, $this->user);
+
+        $this->assertDatabaseMissing('sin_cafc_ranges', ['id' => $rangeId]);
+    }
+
+    public function test_manager_sees_and_can_use_delete_action_for_unused_cafc(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $this->user->givePermissionTo(['cafc-ranges.view', 'cafc-ranges.manage']);
+
+        $this->actingAs($this->user)
+            ->get(route('billing.cafc-ranges.index'))
+            ->assertOk()
+            ->assertSee(route('billing.cafc-ranges.destroy', $this->range))
+            ->assertSee('Eliminar');
+
+        $this->actingAs($this->user)
+            ->delete(route('billing.cafc-ranges.destroy', $this->range))
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Rango CAFC eliminado correctamente.');
+
+        $this->assertDatabaseMissing('sin_cafc_ranges', ['id' => $this->range->id]);
+    }
+
+    public function test_used_cafc_range_cannot_be_deleted(): void
+    {
+        $this->useNumber(100);
+
+        try {
+            $this->service->deleteUnusedRange($this->range->refresh(), $this->user);
+            self::fail('Se esperaba impedir la eliminación de un CAFC utilizado.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('cafc_range', $exception->errors());
+        }
+
+        $this->assertDatabaseHas('sin_cafc_ranges', ['id' => $this->range->id]);
+    }
+
+    public function test_pilot_cafc_copy_can_repeat_a_real_fiscal_number(): void
+    {
+        $real = $this->useNumber(100);
+        $copy = SinCafcRange::factory()->create([
+            ...$this->range->only(['company_id', 'sin_branch_id', 'sin_point_of_sale_id', 'cafc_code', 'document_sector_code', 'range_start', 'range_end', 'authorized_from', 'authorized_until']),
+            'source_sin_cafc_range_id' => $this->range->id,
+            'is_test_copy' => true,
+            'created_by_user_id' => $this->user->id,
+            'next_number' => 100,
+            'used_count' => 0,
+            'cancelled_count' => 0,
+        ]);
+
+        $test = $this->service->recordUsed($copy, $this->point, 100, now(), $this->user);
+
+        self::assertFalse($real->is_test_copy);
+        self::assertTrue($test->is_test_copy);
+        self::assertSame($real->manual_invoice_number, $test->manual_invoice_number);
+    }
+
     public function test_cafc_allows_transcription_before_event_registration(): void
     {
         $range = $this->service->registerRange([
@@ -89,6 +174,35 @@ class ManualCafcModuleTest extends TestCase
         self::assertNull($range->sin_significant_event_id);
         self::assertNull($manual->sin_significant_event_id);
         self::assertSame(ManualContingencyInvoiceStatus::PendingTranscription, $manual->manual_status);
+    }
+
+    public function test_event_period_is_suggested_from_historical_cufd_and_invoice_dates(): void
+    {
+        $firstInvoiceAt = now()->subMinutes(10)->startOfSecond();
+        $lastInvoiceAt = now()->subMinutes(5)->startOfSecond();
+        $cufdRequestedAt = $firstInvoiceAt->copy()->subMinutes(20);
+        SinCufd::factory()->create([
+            'company_id' => $this->company->id,
+            'sin_branch_id' => $this->branch->id,
+            'sin_point_of_sale_id' => $this->point->id,
+            'transaccion' => true,
+            'cufd_code' => 'CUFD-HISTORICO-PARA-SUGERENCIA',
+            'requested_at' => $cufdRequestedAt,
+            'expires_at' => now()->addDay(),
+            'invalidated_at' => now()->subMinutes(2),
+        ]);
+
+        $period = app(SignificantEventService::class)->suggestedPeriod(
+            $this->point,
+            $firstInvoiceAt,
+            $lastInvoiceAt,
+        );
+
+        self::assertNotNull($period);
+        self::assertTrue($period['earliest_start']->equalTo($cufdRequestedAt));
+        self::assertTrue($period['latest_start']->equalTo($firstInvoiceAt));
+        self::assertTrue($period['suggested_start']->equalTo($firstInvoiceAt->copy()->subMinute()));
+        self::assertTrue($period['earliest_end']->equalTo($lastInvoiceAt->copy()->addSecond()));
     }
 
     public function test_number_outside_range_is_rejected(): void
@@ -179,6 +293,39 @@ class ManualCafcModuleTest extends TestCase
         self::assertSame(2, $manual->invoice->emission_type_code);
         self::assertSame(InvoiceEmissionMode::ManualCafc, $manual->invoice->emission_mode);
         self::assertSame(InvoiceFiscalStatus::PendingPackage, $manual->invoice->fiscal_status);
+    }
+
+    public function test_zero_rate_transcription_uses_the_expected_invoice_document_type(): void
+    {
+        $this->range->forceFill([
+            'document_sector_code' => InvoiceDocumentSector::ZERO_RATE,
+        ])->save();
+
+        $manual = $this->useNumber(100);
+        $customer = Customer::factory()->create([
+            'company_id' => $this->company->id,
+            'identity_document_type_code' => 1,
+        ]);
+        $product = Product::factory()->create([
+            'company_id' => $this->company->id,
+            'unit_price' => 25,
+        ]);
+
+        $manual = $this->service->transcribe($manual, $customer, [
+            'payment_method_code' => 1,
+            'currency_code' => 1,
+            'discount_amount' => 0,
+            'total_amount' => 25,
+        ], [[
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'unit_price' => 25,
+            'discount_amount' => 0,
+        ]], $this->user);
+
+        self::assertSame(InvoiceDocumentSector::ZERO_RATE, $manual->invoice->document_sector_code);
+        self::assertSame(2, $manual->invoice->invoice_document_type_code);
+        self::assertSame('0.00000', $manual->invoice->taxable_amount);
     }
 
     private function useNumber(int $number): SinManualContingencyInvoice

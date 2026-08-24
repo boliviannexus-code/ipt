@@ -40,9 +40,7 @@ final class FiscalArtifactController extends Controller
     {
         $this->authorizeCompany($request, $invoice);
         abort_unless($invoice->payload && $invoice->cuf, 404);
-        $contents = $invoice->pdf_path && Storage::disk('local')->exists($invoice->pdf_path)
-            ? Storage::disk('local')->get($invoice->pdf_path)
-            : $pdf->render($invoice);
+        $contents = $pdf->render($invoice);
 
         return response($contents, 200, [
             'Content-Type' => 'application/pdf',

@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Web\Billing;
 
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatEnvironment;
-use App\Services\Siat\SiatErrorClassifier;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\IssuePurchaseSaleInvoiceRequest;
 use App\Models\Customer;
@@ -17,9 +16,11 @@ use App\Models\SinCuis;
 use App\Models\SinPointOfSale;
 use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceIssuanceService;
+use App\Services\Billing\PurchaseSaleInvoicePdfService;
 use App\Services\Billing\SaleCreationService;
 use App\Services\Siat\SiatCommunicationService;
 use App\Services\Siat\SiatCufdService;
+use App\Services\Siat\SiatErrorClassifier;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
@@ -40,6 +41,7 @@ class InvoiceIssueController extends Controller
         private readonly SiatErrorClassifier $errorClassifier,
         private readonly SaleCreationService $sales,
         private readonly InvoiceIssuanceService $invoiceIssuance,
+        private readonly PurchaseSaleInvoicePdfService $invoicePdf,
     ) {}
 
     public function index(): View
@@ -216,6 +218,9 @@ class InvoiceIssueController extends Controller
                         : null,
                     'xml_url' => $issue->xml_path
                         ? route('billing.invoices.xml', $issue)
+                        : null,
+                    'verification_url' => $validated
+                        ? $this->invoicePdf->verificationUrl($issue)
                         : null,
                     'emission_mode' => $issue->emission_mode->value,
                     'commercial_status' => $issue->commercial_status->value,

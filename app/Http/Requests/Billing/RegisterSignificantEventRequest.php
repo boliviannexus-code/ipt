@@ -18,6 +18,7 @@ class RegisterSignificantEventRequest extends FormRequest
             'event_code' => [
                 'required',
                 'integer',
+                Rule::in([1, 2, 3, 4]),
                 Rule::exists('sin_catalog_items', 'classifier_code')
                     ->where('company_id', $this->user()?->company_id)
                     ->where('catalog_key', 'eventos_significativos')
@@ -33,6 +34,7 @@ class RegisterSignificantEventRequest extends FormRequest
     {
         return [
             'event_code.required' => 'Selecciona el evento significativo.',
+            'event_code.in' => 'Contingencias solo admite los eventos significativos 1, 2, 3 y 4.',
             'event_code.exists' => 'Selecciona un evento significativo vigente del catalogo SIN.',
             'description.required' => 'Describe la contingencia.',
             'ended_at.after' => 'La fecha final debe ser posterior al inicio del evento.',

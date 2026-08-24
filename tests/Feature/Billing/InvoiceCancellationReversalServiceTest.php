@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\InvoiceCustomerNotificationType;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatOperation;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Models\SinCufd;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinSiatAttempt;
 use App\Models\User;
-use App\Notifications\InvoiceCancellationReversedNotification;
 use App\Services\Billing\Contracts\InvoiceCancellationReversalSiatClient;
 use App\Services\Billing\InvoiceCancellationReversalService;
 use App\Services\Billing\InvoiceSiatResponse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -26,7 +27,7 @@ final class InvoiceCancellationReversalServiceTest extends TestCase
 
     public function test_reverses_cancellation_once_and_notifies_buyer(): void
     {
-        Notification::fake();
+        Queue::fake();
         [$invoice, $actor, $cufd] = $this->context();
         foreach ([SiatOperation::ReceiveInvoice, SiatOperation::CancelInvoice] as $index => $operation) {
             SinSiatAttempt::factory()->create(['company_id' => $invoice->company_id, 'sin_invoice_issue_id' => $invoice->id,
@@ -47,7 +48,8 @@ final class InvoiceCancellationReversalServiceTest extends TestCase
         self::assertSame(InvoiceFiscalStatus::ReversedInSiat, $repeated->fiscal_status);
         $this->assertDatabaseHas('sin_siat_attempts', ['sin_invoice_issue_id' => $invoice->id,
             'operation' => SiatOperation::ReverseCancellation->value, 'attempt_number' => 3, 'attempt_status' => SiatAttemptStatus::Succeeded->value]);
-        Notification::assertSentOnDemand(InvoiceCancellationReversedNotification::class);
+        Queue::assertPushed(SendInvoiceCustomerNotificationJob::class, fn ($job): bool => $job->invoiceId === $invoice->id
+            && $job->type === InvoiceCustomerNotificationType::CancellationReversed);
     }
 
     public function test_rejects_reversal_after_deadline(): void

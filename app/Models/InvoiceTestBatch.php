@@ -16,7 +16,7 @@ final class InvoiceTestBatch extends Model
     use BelongsToCompany;
 
     protected $fillable = [
-        'company_id', 'user_id', 'sin_point_of_sale_id', 'customer_id', 'product_id',
+        'company_id', 'user_id', 'sin_point_of_sale_id', 'sin_cafc_range_id', 'customer_id', 'product_id',
         'batch_key', 'batch_status', 'test_mode', 'requested_count', 'invoices_per_cycle', 'processed_count',
         'successful_count', 'failed_count', 'document_sector_code', 'event_code', 'event_description', 'economic_activity_code',
         'payment_method_code', 'currency_code', 'quantity', 'unit_price',
@@ -73,6 +73,11 @@ final class InvoiceTestBatch extends Model
     public function pointOfSale(): BelongsTo
     {
         return $this->belongsTo(SinPointOfSale::class, 'sin_point_of_sale_id');
+    }
+
+    public function cafcRange(): BelongsTo
+    {
+        return $this->belongsTo(SinCafcRange::class, 'sin_cafc_range_id');
     }
 
     public function customer(): BelongsTo

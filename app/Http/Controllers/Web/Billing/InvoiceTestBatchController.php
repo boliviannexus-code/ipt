@@ -19,6 +19,7 @@ use App\Models\InvoiceTestBatch;
 use App\Models\Product;
 use App\Models\SinAuthorization;
 use App\Models\SinBranch;
+use App\Models\SinCafcRange;
 use App\Models\SinCatalogItem;
 use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\InvoiceTestBatchService;
@@ -56,6 +57,11 @@ final class InvoiceTestBatchController extends Controller
             'supportedSectors' => InvoiceDocumentSector::supported(),
             'significantEvents' => SinCatalogItem::query()->where('catalog_key', 'eventos_significativos')
                 ->active()->orderBy('classifier_code')->get(),
+            'cafcRanges' => SinCafcRange::query()
+                ->with(['branch', 'pointOfSale'])
+                ->where('is_test_copy', false)
+                ->orderBy('cafc_code')
+                ->get(),
             'selectedBatch' => $selected,
             'batches' => InvoiceTestBatch::query()
                 ->with(['customer', 'product', 'pointOfSale.branch'])

@@ -13,6 +13,7 @@ use App\Models\SinSignificantEvent;
 use App\Models\User;
 use App\Services\Parameters\SinAuthorizationService;
 use App\Services\SinApiTokenService;
+use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -27,6 +28,38 @@ class SignificantEventService
         private readonly SiatCuisService $cuisService,
         private readonly SiatCufdService $cufdService,
     ) {}
+
+    /**
+     * @return array{earliest_start: Carbon, latest_start: Carbon, suggested_start: Carbon, earliest_end: Carbon, latest_end: Carbon, suggested_end: Carbon}|null
+     */
+    public function suggestedPeriod(
+        SinPointOfSale $pointOfSale,
+        DateTimeInterface $firstInvoiceAt,
+        DateTimeInterface $lastInvoiceAt,
+    ): ?array {
+        $timezone = config('app.timezone', 'America/La_Paz');
+        $firstInvoice = Carbon::instance($firstInvoiceAt)->setTimezone($timezone);
+        $lastInvoice = Carbon::instance($lastInvoiceAt)->setTimezone($timezone);
+        $eventCufd = $this->cufdForEvent($pointOfSale, $firstInvoice->toDateTimeString());
+
+        if (! $eventCufd?->requested_at) {
+            return null;
+        }
+
+        $earliestStart = Carbon::instance($eventCufd->requested_at)->setTimezone($timezone);
+        $suggestedStart = $firstInvoice->copy()->subMinute()->max($earliestStart);
+        $earliestEnd = $lastInvoice->copy()->addSecond();
+        $latestEnd = now($timezone);
+
+        return [
+            'earliest_start' => $earliestStart,
+            'latest_start' => $firstInvoice,
+            'suggested_start' => $suggestedStart,
+            'earliest_end' => $earliestEnd,
+            'latest_end' => $latestEnd,
+            'suggested_end' => $latestEnd,
+        ];
+    }
 
     /** @param array<string, mixed> $data */
     public function registerForPointOfSale(User $user, SinPointOfSale $pointOfSale, array $data): SinSignificantEvent
@@ -219,10 +252,14 @@ class SignificantEventService
         $eventStartValue = $eventStart->format('Y-m-d H:i:s');
 
         return SinCufd::query()
-            ->usable()
+            ->successful()
             ->where('sin_point_of_sale_id', $pointOfSale->id)
             ->where('requested_at', '<=', $eventStartValue)
             ->where('expires_at', '>', $eventStartValue)
+            ->where(function ($query) use ($eventStartValue): void {
+                $query->whereNull('invalidated_at')
+                    ->orWhere('invalidated_at', '>', $eventStartValue);
+            })
             ->latest('requested_at')
             ->first();
     }

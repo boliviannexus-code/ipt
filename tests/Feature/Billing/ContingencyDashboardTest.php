@@ -159,11 +159,25 @@ final class ContingencyDashboardTest extends TestCase
             'classifier_code' => '1',
             'is_active' => true,
         ]);
+        SinCatalogItem::factory()->create([
+            'company_id' => $this->company->id,
+            'catalog_key' => 'eventos_significativos',
+            'classifier_code' => '5',
+            'description' => 'FALLA DE SOFTWARE SOLO CAFC',
+            'is_active' => true,
+        ]);
         $this->event->forceFill([
             'event_status' => SignificantEventStatus::Failed,
             'manual_review_required' => true,
             'message' => 'EL EVENTO SIGNIFICATIVO NO CORRESPONDE AL CUFD DEL EVENTO REGISTRADO',
         ])->save();
+
+        $this->actingAs($this->user)
+            ->post(route('billing.contingencies.events.register', $this->event), [
+                'event_code' => 5,
+                'description' => 'Este evento pertenece a Contingencias 2.',
+            ])
+            ->assertSessionHasErrors('event_code');
 
         $this->actingAs($this->user)
             ->post(route('billing.contingencies.events.register', $this->event), [

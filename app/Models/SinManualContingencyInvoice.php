@@ -27,7 +27,7 @@ class SinManualContingencyInvoice extends Model implements Auditable
         'customer_id', 'voided_by_user_id', 'customer_name', 'identity_document_type_code',
         'document_number', 'document_complement', 'customer_code', 'payment_method_code',
         'currency_code', 'subtotal_amount', 'discount_amount', 'total_amount', 'observations',
-        'void_reason', 'voided_at', 'xml_path', 'xml_hash',
+        'void_reason', 'voided_at', 'xml_path', 'xml_hash', 'is_test_copy',
     ];
 
     protected function casts(): array
@@ -42,6 +42,7 @@ class SinManualContingencyInvoice extends Model implements Auditable
             'issued_manually_at' => 'immutable_datetime',
             'transcribed_at' => 'immutable_datetime',
             'voided_at' => 'immutable_datetime',
+            'is_test_copy' => 'boolean',
         ];
     }
 

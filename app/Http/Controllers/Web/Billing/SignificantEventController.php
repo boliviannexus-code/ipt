@@ -100,6 +100,7 @@ class SignificantEventController extends Controller
             'events' => SinCatalogItem::query()
                 ->where('catalog_key', 'eventos_significativos')
                 ->active()
+                ->whereIn('classifier_code', ['1', '2', '3', '4'])
                 ->orderByRaw("nullif(classifier_code, '')::integer nulls last")
                 ->get(),
         ]);

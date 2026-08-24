@@ -1,8 +1,8 @@
 @extends('layouts.admin')
 
 @section('title', $invoiceTitle.' | '.config('app.name', 'Base Admin'))
-@section('page-title', 'Emisión de '.$invoiceTitle)
-@section('page-subtitle', 'Codigo documento sector '.$sector->classifier_code)
+@section('page-title', $invoiceTitle)
+@section('page-subtitle', 'Emisión · Sector '.$sector->classifier_code)
 
 @section('content')
     @php
@@ -86,12 +86,12 @@
                     <div class="invoice-panel-header">
                         <span class="invoice-panel-icon invoice-panel-icon-blue" aria-hidden="true"><i class="ti ti-arrows-exchange"></i></span>
                         <div>
-                            <h3 id="invoice-transaction-heading">Datos de la transaccion comercial</h3>
-                            <p>Sucursal, actividad economica y documento fiscal</p>
+                            <h3 id="invoice-transaction-heading">Operación</h3>
+                            <p>Sucursal y actividad económica</p>
                         </div>
                     </div>
 
-                    <div class="row g-3">
+                    <div class="row g-2">
                         <div class="col-lg-6">
                             <label class="form-label" for="invoice-point-of-sale">Sucursal / punto de venta</label>
                             @isset($manualCafc)
@@ -149,11 +149,11 @@
                 <section class="invoice-client-strip" aria-labelledby="invoice-client-heading">
                     <div class="invoice-client-heading">
                         <div>
-                            <h3 id="invoice-client-heading">Datos básicos del cliente</h3>
-                            <p>Busca un cliente registrado o crea uno nuevo</p>
+                            <h3 id="invoice-client-heading">Cliente</h3>
+                            <p>Selecciona o registra al comprador</p>
                         </div>
                     </div>
-                    <div class="row g-3 align-items-end invoice-client-picker">
+                    <div class="row g-2 align-items-end invoice-client-picker">
                         <div class="col-lg-8">
                             <label class="form-label" for="invoice-customer-id">Cliente registrado</label>
                             <select class="form-select" id="invoice-customer-id" name="customer_id" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar cliente" data-invoice-customer-select>
@@ -219,13 +219,13 @@
                     <div class="invoice-panel-header">
                         <span class="invoice-panel-icon invoice-panel-icon-green" aria-hidden="true"><i class="ti ti-shopping-cart"></i></span>
                         <div>
-                            <h3 id="invoice-detail-heading">Detalle de la transaccion comercial</h3>
-                            <p>Productos homologados con el catalogo SIAT</p>
+                            <h3 id="invoice-detail-heading">Detalle</h3>
+                            <p>Productos homologados con el SIAT</p>
                         </div>
                     </div>
 
-                    <div class="row g-3 align-items-end invoice-item-entry">
-                        <div class="col-lg-6 invoice-item-description">
+                    <div class="row g-2 align-items-end invoice-item-entry">
+                        <div class="col-lg-5 invoice-item-description">
                             <label class="form-label" for="invoice-product-id">Codigo / descripcion</label>
                             <select class="form-select" id="invoice-product-id" name="product_id" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar producto" data-invoice-product-select>
                                 <option value="" disabled selected>Seleccionar producto</option>
@@ -251,18 +251,12 @@
                             <input class="form-control text-end" id="invoice-quantity" name="quantity" type="number" min="0.00001" step="0.00001" value="1.00" data-invoice-quantity>
                         </div>
 
-                        <div class="col-lg-4">
+                        <div class="col-lg-2">
                             <label class="form-label">Unidad medida</label>
                             <div class="invoice-readonly-pill" data-product-unit>Seleccione un producto</div>
                         </div>
 
-                        <div class="col-12 invoice-item-description">
-                            <label class="form-label" for="invoice-additional-description">Descripcion adicional</label>
-                            <textarea class="form-control" id="invoice-additional-description" name="additional_description" rows="3" maxlength="485" data-character-counter="#invoice-additional-count"></textarea>
-                            <div class="form-hint" id="invoice-additional-count">0 caracteres</div>
-                        </div>
-
-                        <div class="col-md-4">
+                        <div class="col-lg-3">
                             <label class="form-label" for="invoice-unit-price">Precio unitario</label>
                             <div class="input-group">
                                 <span class="input-group-text">Bs</span>
@@ -270,7 +264,13 @@
                             </div>
                         </div>
 
-                        <div class="col-md-5 invoice-item-discount">
+                        <div class="col-lg-6 invoice-item-description">
+                            <label class="form-label" for="invoice-additional-description">Descripcion adicional</label>
+                            <textarea class="form-control" id="invoice-additional-description" name="additional_description" rows="1" maxlength="485" data-character-counter="#invoice-additional-count"></textarea>
+                            <div class="form-hint" id="invoice-additional-count">0 caracteres</div>
+                        </div>
+
+                        <div class="col-lg-3 invoice-item-discount">
                             <label class="form-label" for="invoice-discount">Descuento del ítem</label>
                             <div class="input-group invoice-discount-control">
                                 <label class="visually-hidden" for="invoice-discount-type">Tipo de descuento</label>
@@ -280,16 +280,16 @@
                                 </select>
                                 <input class="form-control text-end" id="invoice-discount" name="discount" type="number" min="0" step="0.00001" value="0.00" data-invoice-discount>
                             </div>
-                                  </div>
+                        </div>
 
-                        <div class="col-md-3 invoice-item-add">
+                        <div class="col-lg-3 invoice-item-add">
                             <button class="btn btn-primary w-100" type="button" data-invoice-add-item aria-label="Adicionar producto al detalle de la factura">
                                 <i class="ti ti-shopping-cart-plus me-1" aria-hidden="true"></i>Adicionar
                             </button>
                         </div>
                     </div>
 
-                    <div class="table-responsive mt-3">
+                    <div class="table-responsive mt-2">
                         <table class="table table-sm align-middle invoice-detail-table">
                             <thead>
                                 <tr>
@@ -313,7 +313,7 @@
             </div>
 
             <aside class="invoice-summary" aria-labelledby="invoice-summary-heading">
-                <h3 id="invoice-summary-heading">Resumen</h3>
+                <h3 id="invoice-summary-heading">Pago y totales</h3>
 
                 <input id="invoice-issued-at" name="issued_at" type="hidden" value="{{ isset($manualCafc) ? $manualCafc->issued_manually_at->format('Y-m-d\\TH:i:s') : now()->format('Y-m-d\\TH:i') }}">
 
@@ -375,6 +375,18 @@
                     <div>
                         <span>Monto total sujeto IVA</span>
                         <strong data-invoice-taxable-total>BO 0.00</strong>
+                    </div>
+                </div>
+
+                <div class="invoice-submit-progress" data-invoice-submit-progress role="status" aria-live="polite" aria-atomic="true" hidden>
+                    <span class="invoice-submit-progress-spinner" aria-hidden="true"></span>
+                    <div class="invoice-submit-progress-copy">
+                        <div class="invoice-submit-progress-heading">
+                            <strong data-invoice-progress-title>{{ isset($manualCafc) ? 'Preparando la transcripción CAFC' : 'Preparando la factura' }}</strong>
+                            <span data-invoice-progress-elapsed>0:00</span>
+                        </div>
+                        <p data-invoice-progress-detail>{{ isset($manualCafc) ? 'Validando los datos antes de generar los documentos fiscales.' : 'Validando los datos antes de conectar con el SIN.' }}</p>
+                        <div class="invoice-submit-progress-track" aria-hidden="true"><span></span></div>
                     </div>
                 </div>
 

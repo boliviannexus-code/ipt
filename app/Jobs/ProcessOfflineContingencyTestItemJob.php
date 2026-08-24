@@ -11,11 +11,16 @@ use App\Enums\InvoiceTestItemStatus;
 use App\Enums\SignificantEventStatus;
 use App\Models\InvoiceTestBatch;
 use App\Models\InvoiceTestBatchItem;
+use App\Models\SinCafcRange;
 use App\Models\SinInvoiceIssue;
 use App\Services\Billing\InvoiceIssuanceService;
+use App\Services\Billing\InvoicePackageService;
 use App\Services\Billing\InvoiceTestBatchService;
+use App\Services\Billing\ManualCafcService;
 use App\Services\Billing\SaleCreationService;
 use App\Services\Siat\ContingencyRecoveryService;
+use App\Services\Siat\SignificantEventService;
+use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -56,6 +61,9 @@ final class ProcessOfflineContingencyTestItemJob implements ShouldQueue
         SaleCreationService $sales,
         InvoiceIssuanceService $issuance,
         ContingencyRecoveryService $recovery,
+        ManualCafcService $manualCafc,
+        SignificantEventService $significantEvents,
+        InvoicePackageService $packages,
     ): void {
         $item = $this->item();
         if (in_array($item->item_status, [InvoiceTestItemStatus::Succeeded, InvoiceTestItemStatus::Failed], true)) {
@@ -72,6 +80,12 @@ final class ProcessOfflineContingencyTestItemJob implements ShouldQueue
             'batch_status' => InvoiceTestBatchStatus::Running,
             'started_at' => $batch->started_at ?? now(),
         ]);
+
+        if (in_array((int) $batch->event_code, [5, 6, 7], true)) {
+            $this->handleManualCafc($item, $manualCafc, $significantEvents, $packages);
+
+            return;
+        }
 
         $issuedInCycle = $item->significantEvent
             ? SinInvoiceIssue::query()->withoutGlobalScope('company')
@@ -211,6 +225,123 @@ final class ProcessOfflineContingencyTestItemJob implements ShouldQueue
         $this->advance();
     }
 
+    private function handleManualCafc(
+        InvoiceTestBatchItem $item,
+        ManualCafcService $manualCafc,
+        SignificantEventService $significantEvents,
+        InvoicePackageService $packages,
+    ): void {
+        $batch = $item->batch;
+        $range = $item->cafcRange ?? $batch->cafcRange
+            ?? throw new RuntimeException('La prueba de eventos 5, 6 o 7 requiere un CAFC.');
+        $point = $batch->pointOfSale()->with('branch')->firstOrFail();
+
+        if (! $item->significantEvent) {
+            $manualInvoices = $range->manualInvoices()->orderBy('manual_invoice_number')->get();
+            if ($manualInvoices->count() > $batch->invoices_per_cycle) {
+                throw new RuntimeException('El CAFC contiene más facturas que las solicitadas por la prueba.');
+            }
+
+            for ($position = $manualInvoices->count() + 1; $position <= $batch->invoices_per_cycle; $position++) {
+                $range = SinCafcRange::query()->withoutGlobalScope('company')->findOrFail($range->id);
+                $issuedAt = CarbonImmutable::now()->subSeconds($batch->invoices_per_cycle - $position + 3);
+                $manual = $manualCafc->recordUsed(
+                    $range,
+                    $point,
+                    (int) $range->next_number,
+                    $issuedAt,
+                    $batch->user,
+                );
+                $manualCafc->transcribe($manual, $batch->customer, [
+                    'payment_method_code' => $batch->payment_method_code,
+                    'currency_code' => $batch->currency_code,
+                    'discount_amount' => 0,
+                    'total_amount' => (float) $batch->quantity * (float) $batch->unit_price,
+                    'observations' => "Prueba automática CAFC #{$batch->id}",
+                ], [[
+                    'product_id' => $batch->product_id,
+                    'quantity' => $batch->quantity,
+                    'unit_price' => $batch->unit_price,
+                    'discount_amount' => 0,
+                ]], $batch->user);
+            }
+
+            $manualInvoices = $range->manualInvoices()->with('invoice')->orderBy('issued_manually_at')->get();
+            $first = $manualInvoices->firstOrFail();
+            $last = $manualInvoices->last();
+            $period = $significantEvents->suggestedPeriod($point, $first->issued_manually_at, $last->issued_manually_at)
+                ?? throw new RuntimeException('No existe un CUFD histórico compatible con la prueba CAFC.');
+            $endedAt = $period['earliest_end']->min($period['latest_end']);
+            $event = $significantEvents->registerForPointOfSale($batch->user, $point, [
+                'event_code' => (int) $batch->event_code,
+                'description' => (string) $batch->event_description,
+                'started_at' => $period['suggested_start']->toDateTimeString(),
+                'ended_at' => $endedAt->toDateTimeString(),
+            ]);
+            if (! $event->transaccion) {
+                $this->failCycle($event->message ?: 'SIAT no aceptó el evento de prueba CAFC.');
+
+                return;
+            }
+
+            DB::transaction(function () use ($range, $event, $manualInvoices, $item): void {
+                $range->forceFill(['sin_significant_event_id' => $event->id])->save();
+                foreach ($manualInvoices as $manual) {
+                    $manual->forceFill(['sin_significant_event_id' => $event->id])->save();
+                    $manual->invoice?->forceFill(['sin_significant_event_id' => $event->id])->save();
+                }
+                $item->update([
+                    'sin_invoice_issue_id' => $manualInvoices->first()?->sin_invoice_issue_id,
+                    'sin_significant_event_id' => $event->id,
+                    'stage' => 'PACKAGING',
+                    'message' => "{$manualInvoices->count()} factura(s) CAFC transcritas; generando paquete.",
+                ]);
+            }, 3);
+            $packages->buildForEvent($event, $batch->user);
+            $item = $this->item();
+        }
+
+        $event = $item->significantEvent;
+        $package = $item->invoicePackage ?? $event?->packages()->orderBy('id')->first();
+        if (! $package) {
+            $package = $packages->buildForEvent($event, $batch->user)->first();
+        }
+        if (! $package) {
+            $this->failCycle('No fue posible generar el paquete CAFC de prueba.');
+
+            return;
+        }
+        $item->update(['sin_invoice_package_id' => $package->id]);
+
+        if (in_array($package->package_status, [InvoicePackageStatus::Created, InvoicePackageStatus::PendingSend], true)) {
+            $package = $packages->send($package, $batch->user)->package;
+        }
+        if ($package->package_status === InvoicePackageStatus::PendingValidation) {
+            $result = $packages->checkValidation($package, $batch->user);
+            $package = $result->package;
+            if ($result->pending) {
+                $item->update(['stage' => 'VALIDATING_PACKAGE', 'message' => 'Esperando la validación final del paquete CAFC.']);
+                $this->release(10);
+
+                return;
+            }
+        }
+
+        if ($package->package_status !== InvoicePackageStatus::Validated) {
+            $this->failCycle($package->message ?: 'SIAT no validó el paquete CAFC de prueba.');
+
+            return;
+        }
+
+        $item->update([
+            'stage' => 'COMPLETED',
+            'item_status' => InvoiceTestItemStatus::Succeeded,
+            'message' => "{$batch->invoices_per_cycle} factura(s) CAFC, evento y paquete validados correctamente.",
+            'finished_at' => now(),
+        ]);
+        $this->advance();
+    }
+
     private function advance(): void
     {
         $next = InvoiceTestBatchItem::query()->withoutGlobalScope('company')
@@ -263,7 +394,7 @@ final class ProcessOfflineContingencyTestItemJob implements ShouldQueue
     private function item(): InvoiceTestBatchItem
     {
         return InvoiceTestBatchItem::query()->withoutGlobalScope('company')
-            ->with(['batch.user', 'batch.product', 'sale', 'invoice', 'significantEvent', 'invoicePackage'])
+            ->with(['batch.user', 'batch.product', 'batch.customer', 'batch.cafcRange', 'cafcRange', 'sale', 'invoice', 'significantEvent', 'invoicePackage'])
             ->where('company_id', $this->companyId)->where('invoice_test_batch_id', $this->batchId)
             ->findOrFail($this->itemId);
     }

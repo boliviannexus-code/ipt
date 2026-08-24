@@ -5,25 +5,24 @@ declare(strict_types=1);
 namespace App\Services\Billing;
 
 use App\Enums\InvoiceCommercialStatus;
+use App\Enums\InvoiceCustomerNotificationType;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SaleStatus;
 use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatMessageSeverity;
 use App\Enums\SiatOperation;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Models\SinCufd;
 use App\Models\SinFiscalStatusHistory;
 use App\Models\SinInvoiceIssue;
 use App\Models\SinResponseMessage;
 use App\Models\SinSiatAttempt;
 use App\Models\User;
-use App\Notifications\InvoiceCancellationReversedNotification;
 use App\Services\Billing\Contracts\InvoiceCancellationReversalSiatClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 final readonly class InvoiceCancellationReversalService
 {
@@ -52,9 +51,6 @@ final readonly class InvoiceCancellationReversalService
             }
             if (now()->isAfter($this->deadline($locked))) {
                 throw ValidationException::withMessages(['invoice' => 'El plazo de reversión venció el '.$this->deadline($locked)->format('d/m/Y').'.']);
-            }
-            if (blank($locked->customer?->email)) {
-                throw ValidationException::withMessages(['invoice' => 'El comprador debe tener un correo registrado para recibir la notificación privada de reversión.']);
             }
             $cufd = SinCufd::query()->withoutGlobalScope('company')->with(['apiToken', 'authorization', 'cuis'])
                 ->where('company_id', $locked->company_id)->where('sin_point_of_sale_id', $pointOfSaleId)
@@ -135,21 +131,17 @@ final readonly class InvoiceCancellationReversalService
         return $result->refresh();
     }
 
-    public function notifyBuyer(SinInvoiceIssue $invoice): bool
+    private function notifyBuyer(SinInvoiceIssue $invoice): bool
     {
         if ($invoice->fiscal_status !== InvoiceFiscalStatus::ReversedInSiat || blank($invoice->customer?->email)) {
             return false;
         }
-        try {
-            Notification::route('mail', (string) $invoice->customer->email)->notify(new InvoiceCancellationReversedNotification($invoice));
-            $invoice->forceFill(['reversal_notified_at' => now(), 'reversal_notification_error' => null])->save();
+        SendInvoiceCustomerNotificationJob::dispatch(
+            (int) $invoice->id,
+            InvoiceCustomerNotificationType::CancellationReversed,
+        )->afterCommit();
 
-            return true;
-        } catch (Throwable $exception) {
-            $invoice->forceFill(['reversal_notification_error' => Str::limit($exception->getMessage(), 255)])->save();
-
-            return false;
-        }
+        return true;
     }
 
     private function history(SinInvoiceIssue $invoice, SinSiatAttempt $attempt, InvoiceFiscalStatus $from, InvoiceFiscalStatus $to, string $code, string $reason): void

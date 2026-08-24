@@ -96,7 +96,6 @@ final class SiatPointOfSaleService
 
     /**
      * Consulta SIAT y refleja localmente la lista oficial de la sucursal.
-     *
      */
     public function synchronize(SinBranch $branch): PointOfSaleSyncResult
     {

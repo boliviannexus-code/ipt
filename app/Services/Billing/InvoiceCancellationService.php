@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Billing;
 
 use App\Enums\InvoiceCommercialStatus;
+use App\Enums\InvoiceCustomerNotificationType;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SaleStatus;
 use App\Enums\SiatAttemptStatus;
 use App\Enums\SiatMessageSeverity;
 use App\Enums\SiatOperation;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Models\SinCatalogItem;
 use App\Models\SinCufd;
 use App\Models\SinFiscalStatusHistory;
@@ -17,14 +19,11 @@ use App\Models\SinInvoiceIssue;
 use App\Models\SinResponseMessage;
 use App\Models\SinSiatAttempt;
 use App\Models\User;
-use App\Notifications\InvoiceCancelledNotification;
 use App\Services\Billing\Contracts\InvoiceCancellationSiatClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 final readonly class InvoiceCancellationService
 {
@@ -61,10 +60,6 @@ final readonly class InvoiceCancellationService
 
             if (now()->isAfter($this->deadline($locked))) {
                 throw ValidationException::withMessages(['invoice' => 'El plazo de anulación venció el '.$this->deadline($locked)->format('d/m/Y').'.']);
-            }
-
-            if (blank($locked->customer?->email)) {
-                throw ValidationException::withMessages(['invoice' => 'El comprador debe tener un correo registrado para recibir la notificación privada de anulación.']);
             }
 
             $reason = SinCatalogItem::query()->withoutGlobalScope('company')
@@ -216,22 +211,18 @@ final readonly class InvoiceCancellationService
         return $cancelled->refresh();
     }
 
-    public function notifyBuyer(SinInvoiceIssue $invoice): bool
+    private function notifyBuyer(SinInvoiceIssue $invoice): bool
     {
         if ($invoice->fiscal_status !== InvoiceFiscalStatus::CancelledInSiat || blank($invoice->customer?->email)) {
             return false;
         }
 
-        try {
-            Notification::route('mail', (string) $invoice->customer->email)->notify(new InvoiceCancelledNotification($invoice));
-            $invoice->forceFill(['cancellation_notified_at' => now(), 'cancellation_notification_error' => null])->save();
+        SendInvoiceCustomerNotificationJob::dispatch(
+            (int) $invoice->id,
+            InvoiceCustomerNotificationType::Cancelled,
+        )->afterCommit();
 
-            return true;
-        } catch (Throwable $exception) {
-            $invoice->forceFill(['cancellation_notification_error' => Str::limit($exception->getMessage(), 255)])->save();
-
-            return false;
-        }
+        return true;
     }
 
     private function findInt(array $data, string $key): ?int

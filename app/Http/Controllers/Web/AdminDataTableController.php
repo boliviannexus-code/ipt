@@ -9,6 +9,7 @@ use App\Models\SinCatalogItem;
 use App\Models\SinInvoiceIssue;
 use App\Models\User;
 use App\Services\Billing\InvoiceDocumentSector;
+use App\Services\Billing\PurchaseSaleInvoicePdfService;
 use App\Services\Siat\SiatCatalogRegistry;
 use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,10 @@ use Yajra\DataTables\Facades\DataTables;
 
 class AdminDataTableController extends Controller
 {
+    public function __construct(
+        private readonly PurchaseSaleInvoicePdfService $invoicePdf,
+    ) {}
+
     public function audits(Request $request): JsonResponse
     {
         abort_unless(auth()->user()?->can('audits.view'), 403);
@@ -242,8 +247,14 @@ class AdminDataTableController extends Controller
                 .($xmlAction !== '' ? ' '.$xmlAction : '');
         }
 
-        if (! ($invoice->status_code === 908 && $invoice->transaccion && $invoice->invoice_number)
-            && ! in_array($invoice->fiscal_status, [InvoiceFiscalStatus::CancelledInSiat, InvoiceFiscalStatus::ReversedInSiat], true)) {
+        $registeredInSiat = ($invoice->status_code === 908 && $invoice->transaccion && $invoice->invoice_number)
+            || in_array($invoice->fiscal_status, [InvoiceFiscalStatus::CancelledInSiat, InvoiceFiscalStatus::ReversedInSiat], true);
+        $printableOffline = $invoice->emission_mode === InvoiceEmissionMode::OfflineDigital
+            && $invoice->invoice_number
+            && filled($invoice->cuf)
+            && filled($invoice->payload);
+
+        if (! $registeredInSiat && ! $printableOffline) {
             return $xmlAction !== '' ? $xmlAction : '<span class="text-body-secondary small">-</span>';
         }
 
@@ -254,26 +265,22 @@ class AdminDataTableController extends Controller
             .'</a>'
             .($xmlAction !== '' ? ' '.$xmlAction : '');
 
+        if ($registeredInSiat) {
+            $actions .= ' <a class="btn btn-outline-info btn-sm" href="'
+                .e($this->invoicePdf->verificationUrl($invoice))
+                .'" target="_blank" rel="noopener noreferrer">'
+                .'<i class="ti ti-shield-check me-1" aria-hidden="true"></i>Verificar factura</a>';
+        }
+
         if (auth()->user()?->can('invoices.cancel')
             && in_array($invoice->fiscal_status, [InvoiceFiscalStatus::Validated, InvoiceFiscalStatus::ValidatedAfterContingency, InvoiceFiscalStatus::ManualValidated], true)) {
             $actions .= ' <a class="btn btn-outline-danger btn-sm" href="'.e(route('billing.invoices.cancel.form', $invoice)).'">'
                 .'<i class="ti ti-file-off me-1" aria-hidden="true"></i>Anular</a>';
         }
 
-        if (auth()->user()?->can('invoices.cancel')
-            && $invoice->fiscal_status === InvoiceFiscalStatus::CancelledInSiat
-            && ! $invoice->cancellation_notified_at) {
-            $actions .= ' <form class="d-inline" method="POST" action="'.e(route('billing.invoices.cancel.notify', $invoice)).'">'
-                .csrf_field().'<button class="btn btn-outline-warning btn-sm" type="submit">Notificar comprador</button></form>';
-        }
-
         if (auth()->user()?->can('invoices.cancel') && $invoice->fiscal_status === InvoiceFiscalStatus::CancelledInSiat) {
             $actions .= ' <a class="btn btn-outline-success btn-sm" href="'.e(route('billing.invoices.reversal.form', $invoice)).'">'
                 .'<i class="ti ti-arrow-back-up me-1" aria-hidden="true"></i>Revertir anulación</a>';
-        }
-        if (auth()->user()?->can('invoices.cancel') && $invoice->fiscal_status === InvoiceFiscalStatus::ReversedInSiat && ! $invoice->reversal_notified_at) {
-            $actions .= ' <form class="d-inline" method="POST" action="'.e(route('billing.invoices.reversal.notify', $invoice)).'">'
-                .csrf_field().'<button class="btn btn-outline-warning btn-sm" type="submit">Notificar reversión</button></form>';
         }
 
         return $actions;

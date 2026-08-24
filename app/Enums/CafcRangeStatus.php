@@ -8,6 +8,7 @@ enum CafcRangeStatus: string
 {
     case Available = 'AVAILABLE';
     case InUse = 'IN_USE';
+    case Sent = 'SENT';
     case Exhausted = 'EXHAUSTED';
     case Expired = 'EXPIRED';
     case Blocked = 'BLOCKED';
@@ -18,6 +19,7 @@ enum CafcRangeStatus: string
         return match ($this) {
             self::Available => 'Disponible',
             self::InUse => 'En uso',
+            self::Sent => 'Enviado',
             self::Exhausted => 'Agotado',
             self::Expired => 'Vencido',
             self::Blocked => 'Bloqueado',

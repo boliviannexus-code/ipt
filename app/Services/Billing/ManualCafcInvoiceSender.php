@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Billing;
 
 use App\Enums\InvoiceEmissionMode;
+use App\Enums\InvoiceCustomerNotificationType;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\ManualContingencyInvoiceStatus;
 use App\Enums\SiatAttemptStatus;
@@ -14,6 +15,7 @@ use App\Models\SinFiscalStatusHistory;
 use App\Models\SinManualContingencyInvoice;
 use App\Models\SinSiatAttempt;
 use App\Models\User;
+use App\Jobs\SendInvoiceCustomerNotificationJob;
 use App\Services\Billing\Contracts\InvoiceSiatClient;
 use App\Services\Siat\SiatLogSanitizer;
 use Illuminate\Support\Facades\DB;
@@ -80,7 +82,7 @@ final class ManualCafcInvoiceSender
             $response = $this->client->send($locked->invoice, Storage::disk('local')->get($locked->invoice->gzip_path));
             $safeResponse = $this->sanitizer->data($response->data, $this->apiToken($locked)) ?? [];
 
-            return DB::transaction(function () use ($locked, $attempt, $response, $safeResponse): SinManualContingencyInvoice {
+            $result = DB::transaction(function () use ($locked, $attempt, $response, $safeResponse): SinManualContingencyInvoice {
                 $manual = SinManualContingencyInvoice::query()->withoutGlobalScope('company')->with('invoice')->lockForUpdate()->findOrFail($locked->id);
                 $attempt = SinSiatAttempt::query()->withoutGlobalScope('company')->lockForUpdate()->findOrFail($attempt->id);
                 $statusCode = $this->findInt($safeResponse, 'codigoEstado');
@@ -112,8 +114,18 @@ final class ManualCafcInvoiceSender
                     'reason' => $message, 'changed_at' => now(),
                 ]);
 
-                return $manual->refresh()->load('invoice');
+                return $manual->refresh()->load('invoice.customer');
             }, 3);
+
+            if ($result->manual_status === ManualContingencyInvoiceStatus::Validated
+                && filled($result->invoice?->customer?->email)) {
+                SendInvoiceCustomerNotificationJob::dispatch(
+                    (int) $result->sin_invoice_issue_id,
+                    InvoiceCustomerNotificationType::Issued,
+                )->afterCommit();
+            }
+
+            return $result;
         } catch (Throwable $exception) {
             $safeMessage = $this->sanitizer->text($exception->getMessage(), $this->apiToken($locked))
                 ?: 'Error no identificado enviando la factura manual.';

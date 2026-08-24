@@ -23,7 +23,7 @@ class SinCafcRange extends Model implements Auditable
         'company_id', 'sin_branch_id', 'sin_point_of_sale_id', 'sin_significant_event_id', 'created_by_user_id',
         'updated_by_user_id', 'cafc_code', 'document_sector_code', 'range_start',
         'range_end', 'next_number', 'range_status', 'authorized_from', 'authorized_until', 'notes',
-        'used_count', 'cancelled_count',
+        'used_count', 'cancelled_count', 'is_test_copy', 'source_sin_cafc_range_id',
     ];
 
     protected function casts(): array
@@ -33,7 +33,7 @@ class SinCafcRange extends Model implements Auditable
             'range_end' => 'integer', 'next_number' => 'integer',
             'used_count' => 'integer', 'cancelled_count' => 'integer',
             'range_status' => CafcRangeStatus::class,
-            'authorized_from' => 'immutable_date', 'authorized_until' => 'immutable_date',
+            'authorized_from' => 'immutable_date', 'authorized_until' => 'immutable_date', 'is_test_copy' => 'boolean',
         ];
     }
 
@@ -70,6 +70,40 @@ class SinCafcRange extends Model implements Auditable
     public function manualInvoices(): HasMany
     {
         return $this->hasMany(SinManualContingencyInvoice::class, 'sin_cafc_range_id');
+    }
+
+    public function derivedCopies(): HasMany
+    {
+        return $this->hasMany(self::class, 'source_sin_cafc_range_id');
+    }
+
+    public function invoiceTestBatches(): HasMany
+    {
+        return $this->hasMany(InvoiceTestBatch::class, 'sin_cafc_range_id');
+    }
+
+    public function invoiceTestBatchItems(): HasMany
+    {
+        return $this->hasMany(InvoiceTestBatchItem::class, 'sin_cafc_range_id');
+    }
+
+    public function monitoringAlerts(): HasMany
+    {
+        return $this->hasMany(SinMonitoringAlert::class, 'sin_cafc_range_id');
+    }
+
+    public function canBeDeleted(): bool
+    {
+        return ! $this->is_test_copy
+            && $this->sin_significant_event_id === null
+            && $this->used_count === 0
+            && $this->cancelled_count === 0
+            && $this->next_number === $this->range_start
+            && ! (bool) $this->getAttribute('manual_invoices_exists')
+            && ! (bool) $this->getAttribute('derived_copies_exists')
+            && ! (bool) $this->getAttribute('invoice_test_batches_exists')
+            && ! (bool) $this->getAttribute('invoice_test_batch_items_exists')
+            && ! (bool) $this->getAttribute('monitoring_alerts_exists');
     }
 
     public function getRemainingCountAttribute(): int

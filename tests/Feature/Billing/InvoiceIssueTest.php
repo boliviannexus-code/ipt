@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Enums\SiatEnvironment;
 use App\Enums\SiatFailureCategory;
@@ -43,7 +44,9 @@ class InvoiceIssueTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Facturacion')
+            ->assertSee('Parametros')
             ->assertSee('Emitir factura')
+            ->assertSee(route('billing.invoice-print-settings.edit'))
             ->assertSee('Eventos significativos')
             ->assertSee(route('billing.significant-events.index'))
             ->assertSee(route('billing.invoices.issue.index'));
@@ -58,8 +61,58 @@ class InvoiceIssueTest extends TestCase
             ->get(route('billing.invoices.index'))
             ->assertOk()
             ->assertSee('Tipo de factura')
+            ->assertSee('invoice-list-table')
             ->assertSee('"data":"document_type"', false)
             ->assertSee('"name":"sin_invoice_issues.document_sector_code"', false);
+    }
+
+    public function test_validated_invoice_list_offers_official_siat_verification_link(): void
+    {
+        $user = $this->companyUser(['invoices.view']);
+        SinInvoiceIssue::factory()->create([
+            'company_id' => $user->company_id,
+            'tax_id' => '123456789',
+            'environment_code' => SiatEnvironment::TestingAndPilot,
+            'fiscal_status' => InvoiceFiscalStatus::Validated,
+            'status_code' => 908,
+            'transaccion' => true,
+            'invoice_number' => 37,
+            'cuf' => 'CUF-VERIFICABLE-37',
+        ]);
+
+        $response = $this->actingAs($user)->getJson(route('datatables.invoices'));
+
+        $response->assertOk();
+        $this->assertStringContainsString('Verificar factura', $response->getContent());
+        $this->assertStringContainsString(
+            'pilotosiat.impuestos.gob.bo\/consulta\/QR?nit=123456789&amp;cuf=CUF-VERIFICABLE-37&amp;numero=37&amp;t=2',
+            $response->getContent(),
+        );
+    }
+
+    public function test_offline_invoice_can_be_reprinted_without_offering_siat_verification(): void
+    {
+        $user = $this->companyUser(['invoices.view']);
+        $invoice = SinInvoiceIssue::factory()->create([
+            'company_id' => $user->company_id,
+            'emission_mode' => InvoiceEmissionMode::OfflineDigital,
+            'fiscal_status' => InvoiceFiscalStatus::OfflineIssued,
+            'status_code' => null,
+            'transaccion' => false,
+            'invoice_number' => 41,
+            'cuf' => 'CUF-OFFLINE-41',
+            'payload' => ['cabecera' => [], 'detalle' => []],
+        ]);
+
+        $response = $this->actingAs($user)->getJson(route('datatables.invoices'));
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            str_replace('/', '\\/', route('billing.invoices.print', $invoice)),
+            $response->getContent(),
+        );
+        $this->assertStringContainsString('Reimprimir', $response->getContent());
+        $this->assertStringNotContainsString('Verificar factura', $response->getContent());
     }
 
     public function test_pending_online_invoice_can_be_queued_for_resend_without_creating_another_invoice(): void
@@ -145,6 +198,9 @@ class InvoiceIssueTest extends TestCase
             'cufd_code' => 'CUFD-INDEPENDIENTE-123',
             'expires_at' => now()->addDay(),
             'requested_at' => now()->subMinutes(15),
+            // Al obtener el CUFD de recuperación, el anterior queda reemplazado,
+            // pero seguía siendo el CUFD válido cuando comenzó la contingencia.
+            'invalidated_at' => now()->subMinutes(2),
         ]);
         $currentCufd = SinCufd::factory()->create([
             'company_id' => $user->company_id,
@@ -161,6 +217,7 @@ class InvoiceIssueTest extends TestCase
             'requested_at' => now(),
         ]);
         $this->seedCatalogItem($user->company_id, 'eventos_significativos', '1', 'CORTE DEL SERVICIO DE INTERNET');
+        $this->seedCatalogItem($user->company_id, 'eventos_significativos', '5', 'FALLA DE SOFTWARE SOLO CAFC');
         $factory = new class extends SiatSoapClientFactory
         {
             public array $payloads = [];
@@ -190,7 +247,20 @@ class InvoiceIssueTest extends TestCase
             ->assertOk()
             ->assertSee('Registro independiente')
             ->assertSee('Sucursal 7 · PV 3')
-            ->assertSee('CORTE DEL SERVICIO DE INTERNET');
+            ->assertSee('CORTE DEL SERVICIO DE INTERNET')
+            ->assertDontSee('FALLA DE SOFTWARE SOLO CAFC');
+
+        $this->actingAs($user)
+            ->post(route('billing.significant-events.point-of-sale.store'), [
+                'sin_point_of_sale_id' => $pointOfSale->id,
+                'event_code' => 5,
+                'description' => 'Este evento pertenece a Contingencias 2.',
+                'started_at' => now()->subMinutes(10)->format('Y-m-d H:i:s'),
+                'ended_at' => now()->subMinute()->format('Y-m-d H:i:s'),
+            ])
+            ->assertSessionHasErrors('event_code');
+
+        $this->assertSame([], $factory->payloads);
 
         $this->actingAs($user)
             ->post(route('billing.significant-events.point-of-sale.store'), [
@@ -272,16 +342,19 @@ class InvoiceIssueTest extends TestCase
             ->assertSee('Factura compra-venta')
             ->assertDontSee('Datos basicos del contribuyente')
             ->assertDontSee('Casos especiales')
-            ->assertSee('Datos de la transaccion comercial')
+            ->assertSee('Operación')
             ->assertSee('Cliente registrado')
             ->assertSee('Cliente nuevo')
-            ->assertSee('Datos básicos del cliente')
-            ->assertSee('Detalle de la transaccion comercial')
+            ->assertSee('Cliente')
+            ->assertSee('Detalle')
+            ->assertSee('Pago y totales')
             ->assertSee($customer->name)
             ->assertSee('EFECTIVO')
             ->assertSee('BOLIVIANO')
             ->assertSee($product->internal_code)
-            ->assertSee('Resumen')
+            ->assertSee('Pago y totales')
+            ->assertSee('data-invoice-submit-progress', false)
+            ->assertSee('Preparando la factura')
             ->assertSee('id="invoice-issued-at" name="issued_at" type="hidden"', false)
             ->assertSee('Emitir factura');
     }
@@ -431,7 +504,7 @@ class InvoiceIssueTest extends TestCase
             'transaccion' => true,
             'cuis_code' => 'CUIS-CURRENT-123',
         ]);
-        $previousCufd = \App\Models\SinCufd::factory()->create([
+        $previousCufd = SinCufd::factory()->create([
             'company_id' => $user->company_id,
             'sin_branch_id' => $pointOfSale->sin_branch_id,
             'sin_point_of_sale_id' => $pointOfSale->id,
@@ -508,7 +581,7 @@ class InvoiceIssueTest extends TestCase
             'transaccion' => true,
             'cuis_code' => 'CUIS-OFFLINE-123',
         ]);
-        $currentCufd = \App\Models\SinCufd::factory()->create([
+        $currentCufd = SinCufd::factory()->create([
             'company_id' => $user->company_id,
             'sin_branch_id' => $pointOfSale->sin_branch_id,
             'sin_point_of_sale_id' => $pointOfSale->id,

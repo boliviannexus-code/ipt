@@ -32,7 +32,7 @@
         </x-slot:actions>
 
         <table
-            class="table table-hover align-middle mb-0"
+            class="table table-hover align-middle mb-0 invoice-list-table"
             data-datatable
             data-url="{{ route('datatables.invoices') }}"
             data-order='[[2,"desc"]]'

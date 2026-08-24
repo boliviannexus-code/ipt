@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\CafcRangeStatus;
 use App\Enums\InvoiceCommercialStatus;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
@@ -141,14 +142,19 @@ final class InvoicePackageServiceTest extends TestCase
             'created_by_user_id' => $context['user']->id,
         ]);
 
-        $package = $this->service(new SequenceInvoicePackageSiatClient)
-            ->buildForEvent($context['event'], $context['user'])
-            ->firstOrFail();
+        $service = $this->service(new SequenceInvoicePackageSiatClient([
+            $this->acceptedReception('RECEPTION-CAFC-SENT'),
+        ]));
+        $package = $service->buildForEvent($context['event'], $context['user'])->firstOrFail();
 
         self::assertSame(InvoiceEmissionMode::ManualCafc, $package->emission_mode);
         self::assertSame('CAFC-PACKAGE-TEST', $package->cafc_code);
         self::assertSame(2, $package->emission_type_code);
         self::assertSame($invoice->id, $package->items()->firstOrFail()->sin_invoice_issue_id);
+
+        $service->send($package, $context['user']);
+
+        self::assertSame(CafcRangeStatus::Sent, $range->refresh()->range_status);
     }
 
     public function test_excludes_manual_and_already_validated_invoices_from_digital_packages(): void

@@ -148,6 +148,7 @@ final class ContingencyDashboardService
             ->where('company_id', $company->id)
             ->where('catalog_key', 'eventos_significativos')
             ->where('is_active', true)
+            ->whereIn('classifier_code', ['1', '2', '3', '4'])
             ->orderByRaw("nullif(classifier_code, '')::integer nulls last")
             ->get();
 

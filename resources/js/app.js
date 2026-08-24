@@ -479,8 +479,16 @@ function initInvoiceIssueForms(scope = document) {
         const cufdStatus = form.querySelector('[data-cufd-status]');
         const submitButton = form.querySelector('[data-invoice-submit]');
         const submitLabel = form.querySelector('[data-invoice-submit-label]');
+        const submitProgress = form.querySelector('[data-invoice-submit-progress]');
+        const progressTitle = form.querySelector('[data-invoice-progress-title]');
+        const progressDetail = form.querySelector('[data-invoice-progress-detail]');
+        const progressElapsed = form.querySelector('[data-invoice-progress-elapsed]');
         const communicationMessage = form.querySelector('[data-invoice-communication-message]');
         const items = [];
+        let submissionInProgress = false;
+        let progressStartedAt = 0;
+        let progressInterval = null;
+        let progressTimeouts = [];
 
         const money = (amount) => `BO ${Number(amount || 0).toFixed(2)}`;
         const currentBoliviaDateTime = () => {
@@ -516,6 +524,49 @@ function initInvoiceIssueForms(scope = document) {
             }
 
             return Array.from(select.options).find((option) => option.value === String(value)) ?? null;
+        };
+        const formatElapsedTime = (milliseconds) => {
+            const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+
+            return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+        };
+        const submissionPhases = manualCafc
+            ? [
+                { delay: 0, title: 'Preparando la transcripción CAFC', detail: 'Validando los datos antes de generar los documentos fiscales.' },
+                { delay: 2000, title: 'Generando documentos fiscales', detail: 'Estamos preparando el XML y la representación gráfica de la factura.' },
+                { delay: 10000, title: 'Guardando la transcripción', detail: 'El proceso continúa. No cierres ni recargues esta página.' },
+                { delay: 30000, title: 'La transcripción está tardando más de lo habitual', detail: 'La solicitud sigue en curso; espera la confirmación antes de volver a intentarlo.' },
+            ]
+            : [
+                { delay: 0, title: 'Preparando la factura', detail: 'Validando los datos y generando los documentos fiscales.' },
+                { delay: 2000, title: 'Conectando con el SIN', detail: 'Enviando la factura al Servicio de Impuestos Nacionales.' },
+                { delay: 10000, title: 'Esperando confirmación del SIN', detail: 'La respuesta puede tardar algunos segundos. No cierres ni recargues esta página.' },
+                { delay: 30000, title: 'El SIN está tardando más de lo habitual', detail: 'La solicitud sigue en curso. No vuelvas a presionar Emitir; el sistema espera la respuesta.' },
+            ];
+        const showSubmissionPhase = (phase) => {
+            if (progressTitle) progressTitle.textContent = phase.title;
+            if (progressDetail) progressDetail.textContent = phase.detail;
+        };
+        const startSubmissionProgress = () => {
+            submissionInProgress = true;
+            progressStartedAt = Date.now();
+            submitProgress?.removeAttribute('hidden');
+            showSubmissionPhase(submissionPhases[0]);
+            if (progressElapsed) progressElapsed.textContent = '0:00';
+            if (submitLabel) submitLabel.textContent = manualCafc ? 'Transcribiendo…' : 'Emitiendo…';
+
+            progressInterval = window.setInterval(() => {
+                if (progressElapsed) progressElapsed.textContent = formatElapsedTime(Date.now() - progressStartedAt);
+            }, 1000);
+            progressTimeouts = submissionPhases.slice(1).map((phase) => window.setTimeout(() => showSubmissionPhase(phase), phase.delay));
+        };
+        const stopSubmissionProgress = () => {
+            submissionInProgress = false;
+            if (progressInterval !== null) window.clearInterval(progressInterval);
+            progressTimeouts.forEach((timeout) => window.clearTimeout(timeout));
+            progressInterval = null;
+            progressTimeouts = [];
+            submitProgress?.setAttribute('hidden', '');
         };
         const updatePaymentMethod = () => {
             const usesCard = String(selectedValue(paymentMethodSelect) ?? '') === '2';
@@ -924,7 +975,7 @@ function initInvoiceIssueForms(scope = document) {
         };
 
         const submitInvoice = async () => {
-            if (submitButton?.disabled) {
+            if (submissionInProgress || submitButton?.disabled) {
                 return;
             }
 
@@ -942,6 +993,7 @@ function initInvoiceIssueForms(scope = document) {
 
             submitButton.disabled = true;
             submitButton.classList.add('disabled');
+            startSubmissionProgress();
 
             try {
                 if (issuedAtInput && !preserveIssuedAt) {
@@ -961,6 +1013,7 @@ function initInvoiceIssueForms(scope = document) {
                     },
                 });
                 const payload = await response.json();
+                stopSubmissionProgress();
 
                 if (response.status === 422) {
                     const errors = payload.errors ?? payload.data ?? {};
@@ -988,6 +1041,9 @@ function initInvoiceIssueForms(scope = document) {
                         denyButtonText: 'Ver XML',
                         showCancelButton: Boolean(invoice?.print_url),
                         cancelButtonText: 'Cerrar',
+                        footer: invoice?.verification_url
+                            ? `<a class="btn btn-outline-info btn-sm" href="${invoice.verification_url}" target="_blank" rel="noopener noreferrer"><i class="ti ti-shield-check me-1" aria-hidden="true"></i>Verificar factura en el SIN</a>`
+                            : undefined,
                     });
 
                     if (result.isConfirmed && invoice?.print_url) {
@@ -1022,6 +1078,7 @@ function initInvoiceIssueForms(scope = document) {
             } catch (error) {
                 Swal.fire({ icon: 'error', title: 'Emision de factura', text: error.message });
             } finally {
+                stopSubmissionProgress();
                 updateFiscalReadiness();
                 submitButton.classList.remove('disabled');
             }

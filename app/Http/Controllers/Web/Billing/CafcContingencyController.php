@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\FinalizeCafcContingencyRequest;
 use App\Http\Requests\Billing\StoreCafcContingencyInvoiceRequest;
 use App\Http\Requests\Billing\StoreCafcContingencyRangeRequest;
+use App\Http\Requests\Billing\UpdateCafcCodeRequest;
 use App\Jobs\BuildContingencyPackagesJob;
 use App\Models\SinBranch;
 use App\Models\SinCafcRange;
@@ -34,7 +35,7 @@ final class CafcContingencyController extends Controller
     public function index(): View
     {
         return view('billing.cafc-contingencies.index', [
-            'ranges' => SinCafcRange::query()->with(['branch', 'pointOfSale', 'significantEvent'])->latest()->paginate(15),
+            'ranges' => SinCafcRange::query()->where('is_test_copy', false)->with(['branch', 'pointOfSale', 'significantEvent'])->latest()->paginate(15),
             'branches' => SinBranch::query()->with('activePointsOfSale')->where('is_active', true)->orderBy('branch_code')->get(),
             'sectors' => SinCatalogItem::query()
                 ->where('catalog_key', 'tipos_documento_sector')
@@ -55,11 +56,27 @@ final class CafcContingencyController extends Controller
         return redirect()->route('billing.cafc-contingencies.show', $range)->with('success', 'CAFC registrado. Ahora transcribe todas las facturas y finaliza registrando el evento.');
     }
 
+    public function updateCode(UpdateCafcCodeRequest $request, SinCafcRange $cafcRange): RedirectResponse
+    {
+        $this->cafc->updateCode($cafcRange, (string) $request->validated('cafc_code'), $request->user());
+
+        return back()->with('success', 'Código CAFC actualizado correctamente.');
+    }
+
     public function show(SinCafcRange $cafcRange): View
     {
         abort_unless(InvoiceDocumentSector::supports((int) $cafcRange->document_sector_code), 422, 'El sector documental de este CAFC todavía no admite transcripción.');
 
         $cafcRange->load(['branch.activePointsOfSale', 'pointOfSale', 'significantEvent', 'manualInvoices.significantEvent', 'manualInvoices.customer']);
+
+        $manualInvoices = $cafcRange->manualInvoices->sortBy('issued_manually_at');
+        $suggestedPeriod = $cafcRange->pointOfSale && $manualInvoices->isNotEmpty()
+            ? $this->events->suggestedPeriod(
+                $cafcRange->pointOfSale,
+                $manualInvoices->first()->issued_manually_at,
+                $manualInvoices->last()->issued_manually_at,
+            )
+            : null;
 
         return view('billing.cafc-contingencies.show', [
             'range' => $cafcRange,
@@ -69,6 +86,7 @@ final class CafcContingencyController extends Controller
             'canConsume' => in_array($cafcRange->range_status, [CafcRangeStatus::Available, CafcRangeStatus::InUse], true),
             'sectorTitle' => InvoiceDocumentSector::title((int) $cafcRange->document_sector_code),
             'events' => SinCatalogItem::query()->where('catalog_key', 'eventos_significativos')->active()->whereIn('classifier_code', ['5', '6', '7'])->orderBy('classifier_code')->get(),
+            'suggestedPeriod' => $suggestedPeriod,
         ]);
     }
 

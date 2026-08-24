@@ -19,7 +19,6 @@ use App\Services\Billing\PurchaseSaleInvoicePdfService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
 class InvoiceController extends Controller
@@ -34,9 +33,7 @@ class InvoiceController extends Controller
     public function print(SinInvoiceIssue $invoice, PurchaseSaleInvoicePdfService $pdf): Response
     {
         $number = $invoice->invoice_number ?? $invoice->attempted_invoice_number ?? $invoice->id;
-        $contents = $invoice->pdf_path && Storage::disk('local')->exists($invoice->pdf_path)
-            ? Storage::disk('local')->get($invoice->pdf_path)
-            : $pdf->render($invoice);
+        $contents = $pdf->render($invoice);
 
         return response($contents, 200, [
             'Content-Type' => 'application/pdf',
@@ -60,22 +57,12 @@ class InvoiceController extends Controller
     {
         $cancelled = $service->cancel($invoice, $request->integer('point_of_sale_id'), $request->integer('reason_code'), $request->user());
         $message = $cancelled->fiscal_status === InvoiceFiscalStatus::CancelledInSiat
-            ? ($cancelled->cancellation_notified_at
-                ? 'Factura anulada correctamente en el SIN y comprador notificado.'
-                : 'Factura anulada en el SIN, pero la notificación al comprador quedó pendiente de reintento.')
+            ? (filled($cancelled->customer?->email)
+                ? 'Factura anulada correctamente en el SIN y notificación programada.'
+                : 'Factura anulada correctamente en el SIN; el cliente no tiene correo registrado.')
             : 'El SIN no confirmó la anulación: '.$cancelled->cancellation_message;
 
         return redirect()->route('billing.invoices.index')->with($cancelled->fiscal_status === InvoiceFiscalStatus::CancelledInSiat ? 'success' : 'error', $message);
-    }
-
-    public function notifyCancellation(SinInvoiceIssue $invoice, InvoiceCancellationService $service): RedirectResponse
-    {
-        abort_unless($invoice->company_id === auth()->user()?->company_id, 404);
-        $sent = $service->notifyBuyer($invoice->loadMissing('customer'));
-
-        return back()->with($sent ? 'success' : 'error', $sent
-            ? 'Notificación de anulación enviada al comprador.'
-            : 'No se pudo enviar la notificación; revise el correo y la configuración de mensajería.');
     }
 
     public function reversalForm(SinInvoiceIssue $invoice, InvoiceCancellationReversalService $service): View
@@ -93,18 +80,12 @@ class InvoiceController extends Controller
         $reversed = $service->reverse($invoice, $request->integer('point_of_sale_id'), $request->user());
         $success = $reversed->fiscal_status === InvoiceFiscalStatus::ReversedInSiat;
         $message = $success
-            ? ($reversed->reversal_notified_at ? 'Anulación revertida correctamente y comprador notificado.' : 'Anulación revertida; la notificación quedó pendiente de reintento.')
+            ? (filled($reversed->customer?->email)
+                ? 'Anulación revertida correctamente y notificación programada.'
+                : 'Anulación revertida correctamente; el cliente no tiene correo registrado.')
             : 'El SIN no confirmó la reversión: '.$reversed->reversal_message;
 
         return redirect()->route('billing.invoices.index')->with($success ? 'success' : 'error', $message);
-    }
-
-    public function notifyReversal(SinInvoiceIssue $invoice, InvoiceCancellationReversalService $service): RedirectResponse
-    {
-        abort_unless($invoice->company_id === auth()->user()?->company_id, 404);
-        $sent = $service->notifyBuyer($invoice->loadMissing('customer'));
-
-        return back()->with($sent ? 'success' : 'error', $sent ? 'Notificación de reversión enviada al comprador.' : 'No se pudo enviar la notificación de reversión.');
     }
 
     public function correctPaymentForm(SinInvoiceIssue $invoice): View
