@@ -16,7 +16,7 @@ class UserRepository
         return User::query()
             ->when($withTrashed, fn ($query) => $query->withTrashed())
             ->when(CompanyContext::id(), fn ($query, $companyId) => $query->where('company_id', $companyId))
-            ->with(['company', 'roles'])
+            ->with(['company', 'personnel.position.area', 'roles'])
             ->latest()
             ->paginate($perPage);
     }

@@ -1,7 +1,7 @@
 @php
-    $organizationOpen = request()->routeIs('companies.*');
-    $adminOpen = request()->routeIs('users.*', 'roles.*', 'permissions.*', 'audits.*', 'backups.*');
-    $cashRegistersOpen = request()->routeIs('cash-registers.*');
+    $organizationOpen = request()->routeIs('companies.*', 'campuses.*');
+    $adminOpen = request()->routeIs('users.*', 'personnel.*', 'areas.*', 'positions.*', 'roles.*', 'permissions.*', 'audits.*', 'backups.*');
+    $cashRegistersOpen = request()->routeIs('cash-registers.*', 'rectorate.collectible-accounts.*', 'rectorate.contracts.*');
     $invoicePrintSettingsOpen = request()->routeIs('billing.invoice-print-settings.*');
     $billingOpen = request()->routeIs('billing.*') && ! $invoicePrintSettingsOpen;
     $apiTokenOpen = request()->routeIs('sin-api-token.*');
@@ -12,10 +12,16 @@
     $siatWsdlServicesOpen = request()->routeIs('siat.wsdl-services.*');
     $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen || $siatWsdlServicesOpen;
     $parametersOpen = request()->routeIs('parameters.*') || $invoicePrintSettingsOpen;
+    $rectorateOpen = request()->routeIs('rectorate.index', 'rectorate.new*', 'rectorate.applications.*');
+    $academicOpen = request()->routeIs('academic.*', 'students.*');
+    $studentsOpen = request()->routeIs('students.*');
+    $teacherOpen = request()->routeIs('teacher.*');
+    $reportsOpen = request()->routeIs('reports.*');
 
-    $canOrganization = auth()->user()?->can('companies.view');
-    $canCashRegisters = auth()->user()?->company_id !== null
-        && auth()->user()?->can('cash-registers.view');
+    $canOrganization = auth()->user()?->can('companies.view')
+        || (\App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('campuses.view'));
+    $canCashRegisters = \App\Support\CompanyContext::id(auth()->user()) !== null
+        && (auth()->user()?->can('cash-registers.view') || auth()->user()?->can('accounts.collect'));
     $canBilling = auth()->user()?->company_id !== null
         && (
             auth()->user()?->can('invoices.view')
@@ -36,15 +42,32 @@
     $canSiatBranches = auth()->user()?->company_id !== null
         && auth()->user()?->can('siat-branches.view');
     $canSiat = $canApiToken || $canSiatCommunication || $canSiatCuis || $canSiatCatalogs || $canSiatBranches;
-    $canParameters = auth()->user()?->company_id !== null
+    $canParameters = \App\Support\CompanyContext::id(auth()->user()) !== null
         && (
             auth()->user()?->can('product-categories.view')
+            || auth()->user()?->can('commercial-origins.view')
+            || auth()->user()?->can('plans.view')
+            || auth()->user()?->can('programs.view')
             || auth()->user()?->can('customers.view')
             || auth()->user()?->can('products.view')
             || auth()->user()?->can('sin-authorizations.view')
             || auth()->user()?->can('invoices.issue')
         );
+    $canRectorate = \App\Support\CompanyContext::id(auth()->user()) !== null
+        && auth()->user()?->can('rectorate.create');
+    $canAcademicModules = \App\Support\CompanyContext::id(auth()->user()) !== null
+        && auth()->user()?->can('academic-modules.view');
+    $canStudents = \App\Support\CompanyContext::id(auth()->user()) !== null
+        && auth()->user()?->can('students.view');
+    $canAcademic = $canAcademicModules || $canStudents;
+    $canTeacher = auth()->user()?->personnel_id !== null
+        && auth()->user()?->can('teaching.view');
+    $canReports = \App\Support\CompanyContext::id(auth()->user()) !== null
+        && auth()->user()?->can('enrollment-reports.view');
     $canAdmin = auth()->user()?->can('users.view')
+        || auth()->user()?->can('personnel.view')
+        || auth()->user()?->can('areas.view')
+        || auth()->user()?->can('positions.view')
         || auth()->user()?->can('roles.view')
         || auth()->user()?->can('permissions.view')
         || auth()->user()?->can('audits.view')
@@ -74,6 +97,99 @@
                     </a>
                 </li>
 
+                @if ($canRectorate)
+                    <li class="nav-item app-menu-section {{ $rectorateOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $rectorateOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-rectorate" aria-expanded="{{ $rectorateOpen ? 'true' : 'false' }}" aria-controls="menu-rectorate">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-school"></i></span>
+                            <span class="nav-link-title">Inscripciones</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $rectorateOpen ? 'show' : '' }}" id="menu-rectorate">
+                            <ul class="nav app-submenu">
+                                <li class="nav-item {{ request()->routeIs('rectorate.index') ? 'active' : '' }}">
+                                    <a class="nav-link" href="{{ route('rectorate.index') }}">
+                                        <span class="nav-link-icon"><i class="ti ti-list-details"></i></span>
+                                        <span class="nav-link-title">Listado</span>
+                                    </a>
+                                </li>
+                                <li class="nav-item {{ request()->routeIs('rectorate.new*') ? 'active' : '' }}">
+                                    <a class="nav-link" href="{{ route('rectorate.new') }}">
+                                        <span class="nav-link-icon"><i class="ti ti-file-plus"></i></span>
+                                        <span class="nav-link-title">Nuevo</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canAcademic)
+                    <li class="nav-item app-menu-section {{ $academicOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $academicOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-academic" aria-expanded="{{ $academicOpen ? 'true' : 'false' }}" aria-controls="menu-academic">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-books"></i></span>
+                            <span class="nav-link-title">Académico</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $academicOpen ? 'show' : '' }}" id="menu-academic">
+                            <ul class="nav app-submenu">
+                                @if ($canAcademicModules)
+                                    <li class="nav-item {{ request()->routeIs('academic.modules.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('academic.modules.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-layout-grid"></i></span>
+                                            <span class="nav-link-title">Módulos</span>
+                                        </a>
+                                    </li>
+                                @endif
+                                @if ($canStudents)
+                                    <li class="nav-item {{ $studentsOpen ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('students.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-users-group"></i></span>
+                                            <span class="nav-link-title">Estudiantes</span>
+                                        </a>
+                                    </li>
+                                @endif
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canReports)
+                    <li class="nav-item app-menu-section {{ $reportsOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $reportsOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-reports" aria-expanded="{{ $reportsOpen ? 'true' : 'false' }}" aria-controls="menu-reports">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-report-analytics"></i></span>
+                            <span class="nav-link-title">Reportes</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $reportsOpen ? 'show' : '' }}" id="menu-reports">
+                            <ul class="nav app-submenu">
+                                <li class="nav-item {{ request()->routeIs('reports.enrollments.*') ? 'active' : '' }}">
+                                    <a class="nav-link" href="{{ route('reports.enrollments.index') }}"><span class="nav-link-icon"><i class="ti ti-user-check"></i></span><span class="nav-link-title">Matrículas</span></a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
+                @if ($canTeacher)
+                    <li class="nav-item app-menu-section {{ $teacherOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $teacherOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-teacher" aria-expanded="{{ $teacherOpen ? 'true' : 'false' }}" aria-controls="menu-teacher">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-presentation"></i></span>
+                            <span class="nav-link-title">Docente</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $teacherOpen ? 'show' : '' }}" id="menu-teacher">
+                            <ul class="nav app-submenu">
+                                <li class="nav-item {{ request()->routeIs('teacher.modules.*') ? 'active' : '' }}">
+                                    <a class="nav-link" href="{{ route('teacher.modules.index') }}">
+                                        <span class="nav-link-icon"><i class="ti ti-books"></i></span>
+                                        <span class="nav-link-title">Mis módulos</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                @endif
+
                 @if ($canOrganization)
                     <li class="nav-item app-menu-section {{ $organizationOpen ? 'active' : '' }}">
                         <button class="nav-link app-menu-toggle {{ $organizationOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-organization" aria-expanded="{{ $organizationOpen ? 'true' : 'false' }}" aria-controls="menu-organization">
@@ -91,6 +207,14 @@
                                         </a>
                                     </li>
                                 @endcan
+                                @can('campuses.view')
+                                    <li class="nav-item {{ request()->routeIs('campuses.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('campuses.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
+                                            <span class="nav-link-title">Sedes</span>
+                                        </a>
+                                    </li>
+                                @endcan
                             </ul>
                         </div>
                     </li>
@@ -105,6 +229,30 @@
                         </button>
                         <div class="collapse {{ $parametersOpen ? 'show' : '' }}" id="menu-parameters">
                             <ul class="nav app-submenu">
+                                @can('programs.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.programs.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.programs.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-books"></i></span>
+                                            <span class="nav-link-title">Programa</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('plans.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.plans.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.plans.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-receipt-2"></i></span>
+                                            <span class="nav-link-title">Planes</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('commercial-origins.view')
+                                    <li class="nav-item {{ request()->routeIs('parameters.commercial-origins.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('parameters.commercial-origins.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-route"></i></span>
+                                            <span class="nav-link-title">Origen comercial</span>
+                                        </a>
+                                    </li>
+                                @endcan
                                 @can('products.view')
                                     <li class="nav-item {{ request()->routeIs('parameters.products.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('parameters.products.index') }}">
@@ -220,11 +368,38 @@
                 @endif
 
                 @if ($canCashRegisters)
-                    <li class="nav-item {{ $cashRegistersOpen ? 'active' : '' }}">
-                        <a class="nav-link" href="{{ route('cash-registers.index') }}">
+                    <li class="nav-item app-menu-section {{ $cashRegistersOpen ? 'active' : '' }}">
+                        <button class="nav-link app-menu-toggle {{ $cashRegistersOpen ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#menu-cash-register" aria-expanded="{{ $cashRegistersOpen ? 'true' : 'false' }}" aria-controls="menu-cash-register">
                             <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-cash-register"></i></span>
-                            <span class="nav-link-title">Cajas</span>
-                        </a>
+                            <span class="nav-link-title">Caja</span>
+                            <span class="menu-chevron"><i class="ti ti-chevron-down"></i></span>
+                        </button>
+                        <div class="collapse {{ $cashRegistersOpen ? 'show' : '' }}" id="menu-cash-register">
+                            <ul class="nav app-submenu">
+                                @can('cash-registers.view')
+                                    <li class="nav-item {{ request()->routeIs('cash-registers.index') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('cash-registers.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-building-bank"></i></span>
+                                            <span class="nav-link-title">Mi caja</span>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item {{ request()->routeIs('cash-registers.history', 'cash-registers.show') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('cash-registers.history') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-history"></i></span>
+                                            <span class="nav-link-title">Historial</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('accounts.collect')
+                                    <li class="nav-item {{ request()->routeIs('rectorate.collectible-accounts.*', 'rectorate.contracts.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('rectorate.collectible-accounts.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-cash"></i></span>
+                                            <span class="nav-link-title">Cobrar</span>
+                                        </a>
+                                    </li>
+                                @endcan
+                            </ul>
+                        </div>
                     </li>
                 @endif
 
@@ -320,6 +495,15 @@
                         </button>
                         <div class="collapse {{ $adminOpen ? 'show' : '' }}" id="menu-admin">
                             <ul class="nav app-submenu">
+                                @can('personnel.view')
+                                    <li class="nav-item {{ request()->routeIs('personnel.*') ? 'active' : '' }}"><a class="nav-link" href="{{ route('personnel.index') }}"><span class="nav-link-icon"><i class="ti ti-id-badge"></i></span><span class="nav-link-title">Personal</span></a></li>
+                                @endcan
+                                @can('areas.view')
+                                    <li class="nav-item {{ request()->routeIs('areas.*') ? 'active' : '' }}"><a class="nav-link" href="{{ route('areas.index') }}"><span class="nav-link-icon"><i class="ti ti-hierarchy-2"></i></span><span class="nav-link-title">Áreas</span></a></li>
+                                @endcan
+                                @can('positions.view')
+                                    <li class="nav-item {{ request()->routeIs('positions.*') ? 'active' : '' }}"><a class="nav-link" href="{{ route('positions.index') }}"><span class="nav-link-icon"><i class="ti ti-briefcase"></i></span><span class="nav-link-title">Cargos</span></a></li>
+                                @endcan
                                 @can('users.view')
                                     <li class="nav-item {{ request()->routeIs('users.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('users.index') }}">

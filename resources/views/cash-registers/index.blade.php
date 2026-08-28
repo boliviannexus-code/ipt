@@ -1,13 +1,26 @@
 @extends('layouts.admin')
 
-@section('title', 'Cajas | '.config('app.name', 'Base Admin'))
-@section('page-title', 'Cajas')
-@section('page-subtitle', 'Apertura, cierre e historial de cajas de la empresa')
+@section('title', 'Mi caja | '.config('app.name', 'Base Admin'))
+@section('page-title', 'Mi caja')
+@section('page-subtitle', 'Resumen, apertura y cierre de tu caja')
 
 @section('content')
+    @php
+        $collectedAmount = $activeCashRegister?->accountPayments->sum(fn ($payment) => (float) $payment->amount) ?? 0;
+        $registeredAmount = ($activeCashRegister ? (float) $activeCashRegister->opening_amount : 0) + $collectedAmount;
+    @endphp
     @if ($errors->has('cash_register'))
         <div class="alert alert-danger" role="alert">
             <i class="ti ti-alert-circle me-1" aria-hidden="true"></i>{{ $errors->first('cash_register') }}
+        </div>
+    @endif
+
+    @if ($activeCashRegister)
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Monto inicial</div><div class="h2 mb-0">Bs {{ money_format_decimal($activeCashRegister->opening_amount) }}</div></div></div></div>
+            <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Total cobrado</div><div class="h2 text-success mb-0">Bs {{ money_format_decimal($collectedAmount) }}</div></div></div></div>
+            <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Movimientos</div><div class="h2 mb-0">{{ $activeCashRegister->accountPayments->count() }}</div></div></div></div>
+            <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Total registrado</div><div class="h2 text-primary mb-0">Bs {{ money_format_decimal($registeredAmount) }}</div></div></div></div>
         </div>
     @endif
 
@@ -155,7 +168,7 @@
                         <div class="col-sm-6">
                             <div class="border rounded p-3 h-100">
                                 <div class="text-body-secondary small mb-1">Registros de la empresa</div>
-                                <div class="fw-semibold">{{ $cashRegisters->total() }}</div>
+                                <div class="fw-semibold">{{ $cashRegisterHistoryCount }}</div>
                             </div>
                         </div>
                     </div>
@@ -164,47 +177,25 @@
         </div>
     </div>
 
-    <x-ui.table-card title="Historial de cajas">
-        <table class="table table-hover align-middle mb-0">
-            <thead>
-                <tr>
-                    <th>Usuario</th>
-                    <th>Apertura</th>
-                    <th class="text-end">Monto inicial</th>
-                    <th>Cierre</th>
-                    <th class="text-end">Monto final</th>
-                    <th>Estado</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse ($cashRegisters as $cashRegister)
-                    <tr>
-                        <td>
-                            <div class="fw-semibold">{{ $cashRegister->user?->name ?? 'Usuario no disponible' }}</div>
-                            @if ((int) $cashRegister->user_id === (int) auth()->id())
-                                <span class="text-body-secondary small">Mi caja</span>
-                            @endif
-                        </td>
-                        <td>{{ $cashRegister->opened_at->format('d/m/Y H:i') }}</td>
-                        <td class="text-end">Bs {{ money_format_decimal($cashRegister->opening_amount) }}</td>
-                        <td>{{ $cashRegister->closed_at?->format('d/m/Y H:i') ?? '-' }}</td>
-                        <td class="text-end">
-                            {{ $cashRegister->closing_amount !== null ? 'Bs '.money_format_decimal($cashRegister->closing_amount) : '-' }}
-                        </td>
-                        <td>
-                            <span class="badge text-bg-{{ $cashRegister->isActive() ? 'success' : 'secondary' }}">
-                                {{ $cashRegister->isActive() ? 'Activa' : 'Cerrada' }}
-                            </span>
-                        </td>
-                    </tr>
-                @empty
-                    <x-ui.empty-row colspan="6" message="No hay cajas registradas en esta empresa." />
-                @endforelse
-            </tbody>
-        </table>
+    @if ($activeCashRegister)
+        <x-ui.table-card title="Movimientos de la caja activa">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Fecha y hora</th><th>Comprobante</th><th>Estudiante</th><th>Método de pago</th><th class="text-end">Monto</th></tr></thead>
+                <tbody>
+                    @forelse ($activeCashRegister->accountPayments as $payment)
+                        <tr>
+                            <td>{{ $payment->paid_at->format('d/m/Y H:i') }}</td>
+                            <td><span class="fw-semibold">PAGO-{{ str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT) }}</span></td>
+                            <td>{{ collect([$payment->contract?->student?->first_name, $payment->contract?->student?->paternal_surname, $payment->contract?->student?->maternal_surname])->filter()->join(' ') ?: 'No disponible' }}</td>
+                            <td>{{ $payment->payment_method_code }} · {{ $paymentMethodLabels->get((string) $payment->payment_method_code, 'Método SIN') }}</td>
+                            <td class="text-end fw-semibold text-success">Bs {{ money_format_decimal($payment->amount) }}</td>
+                        </tr>
+                    @empty
+                        <x-ui.empty-row colspan="5" message="Todavía no existen movimientos registrados en esta caja." />
+                    @endforelse
+                </tbody>
+            </table>
+        </x-ui.table-card>
+    @endif
 
-        <x-slot:footer>
-            {{ $cashRegisters->links() }}
-        </x-slot:footer>
-    </x-ui.table-card>
 @endsection

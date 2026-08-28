@@ -2,6 +2,9 @@
     $navbarCompany = \App\Support\CompanyContext::activeCompany(auth()->user());
     $navbarUnreadCount = auth()->user()->unreadNotifications()->count();
     $navbarNotifications = auth()->user()->notifications()->latest()->limit(8)->get();
+    $navbarCompanies = \App\Support\CompanyContext::isGlobalAdmin(auth()->user())
+        ? \App\Models\Company::query()->where('is_active', true)->orderBy('name')->get(['id', 'name'])
+        : collect();
 @endphp
 
 <header class="navbar navbar-expand-md d-print-none app-navbar">
@@ -29,6 +32,26 @@
         </div>
 
         <div class="navbar-nav flex-row align-items-center order-md-last ms-auto">
+            @if ($navbarCompanies->isNotEmpty())
+                <div class="nav-item dropdown me-3">
+                    <button class="btn btn-outline-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="ti ti-building-switch me-1"></i>{{ $navbarCompany?->name ?? 'Seleccionar empresa' }}
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+                        <span class="dropdown-header">Trabajar en empresa</span>
+                        @foreach ($navbarCompanies as $company)
+                            <form method="POST" action="{{ route('active-company.update') }}">
+                                @csrf
+                                @method('PUT')
+                                <input type="hidden" name="company_id" value="{{ $company->id }}">
+                                <button class="dropdown-item {{ $navbarCompany?->is($company) ? 'active' : '' }}" type="submit">
+                                    <i class="ti ti-building me-2"></i>{{ $company->name }}
+                                </button>
+                            </form>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
             <div class="nav-item dropdown me-3">
                 <button class="nav-link px-2 position-relative border-0 bg-transparent" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Abrir notificaciones SIAT">
                     <i class="ti ti-bell fs-2" aria-hidden="true"></i>
@@ -86,6 +109,8 @@
                 </button>
                 <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
                     <span class="dropdown-item-text text-muted small">{{ auth()->user()->email ?? '' }}</span>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{{ route('account.edit') }}"><i class="ti ti-user-cog me-2"></i>Mi cuenta</a>
                     <div class="dropdown-divider"></div>
                     <form class="m-0" method="POST" action="{{ route('logout') }}">
                         @csrf

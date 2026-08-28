@@ -2,6 +2,9 @@
     <dt class="col-sm-3">Nombre</dt>
     <dd class="col-sm-9">{{ $user->name }}</dd>
 
+    <dt class="col-sm-3">Personal</dt>
+    <dd class="col-sm-9">{{ $user->personnel?->full_name ?? 'Sin personal vinculado' }} @if($user->personnel)<span class="text-body-secondary">· {{ $user->personnel->position->area->name }} / {{ $user->personnel->position->name }}</span>@endif</dd>
+
     <dt class="col-sm-3">Email</dt>
     <dd class="col-sm-9">{{ $user->email }}</dd>
 

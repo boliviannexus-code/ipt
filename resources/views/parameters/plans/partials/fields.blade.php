@@ -1,0 +1,4 @@
+<div class="row g-3">
+    <div class="col-md-7"><label class="form-label" for="plan-name">Nombre</label><input class="form-control @error('name') is-invalid @enderror" id="plan-name" name="name" value="{{ old('name', $plan->name ?? '') }}" maxlength="150" required autofocus><div class="invalid-feedback" data-error-for="name">{{ $errors->first('name') }}</div></div>
+    <div class="col-md-5"><label class="form-label" for="plan-monthly-cost">Costo de la mensualidad</label><div class="input-group"><span class="input-group-text">Bs</span><input class="form-control @error('monthly_cost') is-invalid @enderror" id="plan-monthly-cost" name="monthly_cost" type="number" value="{{ old('monthly_cost', $plan->monthly_cost ?? '') }}" min="0" max="9999999999.99" step="0.01" required></div><div class="invalid-feedback d-block" data-error-for="monthly_cost">{{ $errors->first('monthly_cost') }}</div></div>
+</div>

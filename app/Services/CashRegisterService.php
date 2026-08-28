@@ -11,17 +11,26 @@ use Illuminate\Validation\ValidationException;
 
 class CashRegisterService
 {
-    public function paginate(int $perPage = 20): LengthAwarePaginator
+    public function paginateClosed(int $perPage = 20): LengthAwarePaginator
     {
         return CashRegister::query()
             ->with('user:id,name')
-            ->orderByDesc('opened_at')
+            ->withCount('accountPayments')
+            ->withSum('accountPayments', 'amount')
+            ->closed()
+            ->orderByDesc('closed_at')
             ->paginate($perPage);
+    }
+
+    public function closedCount(): int
+    {
+        return CashRegister::query()->closed()->count();
     }
 
     public function activeFor(User $user): ?CashRegister
     {
         return CashRegister::query()
+            ->withoutGlobalScope('company')
             ->active()
             ->where('user_id', $user->id)
             ->first();

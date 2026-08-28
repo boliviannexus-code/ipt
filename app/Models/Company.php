@@ -43,6 +43,51 @@ class Company extends Model implements Auditable
         return $this->hasMany(User::class);
     }
 
+    public function campuses(): HasMany
+    {
+        return $this->hasMany(Campus::class)->withoutGlobalScope('company');
+    }
+
+    public function areas(): HasMany
+    {
+        return $this->hasMany(Area::class)->withoutGlobalScope('company');
+    }
+
+    public function positions(): HasMany
+    {
+        return $this->hasMany(Position::class)->withoutGlobalScope('company');
+    }
+
+    public function personnel(): HasMany
+    {
+        return $this->hasMany(Personnel::class)->withoutGlobalScope('company');
+    }
+
+    public function plans(): HasMany
+    {
+        return $this->hasMany(Plan::class)->withoutGlobalScope('company');
+    }
+
+    public function commercialOrigins(): HasMany
+    {
+        return $this->hasMany(CommercialOrigin::class)->withoutGlobalScope('company');
+    }
+
+    public function programs(): HasMany
+    {
+        return $this->hasMany(Program::class)->withoutGlobalScope('company');
+    }
+
+    public function rectorateApplications(): HasMany
+    {
+        return $this->hasMany(RectorateApplication::class)->withoutGlobalScope('company');
+    }
+
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class)->withoutGlobalScope('company');
+    }
+
     public function cashRegisters(): HasMany
     {
         return $this->hasMany(CashRegister::class)->withoutGlobalScope('company');

@@ -18,7 +18,7 @@ use Laravel\Sanctum\HasApiTokens;
 use OwenIt\Auditing\Contracts\Auditable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['company_id', 'name', 'email', 'password', 'is_active'])]
+#[Fillable(['company_id', 'personnel_id', 'name', 'email', 'password', 'must_change_password', 'is_active'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements Auditable
 {
@@ -41,12 +41,18 @@ class User extends Authenticatable implements Auditable
             'email_verified_at' => 'datetime',
             'is_active' => 'boolean',
             'password' => 'hashed',
+            'must_change_password' => 'boolean',
         ];
     }
 
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function personnel(): BelongsTo
+    {
+        return $this->belongsTo(Personnel::class);
     }
 
     public function cashRegisters(): HasMany
@@ -76,7 +82,9 @@ class User extends Authenticatable implements Auditable
 
     public function activeCashRegister(): HasOne
     {
-        return $this->hasOne(CashRegister::class)->whereNull('closed_at');
+        return $this->hasOne(CashRegister::class)
+            ->withoutGlobalScope('company')
+            ->whereNull('closed_at');
     }
 
     public function hasActiveAccess(): bool

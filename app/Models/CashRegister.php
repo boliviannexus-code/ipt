@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use OwenIt\Auditing\Contracts\Auditable;
 
 class CashRegister extends Model implements Auditable
@@ -60,5 +61,10 @@ class CashRegister extends Model implements Auditable
     public function isActive(): bool
     {
         return $this->closed_at === null;
+    }
+
+    public function accountPayments(): HasMany
+    {
+        return $this->hasMany(AccountPayment::class);
     }
 }

@@ -52,6 +52,31 @@ class CashRegisterTest extends TestCase
         ]);
     }
 
+    public function test_active_cash_register_remains_visible_when_the_active_company_context_changes(): void
+    {
+        $firstCompany = Company::factory()->create();
+        $secondCompany = Company::factory()->create();
+        $user = User::factory()->create(['company_id' => $firstCompany->id]);
+        Role::findOrCreate('super_admin');
+        Permission::findOrCreate('cash-registers.view');
+        $user->assignRole('super_admin');
+        $user->givePermissionTo('cash-registers.view');
+        $cashRegister = CashRegister::factory()->create([
+            'company_id' => $firstCompany->id,
+            'user_id' => $user->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession(['active_company_id' => $secondCompany->id])
+            ->get(route('cash-registers.index'))
+            ->assertOk()
+            ->assertSee('Mi caja activa')
+            ->assertSee('Caja activa')
+            ->assertDontSee('Abrir mi caja');
+
+        $this->assertSame($cashRegister->id, $user->activeCashRegister()->firstOrFail()->id);
+    }
+
     public function test_user_cannot_open_two_active_cash_registers(): void
     {
         $user = $this->companyUser([
@@ -105,6 +130,7 @@ class CashRegisterTest extends TestCase
             'cash-registers.view',
             'cash-registers.open',
             'cash-registers.close',
+            'accounts.collect',
         ]);
 
         $this->actingAs($user)->post(route('cash-registers.store'), [
@@ -143,9 +169,11 @@ class CashRegisterTest extends TestCase
         $user = $this->companyUser(['cash-registers.view'], name: 'Cajero visible');
         $otherUser = $this->companyUser(['cash-registers.view'], name: 'Cajero ajeno');
 
-        CashRegister::factory()->closed()->create([
+        $closedCashRegister = CashRegister::factory()->closed()->create([
             'company_id' => $user->company_id,
             'user_id' => $user->id,
+            'opening_notes' => 'Inicio controlado',
+            'closing_notes' => 'Cierre conforme',
         ]);
         CashRegister::factory()->closed()->create([
             'company_id' => $otherUser->company_id,
@@ -154,10 +182,19 @@ class CashRegisterTest extends TestCase
 
         $this
             ->actingAs($user)
-            ->get(route('cash-registers.index'))
+            ->get(route('cash-registers.history'))
             ->assertOk()
             ->assertSee('Cajero visible')
+            ->assertSee('Ver detalle')
             ->assertDontSee('Cajero ajeno');
+
+        $this->actingAs($user)
+            ->get(route('cash-registers.show', $closedCashRegister))
+            ->assertOk()
+            ->assertSee('Detalle de caja')
+            ->assertSee('Inicio controlado')
+            ->assertSee('Cierre conforme')
+            ->assertSee('Pagos registrados en esta caja');
     }
 
     public function test_user_cannot_close_a_cash_register_from_another_company(): void
@@ -367,6 +404,7 @@ class CashRegisterTest extends TestCase
             'cash-registers.view',
             'cash-registers.open',
             'cash-registers.close',
+            'accounts.collect',
             'invoices.view',
             'invoices.issue',
             'manual-cafc.view',

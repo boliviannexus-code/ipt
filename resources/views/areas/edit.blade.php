@@ -1,0 +1,2 @@
+@extends('layouts.admin') @section('title','Editar área') @section('page-title','Editar área') @section('page-subtitle','Actualización de unidad organizacional')
+@section('content')<x-ui.form-panel :action="route('areas.update',$area)" method="PUT">@include('areas.partials.form')<div class="mt-4 d-flex gap-2"><button class="btn btn-primary">Guardar</button><a class="btn btn-outline-secondary" href="{{ route('areas.index') }}">Cancelar</a></div></x-ui.form-panel>@endsection

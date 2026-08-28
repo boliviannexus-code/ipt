@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use App\Models\Personnel;
 use App\Models\User;
+use App\Notifications\TemporaryUserPasswordNotification;
 use App\Repositories\UserRepository;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class UserService
@@ -32,16 +35,24 @@ class UserService
         $roles = $data['roles'] ?? [];
         unset($data['roles']);
 
-        $data = $this->applyCompanyAssignmentRules($data);
-        $data['password'] = Hash::make($data['password']);
+        if (array_key_exists('personnel_id', $data)) {
+            $personnel = Personnel::query()->findOrFail($data['personnel_id']);
+            $data['company_id'] = $personnel->company_id;
+            $data['name'] = $personnel->full_name;
+            $data['email'] = $personnel->email;
+        }
+        $temporaryPassword = Str::password(12);
+        $data['password'] = Hash::make($temporaryPassword);
+        $data['must_change_password'] = true;
         $data['is_active'] = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true;
 
         $user = $this->users->create($data);
         $user->syncRoles($roles);
+        $user->notify(new TemporaryUserPasswordNotification($temporaryPassword));
 
         Log::info('User created', ['user_id' => $user->id, 'roles' => $roles]);
 
-        return $user->refresh()->load('roles');
+        return $user->refresh()->load(['personnel.position.area', 'roles']);
     }
 
     public function update(User $user, array $data): User
@@ -49,7 +60,12 @@ class UserService
         $roles = $data['roles'] ?? null;
         unset($data['roles'], $data['password']);
 
-        $data = $this->applyCompanyAssignmentRules($data);
+        if (array_key_exists('personnel_id', $data)) {
+            $personnel = Personnel::query()->findOrFail($data['personnel_id']);
+            $data['company_id'] = $personnel->company_id;
+            $data['name'] = $personnel->full_name;
+            $data['email'] = $personnel->email;
+        }
         $this->ensureCompanyCanChange($user, $data);
         $data['is_active'] = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : $user->is_active;
         $isBeingDeactivated = $user->is_active && ! $data['is_active'];
@@ -68,7 +84,7 @@ class UserService
             $this->syncRoles($user, $roles);
         }
 
-        return $user->refresh()->load('roles');
+        return $user->refresh()->load(['personnel.position.area', 'roles']);
     }
 
     public function toggleStatus(User $user): User
@@ -101,6 +117,41 @@ class UserService
         Log::warning('User password changed', ['user_id' => $user->id]);
 
         return $user;
+    }
+
+    public function resetTemporaryPassword(User $user): User
+    {
+        $temporaryPassword = Str::password(12);
+        $user->forceFill([
+            'password' => Hash::make($temporaryPassword),
+            'must_change_password' => true,
+        ])->saveQuietly();
+
+        $this->revokeAccess($user);
+        $user->notify(new TemporaryUserPasswordNotification($temporaryPassword));
+
+        Log::warning('User temporary password reset', ['user_id' => $user->id]);
+
+        return $user->refresh();
+    }
+
+    public function changeOwnPassword(User $user, string $password, string $currentSessionId): User
+    {
+        $user->forceFill([
+            'password' => Hash::make($password),
+            'must_change_password' => false,
+            'remember_token' => null,
+        ])->saveQuietly();
+
+        DB::table(config('session.table', 'sessions'))
+            ->where('user_id', $user->id)
+            ->where('id', '!=', $currentSessionId)
+            ->delete();
+        $user->tokens()->delete();
+
+        Log::warning('User changed own password', ['user_id' => $user->id]);
+
+        return $user->refresh();
     }
 
     public function syncRoles(User $user, array $roles): User

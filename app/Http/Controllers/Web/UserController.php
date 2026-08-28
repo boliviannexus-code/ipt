@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\User\AssignRolesRequest;
-use App\Http\Requests\User\ChangePasswordRequest;
 use App\Http\Requests\User\StoreUserRequest;
 use App\Http\Requests\User\UpdateUserRequest;
+use App\Models\Personnel;
 use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Services\UserService;
@@ -38,8 +38,9 @@ class UserController extends Controller
         $this->authorize('create', User::class);
 
         $data = [
-            'companies' => $this->userRepository->companiesForSelect(),
+            'personnelOptions' => Personnel::query()->with(['position.area', 'company'])->whereDoesntHave('user')->where('is_active', true)->orderBy('first_name')->get(),
             'roles' => $this->userRepository->rolesForSelect(),
+            'selectedPersonnelId' => $request->integer('personnel_id') ?: null,
         ];
 
         if ($request->ajax()) {
@@ -68,7 +69,7 @@ class UserController extends Controller
     {
         $this->authorize('view', $user);
 
-        $user->load(['company', 'roles']);
+        $user->load(['company', 'personnel.position.area', 'roles']);
 
         if ($request->ajax()) {
             return view('users.partials.show', compact('user'));
@@ -82,9 +83,13 @@ class UserController extends Controller
         $this->authorize('update', $user);
 
         $data = [
-            'user' => $user->load('roles'),
-            'companies' => $this->userRepository->companiesForSelect(),
+            'user' => $user->load(['roles', 'personnel.position.area']),
+            'personnelOptions' => Personnel::query()->with(['position.area', 'company'])->where(function ($query) use ($user): void {
+                $query->whereDoesntHave('user')
+                    ->orWhere('personnel.id', $user->personnel_id);
+            })->orderBy('first_name')->get(),
             'roles' => $this->userRepository->rolesForSelect(),
+            'selectedPersonnelId' => $user->personnel_id,
         ];
 
         if ($request->ajax()) {
@@ -92,17 +97,6 @@ class UserController extends Controller
         }
 
         return view('users.edit', $data);
-    }
-
-    public function changePasswordForm(Request $request, User $user): View
-    {
-        $this->authorize('changePassword', $user);
-
-        if ($request->ajax()) {
-            return view('users.partials.change-password-modal', compact('user'));
-        }
-
-        return view('users.partials.change-password-modal', compact('user'));
     }
 
     public function rolesForm(Request $request, User $user): View
@@ -176,33 +170,25 @@ class UserController extends Controller
             return $this->logoutCurrentUser($request, $message);
         }
 
-        if ($request->ajax()) {
+        if ($request->ajax() || $request->expectsJson()) {
             return response()->json(['success' => true, 'message' => $message, 'data' => ['id' => $user->id]]);
         }
 
         return redirect()->route('users.index')->with('success', $message);
     }
 
-    public function changePassword(ChangePasswordRequest $request, User $user): JsonResponse|RedirectResponse
+    public function resetPassword(Request $request, User $user): JsonResponse|RedirectResponse
     {
         $this->authorize('changePassword', $user);
-        $isCurrentUser = $request->user()?->is($user) ?? false;
 
-        $this->users->changePassword($user, $request->validated('password'));
+        $this->users->resetTemporaryPassword($user);
+        $message = 'Contraseña temporal generada y enviada al correo del usuario.';
 
-        if ($isCurrentUser) {
-            return $this->logoutCurrentUser($request, 'Contraseña actualizada correctamente.');
+        if ($request->ajax() || $request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => $message, 'data' => ['id' => $user->id]]);
         }
 
-        if ($request->ajax()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Contraseña actualizada correctamente.',
-                'data' => ['id' => $user->id],
-            ]);
-        }
-
-        return redirect()->route('users.index')->with('success', 'Contraseña actualizada correctamente.');
+        return redirect()->route('users.index')->with('success', $message);
     }
 
     private function logoutCurrentUser(Request $request, string $message): JsonResponse|RedirectResponse
