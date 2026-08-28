@@ -17,7 +17,9 @@ class CompanyContext
         }
 
         if (self::isGlobalAdmin($user)) {
-            return null;
+            $selectedCompanyId = self::selectedCompanyId();
+
+            return $selectedCompanyId ?? ($user->company_id !== null ? (int) $user->company_id : null);
         }
 
         return $user->company_id !== null ? (int) $user->company_id : -1;
@@ -34,9 +36,7 @@ class CompanyContext
     {
         $user ??= auth()->user();
 
-        return $user !== null
-            && $user->company_id === null
-            && $user->hasRole('super_admin');
+        return $user !== null && $user->hasRole('super_admin');
     }
 
     public static function canAssignNoCompany(?User $user = null): bool
@@ -50,13 +50,21 @@ class CompanyContext
     {
         $user ??= auth()->user();
 
-        if ($user === null || $user->company_id === null) {
+        if ($user === null) {
             return null;
         }
 
-        return $user->relationLoaded('company')
-            ? $user->company
-            : $user->company()->first();
+        $companyId = self::id($user);
+
+        if ($companyId === null || $companyId < 1) {
+            return null;
+        }
+
+        if (! self::isGlobalAdmin($user) && (int) $user->company_id === $companyId && $user->relationLoaded('company')) {
+            return $user->company;
+        }
+
+        return Company::query()->whereKey($companyId)->where('is_active', true)->first();
     }
 
     public static function scope(Builder $query, ?User $user = null, string $column = 'company_id'): Builder
@@ -81,5 +89,21 @@ class CompanyContext
         }
 
         return $data;
+    }
+
+    public static function selectCompany(int $companyId): void
+    {
+        session()->put('active_company_id', $companyId);
+    }
+
+    private static function selectedCompanyId(): ?int
+    {
+        if (! request()->hasSession()) {
+            return null;
+        }
+
+        $companyId = request()->session()->get('active_company_id');
+
+        return is_numeric($companyId) && (int) $companyId > 0 ? (int) $companyId : null;
     }
 }

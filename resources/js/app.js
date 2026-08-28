@@ -326,6 +326,292 @@ function initAdminDataTables(scope = document) {
     });
 }
 
+function initPersonnelLookup(scope = document) {
+    scope.querySelectorAll('[data-personnel-form]').forEach((container) => {
+        if (container.dataset.personnelLookupInitialized === '1') {
+            return;
+        }
+
+        const form = container.closest('form');
+        const identityInput = container.querySelector('[data-personnel-ci]');
+        const alert = container.querySelector('[data-personnel-existing-alert]');
+        const message = container.querySelector('[data-personnel-existing-message]');
+        const actions = container.querySelector('[data-personnel-existing-actions]');
+        const submit = form?.querySelector('[type="submit"]');
+        const fields = ['first_name', 'paternal_surname', 'maternal_surname', 'birth_date', 'phone', 'email', 'position_id'];
+        let timeout;
+        let controller;
+        let foundExisting = false;
+
+        if (!form || !identityInput || !container.dataset.lookupUrl) {
+            return;
+        }
+
+        const setBlocked = (blocked) => {
+            foundExisting = blocked;
+            if (submit) submit.disabled = blocked;
+            fields.forEach((name) => {
+                const field = form.elements.namedItem(name);
+                if (field) field.disabled = blocked;
+            });
+        };
+
+        const resetExisting = () => {
+            alert?.classList.add('d-none');
+            if (message) message.textContent = '';
+            if (actions) actions.replaceChildren();
+            setBlocked(false);
+        };
+
+        const fillPersonnel = (personnel) => {
+            fields.forEach((name) => {
+                const field = form.elements.namedItem(name);
+                if (field) field.value = personnel[name] ?? '';
+            });
+        };
+
+        const addAction = (label, url, tone) => {
+            if (!actions || !url) return;
+            const link = document.createElement('a');
+            link.className = `btn btn-${tone} btn-sm`;
+            link.href = url;
+            link.textContent = label;
+            actions.append(link);
+        };
+
+        const lookup = async () => {
+            const identityDocument = identityInput.value.trim();
+            resetExisting();
+
+            if (identityDocument.length < 3) return;
+
+            controller?.abort();
+            controller = new AbortController();
+            const params = new URLSearchParams({ identity_document: identityDocument });
+            if (container.dataset.currentPersonnelId) params.set('exclude_id', container.dataset.currentPersonnelId);
+
+            identityInput.classList.add('opacity-75');
+            try {
+                const response = await fetch(`${container.dataset.lookupUrl}?${params}`, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    signal: controller.signal,
+                });
+                if (!response.ok) throw new Error('No se pudo verificar el CI.');
+                const payload = await response.json();
+                if (!payload.exists) return;
+
+                fillPersonnel(payload.personnel);
+                if (message) {
+                    const status = payload.personnel.deleted ? ' El registro se encuentra eliminado.' : '';
+                    message.textContent = `${payload.message} ${payload.personnel.first_name} ${payload.personnel.paternal_surname} · ${payload.personnel.area ?? ''} / ${payload.personnel.position ?? ''}.${status}`;
+                }
+                addAction('Ver ficha', payload.personnel.show_url, 'outline-secondary');
+                addAction('Editar existente', payload.personnel.edit_url, 'warning');
+                alert?.classList.remove('d-none');
+                setBlocked(true);
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    Swal.fire({ icon: 'error', title: 'Verificación de CI', text: error.message });
+                }
+            } finally {
+                identityInput.classList.remove('opacity-75');
+            }
+        };
+
+        identityInput.addEventListener('input', () => {
+            window.clearTimeout(timeout);
+            if (foundExisting) {
+                fields.forEach((name) => {
+                    const field = form.elements.namedItem(name);
+                    if (field) field.value = '';
+                });
+            }
+            resetExisting();
+            timeout = window.setTimeout(lookup, 350);
+        });
+        identityInput.addEventListener('blur', () => {
+            window.clearTimeout(timeout);
+            lookup();
+        });
+        container.dataset.personnelLookupInitialized = '1';
+    });
+}
+
+function initRectorateHolderLookup(scope = document) {
+    scope.querySelectorAll('[data-rectorate-holder-form]').forEach((form) => {
+        if (form.dataset.holderLookupInitialized === '1') return;
+
+        const ci = form.querySelector('[data-holder-ci]');
+        const status = form.querySelector('[data-holder-lookup-status]');
+        const billingType = form.elements.namedItem('identity_document_type_code');
+        const billingNumber = form.elements.namedItem('document_number');
+        const holderFields = ['first_name', 'paternal_surname', 'maternal_surname', 'birth_date', 'email', 'phone'];
+        const billingFields = ['identity_document_type_code', 'document_number', 'document_complement', 'legal_name'];
+        let timeout;
+        let controller;
+
+        if (!ci || !form.dataset.lookupUrl) return;
+
+        const fill = (names, values) => names.forEach((name) => {
+            const field = form.elements.namedItem(name);
+            if (field) field.value = values?.[name] ?? '';
+        });
+
+        const copyCiForBilling = () => {
+            if (String(billingType?.value) === '1' && billingNumber) billingNumber.value = ci.value.trim();
+        };
+
+        const lookup = async () => {
+            const identityDocument = ci.value.trim();
+            if (!/^\d{5,10}$/.test(identityDocument)) {
+                if (status) status.textContent = 'El CI debe tener entre 5 y 10 dígitos.';
+                return;
+            }
+
+            controller?.abort();
+            controller = new AbortController();
+            if (status) status.textContent = 'Buscando datos del titular…';
+
+            try {
+                const params = new URLSearchParams({ identity_document: identityDocument });
+                const response = await fetch(`${form.dataset.lookupUrl}?${params}`, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    signal: controller.signal,
+                });
+                if (!response.ok) throw new Error('No se pudo consultar el CI.');
+                const payload = await response.json();
+
+                if (!payload.found) {
+                    if (status) status.textContent = 'CI nuevo. Completa los datos del titular.';
+                    copyCiForBilling();
+                    return;
+                }
+
+                fill(holderFields, payload.holder);
+                fill(billingFields, payload.billing);
+                if (status) status.textContent = 'Titular encontrado. Se cargaron los datos de su inscripción más reciente; puedes editarlos.';
+            } catch (error) {
+                if (error.name !== 'AbortError' && status) status.textContent = error.message;
+            }
+        };
+
+        ci.addEventListener('input', () => {
+            window.clearTimeout(timeout);
+            copyCiForBilling();
+            timeout = window.setTimeout(lookup, 350);
+        });
+        ci.addEventListener('blur', lookup);
+        billingType?.addEventListener('change', copyCiForBilling);
+        copyCiForBilling();
+        form.dataset.holderLookupInitialized = '1';
+    });
+}
+
+function initStudentHolderAutofill(scope = document) {
+    scope.querySelectorAll('[data-student-form]').forEach((form) => {
+        if (form.dataset.studentAutofillInitialized === '1') return;
+
+        const relationship = form.elements.namedItem('student_relationship');
+        const help = form.querySelector('[data-student-help]');
+        const primaryContactType = form.querySelector('[data-primary-contact-type]');
+        const otherReferenceFields = form.querySelector('[data-other-reference-fields]');
+        const mappings = {
+            student_identity_document: 'holderIdentityDocument',
+            student_first_name: 'holderFirstName',
+            student_paternal_surname: 'holderPaternalSurname',
+            student_maternal_surname: 'holderMaternalSurname',
+            student_birth_date: 'holderBirthDate',
+            student_email: 'holderEmail',
+            student_phone: 'holderPhone',
+        };
+
+        if (!relationship) return;
+
+        const sync = () => {
+            const isHolder = relationship.value === 'Titular';
+            Object.entries(mappings).forEach(([fieldName, dataName]) => {
+                const field = form.elements.namedItem(fieldName);
+                if (!field) return;
+                if (isHolder) field.value = form.dataset[dataName] ?? '';
+                field.readOnly = isHolder;
+                field.classList.toggle('bg-body-tertiary', isHolder);
+            });
+            if (help) {
+                help.textContent = isHolder
+                    ? 'El estudiante es el titular: sus datos personales se cargaron automáticamente. Solo selecciona el género.'
+                    : '';
+            }
+        };
+
+        const syncPrimaryContact = () => {
+            if (!primaryContactType || !otherReferenceFields) return;
+            const isOther = primaryContactType.value === 'Otro';
+            const studentPhone = form.elements.namedItem('student_phone');
+            otherReferenceFields.hidden = !isOther;
+            otherReferenceFields.setAttribute('aria-hidden', isOther ? 'false' : 'true');
+            if (studentPhone) studentPhone.required = primaryContactType.value === 'Estudiante';
+            otherReferenceFields.querySelectorAll('[data-other-reference-input]').forEach((field) => {
+                field.required = isOther;
+                field.disabled = !isOther;
+            });
+        };
+
+        relationship.addEventListener('change', sync);
+        primaryContactType?.addEventListener('change', syncPrimaryContact);
+        sync();
+        syncPrimaryContact();
+        form.dataset.studentAutofillInitialized = '1';
+    });
+}
+
+function initProgramPlanForms(scope = document) {
+    scope.querySelectorAll('[data-program-plan-form]').forEach((form) => {
+        if (form.dataset.programPlanInitialized === '1') return;
+        const program = form.elements.namedItem('program_id');
+        const plan = form.elements.namedItem('plan_id');
+        if (!program || !plan) return;
+
+        const sync = () => {
+            const programId = String(program.value);
+            let selectedIsValid = false;
+            Array.from(plan.options).forEach((option, index) => {
+                if (index === 0) return;
+                const visible = option.dataset.programId === programId;
+                option.hidden = !visible;
+                option.disabled = !visible;
+                if (option.selected && visible) selectedIsValid = true;
+            });
+            if (!selectedIsValid) plan.value = '';
+            plan.disabled = !programId;
+            plan.options[0].textContent = programId ? 'Seleccionar plan...' : 'Selecciona primero un programa';
+        };
+
+        program.addEventListener('change', sync);
+        sync();
+        form.dataset.programPlanInitialized = '1';
+    });
+}
+
+function initUserPersonnelSelect(scope = document) {
+    scope.querySelectorAll('[data-user-personnel-select]').forEach((select) => {
+        if (select.dataset.userPersonnelInitialized === '1') return;
+        const form = select.closest('form');
+        const details = form?.querySelector('[data-user-personnel-details]');
+        const detailFields = form?.querySelectorAll('[data-personnel-detail]') ?? [];
+        const sync = () => {
+            const option = select.selectedOptions[0];
+            const hasPersonnel = Boolean(option?.value);
+            details?.classList.toggle('d-none', !hasPersonnel);
+            detailFields.forEach((field) => {
+                field.textContent = hasPersonnel ? (option.dataset[field.dataset.personnelDetail] || 'No registrado') : '—';
+            });
+        };
+        select.addEventListener('change', sync);
+        sync();
+        select.dataset.userPersonnelInitialized = '1';
+    });
+}
+
 function initTomSelects(scope = document) {
     scope.querySelectorAll('select[data-tom-select]').forEach((select) => {
         if (select.tomselect) {
@@ -1476,6 +1762,53 @@ function initSidebarToggle() {
     toggle.dataset.sidebarToggleInitialized = '1';
 }
 
+function initAcademicModuleForms(scope = document) {
+    scope.querySelectorAll('form').forEach((form) => {
+        const program = form.querySelector('[name="program_id"]');
+        const level = form.querySelector('[name="program_level_id"]');
+        const name = form.querySelector('[name="name"]');
+
+        if (!program || !level || level.dataset.programFilterInitialized === '1') return;
+
+        const levels = Array.from(level.querySelectorAll('option[data-program-id]')).map((option) => ({
+            value: option.value,
+            label: option.textContent,
+            programId: option.dataset.programId,
+        }));
+        const initialValue = level.value;
+
+        const syncGeneratedName = () => {
+            if (!name || !level.value) return;
+
+            const selectedLevel = level.options[level.selectedIndex];
+            const generatedName = `Módulo ${selectedLevel.textContent.trim()}`;
+            const currentName = name.value.trim();
+
+            if (!currentName || currentName === name.dataset.generatedName) {
+                name.value = generatedName;
+                name.dataset.generatedName = generatedName;
+            }
+        };
+
+        const sync = () => {
+            const currentValue = level.value || initialValue;
+            const available = levels.filter((item) => item.programId === program.value);
+            level.innerHTML = `<option value="">${program.value ? 'Seleccionar nivel' : 'Selecciona primero un programa'}</option>`;
+            available.forEach((item) => {
+                const option = new Option(item.label, item.value, false, item.value === currentValue);
+                level.add(option);
+            });
+            level.disabled = !program.value;
+            syncGeneratedName();
+        };
+
+        program.addEventListener('change', sync);
+        level.addEventListener('change', syncGeneratedName);
+        level.dataset.programFilterInitialized = '1';
+        sync();
+    });
+}
+
 function initializeUi(scope = document) {
     disableBusinessFormAutocomplete(scope);
     initTomSelects(scope);
@@ -1487,6 +1820,12 @@ function initializeUi(scope = document) {
     initLoginForm(scope);
     initImagePickers(scope);
     initUserDropdowns(scope);
+    initPersonnelLookup(scope);
+    initRectorateHolderLookup(scope);
+    initStudentHolderAutofill(scope);
+    initProgramPlanForms(scope);
+    initAcademicModuleForms(scope);
+    initUserPersonnelSelect(scope);
 }
 
 showInitialAlerts();
@@ -1494,6 +1833,37 @@ initializeUi();
 initSidebarToggle();
 
 document.addEventListener('click', (event) => {
+    const passwordReset = event.target.closest('[data-user-password-reset]');
+
+    if (passwordReset) {
+        Swal.fire({
+            icon: 'warning',
+            title: '¿Restablecer contraseña?',
+            text: 'Se cerrarán las sesiones del usuario y se enviará una nueva contraseña temporal por correo.',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, restablecer',
+            cancelButtonText: 'Cancelar',
+        }).then(async (result) => {
+            if (!result.isConfirmed) return;
+            passwordReset.disabled = true;
+            try {
+                const response = await fetch(passwordReset.dataset.resetUrl, {
+                    method: 'PATCH',
+                    headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const payload = await response.json();
+                if (!response.ok || payload.success === false) throw new Error(payload.message ?? 'No se pudo restablecer la contraseña.');
+                Swal.fire({ icon: 'success', title: 'Contraseña restablecida', text: payload.message });
+            } catch (error) {
+                Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+            } finally {
+                passwordReset.disabled = false;
+            }
+        });
+
+        return;
+    }
+
     const modalTrigger = event.target.closest('[data-modal-url]');
 
     if (modalTrigger) {

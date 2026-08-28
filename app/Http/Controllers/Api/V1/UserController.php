@@ -41,7 +41,7 @@ class UserController extends Controller
     {
         $this->authorize('view', $user);
 
-        return $this->successResponse(UserResource::make($user->load('roles')));
+        return $this->successResponse(UserResource::make($user->load(['personnel.position.area', 'roles'])));
     }
 
     public function update(UpdateUserRequest $request, User $user): JsonResponse

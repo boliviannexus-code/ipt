@@ -22,7 +22,7 @@
         <table class="table table-hover align-middle">
             <thead>
                 <tr>
-                    <th>Nombre</th>
+                    <th>Personal / Usuario</th>
                     <th>Email</th>
                     <th>Empresa</th>
                     <th>Roles</th>
@@ -34,7 +34,7 @@
             <tbody>
                 @forelse ($users as $user)
                     <tr class="{{ $user->trashed() ? 'table-light text-body-secondary' : '' }}">
-                        <td>{{ $user->name }}</td>
+                        <td>{{ $user->personnel?->full_name ?? $user->name }}</td>
                         <td>{{ $user->email }}</td>
                         <td>{{ $user->company?->name ?? 'Sin empresa' }}</td>
                         <td>
@@ -57,10 +57,6 @@
                             @if (! $user->trashed())
                                 @can('users.edit')
                                     <a class="btn btn-outline-primary btn-sm" href="{{ route('users.edit', $user) }}" data-modal-url="{{ route('users.edit', $user) }}" data-modal-title="Editar usuario">Editar</a>
-                                @endcan
-
-                                @can('users.change-password')
-                                    <a class="btn btn-outline-warning btn-sm" href="{{ route('users.change-password.form', $user) }}" data-modal-url="{{ route('users.change-password.form', $user) }}" data-modal-title="Cambiar contraseña">Contraseña</a>
                                 @endcan
 
                                 @can('users.assign-roles')

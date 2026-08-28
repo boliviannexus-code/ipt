@@ -49,7 +49,7 @@
             <header class="auth-form-header">
                 <span class="auth-eyebrow">Bienvenido</span>
                 <h2 id="login-title">Inicia sesión</h2>
-                <p>Usa el correo y la contraseña de tu cuenta.</p>
+                <p>Usa tu correo electrónico y la contraseña de tu cuenta.</p>
             </header>
 
             <form method="POST" action="{{ route('login.store') }}" data-login-form novalidate>

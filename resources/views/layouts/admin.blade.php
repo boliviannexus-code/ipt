@@ -24,6 +24,10 @@
             <div class="container-xl">
                 <x-admin.flash />
 
+                @if (auth()->user()?->must_change_password && ! request()->routeIs('account.*'))
+                    <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3" role="alert"><div><strong>Estás usando una contraseña temporal.</strong><div>Te recomendamos cambiarla ahora para proteger tu cuenta.</div></div><a class="btn btn-warning" href="{{ route('account.edit') }}">Cambiar contraseña</a></div>
+                @endif
+
                 <div wire:loading.class="opacity-75">
                     @yield('content')
                 </div>
