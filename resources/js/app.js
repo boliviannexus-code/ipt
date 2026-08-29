@@ -1836,20 +1836,48 @@ document.addEventListener('click', (event) => {
     const passwordReset = event.target.closest('[data-user-password-reset]');
 
     if (passwordReset) {
+        const containingModal = passwordReset.closest('.modal');
+
         Swal.fire({
+            target: containingModal ?? document.body,
             icon: 'warning',
             title: '¿Restablecer contraseña?',
-            text: 'Se cerrarán las sesiones del usuario y se enviará una nueva contraseña temporal por correo.',
+            html: `
+                <p class="text-secondary">Se cerrarán las sesiones activas del usuario.</p>
+                <input id="reset-password" class="swal2-input" type="password" minlength="8" placeholder="Nueva contraseña" autocomplete="new-password">
+                <input id="reset-password-confirmation" class="swal2-input" type="password" minlength="8" placeholder="Confirmar contraseña" autocomplete="new-password">
+            `,
             showCancelButton: true,
             confirmButtonText: 'Sí, restablecer',
             cancelButtonText: 'Cancelar',
+            focusConfirm: false,
+            preConfirm: () => {
+                const password = document.getElementById('reset-password').value;
+                const passwordConfirmation = document.getElementById('reset-password-confirmation').value;
+
+                if (password.length < 8) {
+                    Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');
+                    return false;
+                }
+
+                if (password !== passwordConfirmation) {
+                    Swal.showValidationMessage('Las contraseñas no coinciden.');
+                    return false;
+                }
+
+                return { password, passwordConfirmation };
+            },
         }).then(async (result) => {
             if (!result.isConfirmed) return;
             passwordReset.disabled = true;
             try {
                 const response = await fetch(passwordReset.dataset.resetUrl, {
                     method: 'PATCH',
-                    headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify({
+                        password: result.value.password,
+                        password_confirmation: result.value.passwordConfirmation,
+                    }),
                 });
                 const payload = await response.json();
                 if (!response.ok || payload.success === false) throw new Error(payload.message ?? 'No se pudo restablecer la contraseña.');

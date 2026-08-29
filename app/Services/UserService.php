@@ -4,14 +4,12 @@ namespace App\Services;
 
 use App\Models\Personnel;
 use App\Models\User;
-use App\Notifications\TemporaryUserPasswordNotification;
 use App\Repositories\UserRepository;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class UserService
@@ -41,14 +39,12 @@ class UserService
             $data['name'] = $personnel->full_name;
             $data['email'] = $personnel->email;
         }
-        $temporaryPassword = Str::password(12);
-        $data['password'] = Hash::make($temporaryPassword);
+        $data['password'] = Hash::make($data['password']);
         $data['must_change_password'] = true;
         $data['is_active'] = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true;
 
         $user = $this->users->create($data);
         $user->syncRoles($roles);
-        $user->notify(new TemporaryUserPasswordNotification($temporaryPassword));
 
         Log::info('User created', ['user_id' => $user->id, 'roles' => $roles]);
 
@@ -119,17 +115,14 @@ class UserService
         return $user;
     }
 
-    public function resetTemporaryPassword(User $user): User
+    public function resetTemporaryPassword(User $user, string $password): User
     {
-        $temporaryPassword = Str::password(12);
         $user->forceFill([
-            'password' => Hash::make($temporaryPassword),
+            'password' => Hash::make($password),
             'must_change_password' => true,
         ])->saveQuietly();
 
         $this->revokeAccess($user);
-        $user->notify(new TemporaryUserPasswordNotification($temporaryPassword));
-
         Log::warning('User temporary password reset', ['user_id' => $user->id]);
 
         return $user->refresh();

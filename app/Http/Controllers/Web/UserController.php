@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\User\AssignRolesRequest;
+use App\Http\Requests\User\ChangePasswordRequest;
 use App\Http\Requests\User\StoreUserRequest;
 use App\Http\Requests\User\UpdateUserRequest;
 use App\Models\Personnel;
@@ -177,12 +178,12 @@ class UserController extends Controller
         return redirect()->route('users.index')->with('success', $message);
     }
 
-    public function resetPassword(Request $request, User $user): JsonResponse|RedirectResponse
+    public function resetPassword(ChangePasswordRequest $request, User $user): JsonResponse|RedirectResponse
     {
         $this->authorize('changePassword', $user);
 
-        $this->users->resetTemporaryPassword($user);
-        $message = 'Contraseña temporal generada y enviada al correo del usuario.';
+        $this->users->resetTemporaryPassword($user, $request->validated('password'));
+        $message = 'Contraseña restablecida correctamente. Se cerraron las sesiones activas del usuario.';
 
         if ($request->ajax() || $request->expectsJson()) {
             return response()->json(['success' => true, 'message' => $message, 'data' => ['id' => $user->id]]);
