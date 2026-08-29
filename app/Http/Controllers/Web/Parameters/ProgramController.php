@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Web\Parameters;
 
 use App\Http\Controllers\Controller;
-use App\Models\Plan;
 use App\Models\Program;
 use App\Support\CompanyContext;
 use Illuminate\Http\RedirectResponse;
@@ -18,21 +17,20 @@ class ProgramController extends Controller
     public function index(): View
     {
         return view('parameters.programs.index', [
-            'programs' => Program::query()->with('plans')->withCount('levels')->orderBy('title')->paginate(15),
+            'programs' => Program::query()->withCount(['plans', 'levels'])->orderBy('title')->paginate(15),
         ]);
     }
 
     public function create(): View
     {
-        return view('parameters.programs.create', ['plans' => Plan::query()->orderBy('name')->get()]);
+        return view('parameters.programs.create');
     }
 
     public function store(Request $request): RedirectResponse
     {
         $companyId = (int) CompanyContext::id($request->user());
         $data = $this->validated($request, $companyId);
-        $program = Program::create([...$data, 'company_id' => $companyId]);
-        $program->plans()->sync($data['plan_ids']);
+        Program::create([...$data, 'company_id' => $companyId]);
 
         return redirect()->route('parameters.programs.index')->with('success', 'Programa creado correctamente.');
     }
@@ -40,8 +38,7 @@ class ProgramController extends Controller
     public function edit(Program $program): View
     {
         return view('parameters.programs.edit', [
-            'program' => $program->load('plans'),
-            'plans' => Plan::query()->orderBy('name')->get(),
+            'program' => $program,
         ]);
     }
 
@@ -56,7 +53,6 @@ class ProgramController extends Controller
         DB::transaction(function () use ($program, $data): void {
             $initializingCode = blank($program->enrollment_code);
             $program->update($data);
-            $program->plans()->sync($data['plan_ids']);
             if ($initializingCode) {
                 $this->prefixExistingEnrollments($program, $data['enrollment_code']);
             }
@@ -73,11 +69,8 @@ class ProgramController extends Controller
             'title' => ['required', 'string', 'max:180', Rule::unique('programs')->where('company_id', $companyId)->ignore($program)],
             'enrollment_code' => ['required', 'string', 'size:3', 'regex:/^[A-Za-z]{3}$/', Rule::unique('programs')->where('company_id', $companyId)->ignore($program)],
             'duration_months' => ['required', 'integer', 'min:1', 'max:600'],
-            'plan_ids' => ['required', 'array', 'min:1'],
-            'plan_ids.*' => ['integer', Rule::exists('plans', 'id')->where('company_id', $companyId)],
         ], [
             'enrollment_code.regex' => 'El código debe contener exactamente tres letras.',
-            'plan_ids.required' => 'Selecciona al menos un plan.',
         ]);
     }
 

@@ -3,7 +3,6 @@
 namespace Tests\Feature\Parameters;
 
 use App\Models\Company;
-use App\Models\Plan;
 use App\Models\Program;
 use App\Models\ProgramLevel;
 use App\Models\User;
@@ -15,7 +14,7 @@ class ProgramTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_program_can_be_created_and_updated_with_multiple_plans(): void
+    public function test_program_can_be_created_and_updated_without_plans(): void
     {
         $company = Company::factory()->create();
         $user = User::factory()->create(['company_id' => $company->id]);
@@ -23,31 +22,24 @@ class ProgramTest extends TestCase
         Permission::findOrCreate('programs.create');
         Permission::findOrCreate('programs.edit');
         $user->givePermissionTo(['programs.view', 'programs.create', 'programs.edit']);
-        $plans = collect([
-            Plan::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Contado', 'monthly_cost' => 300]),
-            Plan::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Mensual', 'monthly_cost' => 100]),
-        ]);
-
         $this->actingAs($user)->post(route('parameters.programs.store'), [
             'title' => 'Programa técnico',
             'enrollment_code' => 'cap',
             'duration_months' => 18,
-            'plan_ids' => $plans->pluck('id')->all(),
         ])->assertRedirect(route('parameters.programs.index'));
 
         $program = Program::withoutGlobalScope('company')->sole();
         $this->assertSame('CAP', $program->enrollment_code);
-        $this->assertCount(2, $program->plans);
+        $this->assertCount(0, $program->plans);
 
         $this->actingAs($user)->put(route('parameters.programs.update', $program), [
             'title' => 'Programa actualizado',
             'enrollment_code' => 'tec',
             'duration_months' => 24,
-            'plan_ids' => [$plans->first()->id],
         ])->assertRedirect(route('parameters.programs.index'));
 
         $this->assertDatabaseHas('programs', ['id' => $program->id, 'title' => 'Programa actualizado', 'enrollment_code' => 'TEC', 'duration_months' => 24]);
-        $this->assertSame([$plans->first()->id], $program->fresh()->plans->pluck('id')->all());
+        $this->assertCount(0, $program->fresh()->plans);
     }
 
     public function test_levels_are_configured_independently_for_each_program(): void

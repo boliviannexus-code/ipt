@@ -4,6 +4,7 @@ namespace App\Services\Rectorate;
 
 use App\Models\Campus;
 use App\Models\Customer;
+use App\Models\Personnel;
 use App\Models\RectorateApplication;
 use App\Models\User;
 use App\Services\Parameters\CustomerService;
@@ -95,11 +96,21 @@ class HolderStepService
 
     private function campusFor(User $user, int $companyId): Campus
     {
-        $campusId = $user->personnel?->campus_id;
+        $personnel = $user->personnel_id !== null
+            ? Personnel::withoutGlobalScope('company')->find($user->personnel_id)
+            : null;
+
+        $campusId = $personnel?->campus_id;
 
         if ($campusId === null) {
             throw ValidationException::withMessages([
                 'campus' => 'Tu usuario debe estar vinculado a personal con una sede asignada antes de iniciar una inscripción.',
+            ]);
+        }
+
+        if ((int) $personnel->company_id !== $companyId) {
+            throw ValidationException::withMessages([
+                'campus' => 'El personal vinculado a tu usuario no pertenece a la empresa activa.',
             ]);
         }
 
