@@ -35,6 +35,7 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
     public function create(): array
     {
         $this->ensurePostgres();
+        $this->ensureBinaryAvailable((string) config('backups.pg_dump_binary'), 'pg_dump');
         $name = sprintf('facturacion-%s-%s.sql.gz', now()->format('Ymd-His'), bin2hex(random_bytes(3)));
         $path = $this->directory().'/'.$name;
 
@@ -110,6 +111,7 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
     public function restore(string $name): void
     {
         $this->ensurePostgres();
+        $this->ensureBinaryAvailable((string) config('backups.psql_binary'), 'psql');
         $source = gzopen($this->absolutePath($name), 'rb');
 
         if ($source === false) {
@@ -207,7 +209,7 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
     {
         $db = config('database.connections.pgsql');
 
-        return ['pg_dump', '--host='.(string) $db['host'], '--port='.(string) $db['port'], '--username='.(string) $db['username'], '--dbname='.(string) $db['database'], '--clean', '--if-exists', '--no-owner', '--no-privileges', '--format=plain'];
+        return [(string) config('backups.pg_dump_binary', 'pg_dump'), '--host='.(string) $db['host'], '--port='.(string) $db['port'], '--username='.(string) $db['username'], '--dbname='.(string) $db['database'], '--clean', '--if-exists', '--no-owner', '--no-privileges', '--format=plain'];
     }
 
     /** @return list<string> */
@@ -215,7 +217,7 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
     {
         $db = config('database.connections.pgsql');
 
-        return ['psql', '--host='.(string) $db['host'], '--port='.(string) $db['port'], '--username='.(string) $db['username'], '--dbname='.(string) $db['database'], '--set=ON_ERROR_STOP=1', '--single-transaction', '--file='.$path];
+        return [(string) config('backups.psql_binary', 'psql'), '--host='.(string) $db['host'], '--port='.(string) $db['port'], '--username='.(string) $db['username'], '--dbname='.(string) $db['database'], '--set=ON_ERROR_STOP=1', '--single-transaction', '--file='.$path];
     }
 
     /** @return array<string, string> */
@@ -279,7 +281,7 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
         $query = "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename IN ({$quotedTables}); SELECT count(*) FROM migrations;";
         $db = config('database.connections.pgsql');
         $process = new Process([
-            'psql', '--host='.(string) $db['host'], '--port='.(string) $db['port'],
+            (string) config('backups.psql_binary', 'psql'), '--host='.(string) $db['host'], '--port='.(string) $db['port'],
             '--username='.(string) $db['username'], '--dbname='.(string) $db['database'],
             '--set=ON_ERROR_STOP=1', '--tuples-only', '--no-align', '--command='.$query,
         ], null, $this->processEnvironment());
@@ -290,6 +292,21 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
 
         if ((int) ($results[0] ?? 0) !== count($tables) || (int) ($results[1] ?? 0) < 1) {
             throw new RuntimeException('La verificación posterior detectó una restauración incompleta.');
+        }
+    }
+
+    private function ensureBinaryAvailable(string $binary, string $label): void
+    {
+        try {
+            $process = new Process([$binary, '--version']);
+            $process->setTimeout(10);
+            $process->run();
+        } catch (\Throwable $exception) {
+            throw new RuntimeException("El ejecutable {$label} no está instalado o no está disponible para PHP.", 0, $exception);
+        }
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException("El ejecutable {$label} no está disponible: ".trim($process->getErrorOutput()));
         }
     }
 }

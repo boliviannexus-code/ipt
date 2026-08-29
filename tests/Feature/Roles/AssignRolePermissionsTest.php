@@ -87,6 +87,29 @@ class AssignRolePermissionsTest extends TestCase
         $this->assertSame('branch_admin', $role->fresh()->name);
     }
 
+    public function test_module_labels_use_the_same_spanish_terms_as_the_menu(): void
+    {
+        $actor = User::factory()->create();
+        Permission::findOrCreate('roles.assign-permissions');
+        Permission::findOrCreate('campuses.view');
+        Permission::findOrCreate('rectorate.create');
+        Permission::findOrCreate('cash-registers.open');
+        Permission::findOrCreate('accounts.collect');
+        $actor->givePermissionTo('roles.assign-permissions');
+        $role = Role::findOrCreate('manager');
+
+        $response = $this->actingAs($actor)->get(route('roles.permissions.form', $role));
+
+        $response->assertOk();
+        $response->assertSee('Sedes');
+        $response->assertSee('Inscripciones');
+        $response->assertSee('Cajas');
+        $response->assertSee('Cobros');
+        $response->assertSee('Cobrar');
+        $response->assertDontSee('>Campuses<', false);
+        $response->assertDontSee('>Rectorate<', false);
+    }
+
     public function test_role_permissions_can_be_saved_without_role_name(): void
     {
         $actor = User::factory()->create();
@@ -104,6 +127,26 @@ class AssignRolePermissionsTest extends TestCase
 
         $response->assertRedirect(route('roles.index'));
         $this->assertTrue($role->fresh()->hasPermissionTo('companies.view'));
+    }
+
+    public function test_permissions_form_offers_copying_configuration_from_another_role(): void
+    {
+        $actor = User::factory()->create();
+        Permission::findOrCreate('roles.assign-permissions');
+        Permission::findOrCreate('companies.view');
+        $actor->givePermissionTo('roles.assign-permissions');
+        $source = Role::findOrCreate('manager');
+        $source->givePermissionTo('companies.view');
+        $target = Role::findOrCreate('viewer');
+
+        $response = $this->actingAs($actor)->get(route('roles.permissions.form', $target));
+
+        $response->assertOk();
+        $response->assertSee('Copiar permisos de otro rol');
+        $response->assertSee('Copiar configuración');
+        $response->assertSee('Gerente (1 permiso)');
+        $response->assertSee('data-permissions=', false);
+        $response->assertDontSee('Visualizador (', false);
     }
 
     public function test_all_company_permissions_can_be_removed_from_super_admin(): void

@@ -1527,6 +1527,9 @@ function initPermissionMatrices(scope = document) {
         const search = matrix.querySelector('[data-permission-search]');
         const empty = matrix.querySelector('[data-permission-empty]');
         const selectedCount = matrix.querySelector('[data-permission-selected-count]');
+        const copyRole = matrix.querySelector('[data-permission-copy-role]');
+        const copyButton = matrix.querySelector('[data-permission-copy-button]');
+        const copyStatus = matrix.querySelector('[data-permission-copy-status]');
         const visibleOptions = () => checkboxes.filter((checkbox) => !checkbox.closest('[data-permission-option]')?.classList.contains('d-none'));
 
         const update = () => {
@@ -1595,6 +1598,33 @@ function initPermissionMatrices(scope = document) {
                 checkbox.checked = false;
             });
             update();
+        });
+
+        copyButton?.addEventListener('click', () => {
+            const option = copyRole?.selectedOptions[0];
+
+            if (!option?.value) {
+                copyRole?.focus();
+                copyRole?.classList.add('is-invalid');
+                if (copyStatus) copyStatus.textContent = 'Selecciona primero el rol que deseas copiar.';
+                return;
+            }
+
+            copyRole.classList.remove('is-invalid');
+            const copiedPermissions = new Set(JSON.parse(option.dataset.permissions ?? '[]'));
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = copiedPermissions.has(checkbox.value);
+            });
+            update();
+
+            if (copyStatus) {
+                copyStatus.textContent = `Se copiaron ${copiedPermissions.size} permisos de ${option.textContent.trim()}. Revisa y guarda los cambios.`;
+            }
+        });
+
+        copyRole?.addEventListener('change', () => {
+            copyRole.classList.remove('is-invalid');
+            if (copyStatus) copyStatus.textContent = 'Pulsa Copiar configuración para cargar estos permisos.';
         });
 
         modules.forEach((module) => {

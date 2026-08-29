@@ -20,7 +20,8 @@ class RoleController extends Controller
 {
     public function __construct(
         private readonly RoleService $roles,
-        private readonly PermissionRepository $permissions
+        private readonly PermissionRepository $permissions,
+        private readonly RoleRepository $roleRepository,
     ) {}
 
     public function index(): View
@@ -36,7 +37,10 @@ class RoleController extends Controller
     {
         $this->authorize('create', Role::class);
 
-        $data = ['permissionGroups' => $this->permissions->allGroupedByModule()];
+        $data = [
+            'permissionGroups' => $this->permissions->allGroupedByModule(),
+            'copyRoles' => $this->roleRepository->availableToCopy(),
+        ];
 
         if ($request->ajax()) {
             return view('roles.partials.create-form', $data);
@@ -77,6 +81,7 @@ class RoleController extends Controller
         $data = [
             'role' => $role->load('permissions'),
             'permissionGroups' => $this->permissions->allGroupedByModule(),
+            'copyRoles' => $this->roleRepository->availableToCopy($role),
         ];
 
         if ($request->ajax()) {
@@ -125,6 +130,7 @@ class RoleController extends Controller
         $data = [
             'role' => $role->load('permissions'),
             'permissionGroups' => $this->permissions->allGroupedByModule(),
+            'copyRoles' => $this->roleRepository->availableToCopy($role),
         ];
 
         return view('roles.partials.permissions-form', $data);

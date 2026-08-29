@@ -20,7 +20,11 @@ class PermissionRepository
         return Permission::query()
             ->orderBy('name')
             ->get()
-            ->groupBy(fn (Permission $permission): string => str($permission->name)->before('.')->toString());
+            ->groupBy(fn (Permission $permission): string => str($permission->name)->before('.')->toString())
+            ->sortKeysUsing(fn (string $first, string $second): int => strcasecmp(
+                permission_module_label($first),
+                permission_module_label($second),
+            ));
     }
 
     public function create(array $data): Permission

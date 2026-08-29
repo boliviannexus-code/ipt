@@ -34,7 +34,7 @@ final class DatabaseBackupController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
-            return back()->with('error', 'No se pudo crear el respaldo. Revisa la configuración del servidor.');
+            return back()->with('error', 'No se pudo crear el respaldo: '.$exception->getMessage());
         }
     }
 
