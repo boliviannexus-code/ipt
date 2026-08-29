@@ -2,7 +2,7 @@
 
 @section('title', 'Cobro de mensualidad')
 @section('page-title', 'Cobro de mensualidad')
-@section('page-subtitle', 'Cuenta ' . $contract->application->account_number . ' · Contrato #' . $contract->contract_number . ' · ' . $contract->program->title)
+@section('page-subtitle', 'Matrícula ' . $contract->account_number . ' · ' . $contract->program->title)
 
 @section('content')
     @php
@@ -28,8 +28,8 @@
         <div class="card-body">
             <div class="row g-3 align-items-start">
                 <div class="col-sm-6 col-xl-3">
-                    <div class="text-body-secondary small mb-1">Cuenta / Sede</div>
-                    <div class="fw-semibold">{{ $application->account_number }}</div>
+                    <div class="text-body-secondary small mb-1">Matrícula / Sede</div>
+                    <div class="fw-semibold">{{ $contract->account_number }}</div>
                     <div class="text-body-secondary small">{{ $application->campus?->name }}</div>
                 </div>
                 <div class="col-sm-6 col-xl-3">

@@ -2,7 +2,7 @@
 
 @section('title', 'Kardex académico | '.config('app.name'))
 @section('page-title', 'Kardex académico')
-@section('page-subtitle', ($student->account_number ? 'Cuenta '.$student->account_number.' · ' : '').trim("{$student->first_name} {$student->paternal_surname} {$student->maternal_surname}"))
+@section('page-subtitle', ($student->account_number ? 'Matrícula '.$student->account_number.' · ' : '').trim("{$student->first_name} {$student->paternal_surname} {$student->maternal_surname}"))
 
 @section('content')
     @php
@@ -18,7 +18,7 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6 col-xl-3"><div class="text-secondary small">Estudiante</div><div class="fw-semibold">{{ $studentName }}</div><div class="text-secondary">CI {{ $student->identity_document }}</div></div>
-                <div class="col-md-6 col-xl-3"><div class="text-secondary small">Cuenta / Sede</div><div class="fw-semibold">{{ $student->account_number ?: 'Sin número' }}</div><div class="text-secondary">{{ $student->campus?->name ?? 'Sin sede' }}</div></div>
+                <div class="col-md-6 col-xl-3"><div class="text-secondary small">Matrícula / Sede</div><div class="fw-semibold">{{ $student->account_number ?: 'Sin número' }}</div><div class="text-secondary">{{ $student->campus?->name ?? 'Sin sede' }}</div></div>
                 <div class="col-md-6 col-xl-3"><div class="text-secondary small">Nacimiento / Género</div><div class="fw-semibold">{{ $student->birth_date?->format('d/m/Y') ?? 'No registrado' }}</div><div class="text-secondary">{{ $student->gender ?: 'No registrado' }}</div></div>
                 <div class="col-md-6 col-xl-3"><div class="text-secondary small">Contacto</div><div class="fw-semibold text-break">{{ $student->email ?: 'Sin correo' }}</div><div class="text-secondary">{{ $student->phone ?: 'Sin teléfono' }}</div></div>
             </div>
@@ -48,8 +48,8 @@
 
     <div class="mt-3">
         <x-ui.table-card title="Inscripciones y planes">
-            <table class="table table-hover align-middle mb-0"><thead><tr><th>Programa</th><th>Plan</th><th>Contrato</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>
-                @forelse($student->contracts->sortByDesc('confirmed_at') as $contract)<tr><td>{{ $contract->program->title }}</td><td>{{ $contract->plan->name }}</td><td>#{{ $contract->contract_number }}</td><td><span class="badge {{ $contract->status === 'enrolled' ? 'text-bg-success' : ($contract->status === 'cancelled' ? 'text-bg-danger' : 'text-bg-warning') }}">{{ ['enrolled'=>'Inscrito','pre_enrolled'=>'Preinscrito','cancelled'=>'Cancelado'][$contract->status] ?? $contract->status }}</span></td><td>{{ $contract->confirmed_at->format('d/m/Y') }}</td></tr>@empty<x-ui.empty-row colspan="5" message="No existen contratos para este estudiante." />@endforelse
+            <table class="table table-hover align-middle mb-0"><thead><tr><th>Programa</th><th>Plan</th><th>Matrícula</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>
+                @forelse($student->contracts->sortByDesc('confirmed_at') as $contract)<tr><td>{{ $contract->program->title }}</td><td>{{ $contract->plan->name }}</td><td>{{ $contract->account_number }}</td><td><span class="badge {{ $contract->status === 'enrolled' ? 'text-bg-success' : ($contract->status === 'cancelled' ? 'text-bg-danger' : 'text-bg-warning') }}">{{ ['enrolled'=>'Inscrito','pre_enrolled'=>'Preinscrito','cancelled'=>'Cancelado'][$contract->status] ?? $contract->status }}</span></td><td>{{ $contract->confirmed_at->format('d/m/Y') }}</td></tr>@empty<x-ui.empty-row colspan="5" message="No existen matrículas para este estudiante." />@endforelse
             </tbody></table>
         </x-ui.table-card>
     </div>

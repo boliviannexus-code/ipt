@@ -7,7 +7,7 @@
 @section('content')
     <div class="rectorate-wizard">
         <div class="rectorate-wizard__intro">
-            <div><span class="rectorate-wizard__eyebrow">Cuenta {{ $application->account_number }} · {{ $application->program->title }} / {{ $application->plan->name }}</span><h2>Datos del estudiante</h2></div>
+            <div><span class="rectorate-wizard__eyebrow">Matrícula {{ $application->account_number }} · {{ $application->program->title }} / {{ $application->plan->name }}</span><h2>Datos del estudiante</h2></div>
             <span class="rectorate-wizard__step-count">03 <small>/ 04</small></span>
         </div>
 

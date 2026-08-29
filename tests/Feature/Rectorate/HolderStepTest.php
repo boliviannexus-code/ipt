@@ -51,7 +51,7 @@ class HolderStepTest extends TestCase
         $this->assertSame('8324984', $application->identity_document);
         $this->assertSame('Álvaro', $application->first_name);
         $this->assertSame('Pacheco', $application->paternal_surname);
-        $this->assertSame('10001', $application->account_number);
+        $this->assertNull($application->account_number);
         $this->assertSame(2, $application->current_step);
 
         $this->actingAs($user)
@@ -90,6 +90,7 @@ class HolderStepTest extends TestCase
         $program = Program::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
             'title' => 'Inglés intensivo',
+            'enrollment_code' => 'CAP',
             'duration_months' => 12,
         ]);
         $program->plans()->attach($plan);
@@ -203,7 +204,7 @@ class HolderStepTest extends TestCase
         $this->assertSame($company->id, $student->company_id);
         $this->assertSame('8324984', $student->identity_document);
         $this->assertSame('Álvaro', $student->first_name);
-        $this->assertSame('10001', $student->account_number);
+        $this->assertSame('CAP10001', $student->account_number);
         $this->assertSame($application->campus_id, $student->campus_id);
         $this->assertDatabaseHas('rectorate_applications', [
             'id' => $application->id,
@@ -211,8 +212,8 @@ class HolderStepTest extends TestCase
             'status' => 'completed',
         ]);
         $contract = EnrollmentContract::withoutGlobalScope('company')->sole();
-        $this->assertSame(1, $contract->contract_number);
-        $this->assertSame('10001', $contract->account_number);
+        $this->assertSame(10001, $contract->contract_number);
+        $this->assertSame('CAP10001', $contract->account_number);
         $this->assertSame($application->campus_id, $contract->campus_id);
         $this->assertSame('pre_enrolled', $contract->status);
         $this->assertSame('250.00', $contract->monthly_amount);
@@ -240,7 +241,7 @@ class HolderStepTest extends TestCase
             ->get(route('rectorate.contracts.print', $contract))
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf')
-            ->assertHeader('content-disposition', 'inline; filename="contrato-00001.pdf"');
+            ->assertHeader('content-disposition', 'inline; filename="contrato-CAP10001.pdf"');
 
         $this->actingAs($user)
             ->delete(route('rectorate.applications.destroy', $application))
@@ -270,10 +271,7 @@ class HolderStepTest extends TestCase
 
         $this->assertSame(1, Customer::withoutGlobalScope('company')->count());
         $this->assertSame(2, RectorateApplication::withoutGlobalScope('company')->count());
-        $this->assertEqualsCanonicalizing(
-            ['10001', '10002'],
-            RectorateApplication::withoutGlobalScope('company')->pluck('account_number')->all(),
-        );
+        $this->assertTrue(RectorateApplication::withoutGlobalScope('company')->pluck('account_number')->every(fn ($number) => $number === null));
         $this->assertDatabaseHas('customers', ['id' => $customer->id, 'name' => 'Pacheco Servicios']);
         $this->assertDatabaseHas('rectorate_applications', ['customer_id' => $customer->id, 'company_id' => $company->id]);
 

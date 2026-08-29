@@ -15,7 +15,7 @@
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead>
-                    <tr><th>Cuenta / Sede</th><th>Titular</th><th>CI</th><th>Contacto</th><th>Programa / Plan</th><th>Estado</th><th>Registrado</th><th class="text-end">Acción</th></tr>
+                    <tr><th>Matrícula / Sede</th><th>Titular</th><th>CI</th><th>Contacto</th><th>Programa / Plan</th><th>Estado</th><th>Registrado</th><th class="text-end">Acción</th></tr>
                 </thead>
                 <tbody>
                     @forelse ($applications as $application)

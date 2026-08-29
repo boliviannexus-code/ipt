@@ -21,7 +21,7 @@
         <td width="17%" style="padding-top:18px;">
             <table border="1" cellpadding="2" cellspacing="0" width="100%">
                 <tr style="background-color:#000000;color:#ffffff;font-size:8px;font-weight:bold;"><td align="center">CONTRATO</td></tr>
-                <tr><td align="center" style="color:#e00000;font-size:11px;font-weight:bold;">N.º {{ str_pad((string) $contract->contract_number, 5, '0', STR_PAD_LEFT) }}</td></tr>
+                <tr><td align="center" style="color:#e00000;font-size:11px;font-weight:bold;">Matrícula N.º {{ $contract->account_number }}</td></tr>
             </table>
         </td>
         <td width="66%" align="center">

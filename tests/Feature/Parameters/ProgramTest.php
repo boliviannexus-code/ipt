@@ -30,20 +30,23 @@ class ProgramTest extends TestCase
 
         $this->actingAs($user)->post(route('parameters.programs.store'), [
             'title' => 'Programa técnico',
+            'enrollment_code' => 'cap',
             'duration_months' => 18,
             'plan_ids' => $plans->pluck('id')->all(),
         ])->assertRedirect(route('parameters.programs.index'));
 
         $program = Program::withoutGlobalScope('company')->sole();
+        $this->assertSame('CAP', $program->enrollment_code);
         $this->assertCount(2, $program->plans);
 
         $this->actingAs($user)->put(route('parameters.programs.update', $program), [
             'title' => 'Programa actualizado',
+            'enrollment_code' => 'tec',
             'duration_months' => 24,
             'plan_ids' => [$plans->first()->id],
         ])->assertRedirect(route('parameters.programs.index'));
 
-        $this->assertDatabaseHas('programs', ['id' => $program->id, 'title' => 'Programa actualizado', 'duration_months' => 24]);
+        $this->assertDatabaseHas('programs', ['id' => $program->id, 'title' => 'Programa actualizado', 'enrollment_code' => 'TEC', 'duration_months' => 24]);
         $this->assertSame([$plans->first()->id], $program->fresh()->plans->pluck('id')->all());
     }
 

@@ -13,7 +13,7 @@ class Program extends Model
 {
     use BelongsToCompany, HasFactory;
 
-    protected $fillable = ['company_id', 'title', 'duration_months'];
+    protected $fillable = ['company_id', 'title', 'enrollment_code', 'duration_months'];
 
     protected function casts(): array
     {

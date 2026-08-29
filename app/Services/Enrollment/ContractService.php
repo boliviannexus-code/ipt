@@ -23,21 +23,6 @@ class ContractService
         }
 
         $plan = Plan::withoutGlobalScope('company')->findOrFail($application->plan_id);
-        DB::table('program_contract_sequences')->insertOrIgnore([
-            'program_id' => $application->program_id,
-            'last_number' => 0,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $sequence = DB::table('program_contract_sequences')
-            ->where('program_id', $application->program_id)
-            ->lockForUpdate()
-            ->first();
-        $number = ((int) $sequence->last_number) + 1;
-        DB::table('program_contract_sequences')
-            ->where('program_id', $application->program_id)
-            ->update(['last_number' => $number, 'updated_at' => now()]);
-
         $contract = EnrollmentContract::withoutGlobalScope('company')->create([
             'company_id' => $application->company_id,
             'campus_id' => $application->campus_id,
@@ -46,7 +31,8 @@ class ContractService
             'student_id' => $application->student_id,
             'program_id' => $application->program_id,
             'plan_id' => $plan->id,
-            'contract_number' => $number,
+            // Campo legado: la matrícula es la única referencia pública.
+            'contract_number' => (int) substr($application->account_number, -5),
             'monthly_amount' => $plan->monthly_cost,
             'status' => 'pre_enrolled',
             'confirmed_at' => now(),

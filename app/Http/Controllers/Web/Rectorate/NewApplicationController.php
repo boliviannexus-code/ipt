@@ -176,7 +176,7 @@ class NewApplicationController extends Controller
 
         return response($contents, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$this->contractPdf->filename($contract->contract_number).'"',
+            'Content-Disposition' => 'inline; filename="'.$this->contractPdf->filename($contract->account_number).'"',
         ]);
     }
 

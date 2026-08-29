@@ -39,10 +39,10 @@ class AccountStatementController extends Controller
                         ->where('identity_document', 'ilike', "%{$search}%")
                         ->orWhere('account_number', 'ilike', "%{$search}%")
                         ->orWhereRaw("concat_ws(' ', first_name, paternal_surname, maternal_surname) ilike ?", ["%{$search}%"]))
-                        ->orWhereRaw('contract_number::text ilike ?', ["%{$search}%"]);
+                        ->orWhere('account_number', 'ilike', "%{$search}%");
                 });
             })
-            ->orderBy('contract_number')
+            ->orderBy('account_number')
             ->paginate(15)
             ->withQueryString();
 

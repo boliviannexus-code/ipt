@@ -7,12 +7,12 @@
     <x-ui.table-card title="Estudiantes habilitados">
         <x-slot:actions>
             <form class="d-flex gap-2" method="GET" action="{{ route('students.index') }}">
-                <input class="form-control form-control-sm" name="q" value="{{ $search }}" placeholder="Buscar nombre, CI o cuenta" aria-label="Buscar estudiantes">
+                <input class="form-control form-control-sm" name="q" value="{{ $search }}" placeholder="Buscar nombre, CI o matrícula" aria-label="Buscar estudiantes">
                 <button class="btn btn-outline-primary btn-sm" type="submit"><i class="ti ti-search"></i></button>
             </form>
         </x-slot:actions>
         <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Cuenta / Sede</th><th>Estudiante</th><th>CI</th><th>Programa</th><th>Contacto</th><th>Módulos</th><th class="text-end">Acciones</th></tr></thead>
+            <thead><tr><th>Matrícula / Sede</th><th>Estudiante</th><th>CI</th><th>Programa</th><th>Contacto</th><th>Módulos</th><th class="text-end">Acciones</th></tr></thead>
             <tbody>
             @forelse($students as $student)
                 <tr>

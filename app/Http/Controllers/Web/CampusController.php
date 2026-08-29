@@ -48,8 +48,9 @@ class CampusController extends Controller
     {
         $data = $this->validated($request, (int) $campus->company_id, $campus);
 
-        if ($data['code'] !== $campus->code && DB::table('campus_enrollment_sequences')->where('campus_id', $campus->id)->where('last_number', '>', 0)->exists()) {
-            throw ValidationException::withMessages(['code' => 'El código no puede cambiar porque la sede ya tiene números de cuenta generados.']);
+        if ($data['code'] !== $campus->code && (DB::table('campus_enrollment_sequences')->where('campus_id', $campus->id)->where('last_number', '>', 0)->exists()
+            || DB::table('program_campus_enrollment_sequences')->where('campus_id', $campus->id)->where('last_number', '>', 0)->exists())) {
+            throw ValidationException::withMessages(['code' => 'El código no puede cambiar porque la sede ya tiene matrículas generadas.']);
         }
 
         $campus->update($data);
