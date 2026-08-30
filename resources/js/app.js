@@ -1839,6 +1839,28 @@ function initAcademicModuleForms(scope = document) {
     });
 }
 
+function initAccountPaymentForms(scope = document) {
+    scope.querySelectorAll('[data-account-payment-form]').forEach((form) => {
+        if (form.dataset.accountPaymentInitialized === '1') return;
+
+        const method = form.elements.namedItem('payment_method_code');
+        const referenceField = form.querySelector('[data-payment-reference-field]');
+        const reference = form.elements.namedItem('reference');
+        if (!method || !referenceField || !reference) return;
+
+        const syncReference = () => {
+            const requiresReference = method.selectedOptions[0]?.dataset.requiresReference === '1';
+            referenceField.classList.toggle('d-none', !requiresReference);
+            reference.required = requiresReference;
+            if (!requiresReference) reference.value = '';
+        };
+
+        method.addEventListener('change', syncReference);
+        syncReference();
+        form.dataset.accountPaymentInitialized = '1';
+    });
+}
+
 function initializeUi(scope = document) {
     disableBusinessFormAutocomplete(scope);
     initTomSelects(scope);
@@ -1856,6 +1878,7 @@ function initializeUi(scope = document) {
     initProgramPlanForms(scope);
     initAcademicModuleForms(scope);
     initUserPersonnelSelect(scope);
+    initAccountPaymentForms(scope);
 }
 
 showInitialAlerts();

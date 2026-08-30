@@ -18,11 +18,11 @@ class Personnel extends Model
 
     protected $table = 'personnel';
 
-    protected $fillable = ['company_id', 'position_id', 'campus_id', 'first_name', 'paternal_surname', 'maternal_surname', 'identity_document', 'birth_date', 'phone', 'email', 'is_active'];
+    protected $fillable = ['company_id', 'position_id', 'campus_id', 'first_name', 'paternal_surname', 'maternal_surname', 'identity_document', 'birth_date', 'phone', 'email', 'is_active', 'is_sales_enabled'];
 
     protected function casts(): array
     {
-        return ['birth_date' => 'date', 'is_active' => 'boolean'];
+        return ['birth_date' => 'date', 'is_active' => 'boolean', 'is_sales_enabled' => 'boolean'];
     }
 
     protected function fullName(): Attribute

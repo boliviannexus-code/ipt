@@ -91,10 +91,8 @@
                     @if (! $activeCashRegister)
                         <div class="alert alert-warning">Debes abrir tu caja antes de registrar un pago.</div>
                         <a class="btn btn-primary w-100" href="{{ route('cash-registers.index') }}">Ir a cajas</a>
-                    @elseif ($paymentMethods->isEmpty())
-                        <div class="alert alert-warning mb-0">No hay métodos de pago activos. Sincroniza el catálogo “Tipos método pago” del SIN antes de cobrar.</div>
                     @elseif ($balance > 0)
-                        <form method="POST" action="{{ route('rectorate.contracts.payments.store', $contract) }}" data-disable-on-submit data-submitting-label="Registrando…">
+                        <form method="POST" action="{{ route('rectorate.contracts.payments.store', $contract) }}" data-account-payment-form data-disable-on-submit data-submitting-label="Registrando…">
                             @csrf
                             <div class="mb-3">
                                 <label class="form-label required" for="amount">Monto a pagar</label>
@@ -106,12 +104,17 @@
                             </div>
                             <div class="mb-4">
                                 <label class="form-label required" for="payment_method_code">Método de pago</label>
-                                <select class="form-select @error('payment_method_code') is-invalid @enderror" id="payment_method_code" name="payment_method_code" data-tom-select data-allow-empty-option="false" data-placeholder="Buscar método de pago" required>
+                                <select class="form-select @error('payment_method_code') is-invalid @enderror" id="payment_method_code" name="payment_method_code" required>
                                     @foreach($paymentMethods as $method)
-                                        <option value="{{ $method->classifier_code }}" @selected(old('payment_method_code', 1) == $method->classifier_code)>{{ $method->classifier_code }} · {{ $method->description }}</option>
+                                        <option value="{{ $method['code'] }}" data-requires-reference="{{ $method['requires_reference'] ? '1' : '0' }}" @selected((int) old('payment_method_code', 1) === $method['code'])>{{ $method['label'] }}</option>
                                     @endforeach
                                 </select>
                                 @error('payment_method_code')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
+                            <div class="mb-4 {{ in_array((int) old('payment_method_code', 1), [2, 3], true) ? '' : 'd-none' }}" data-payment-reference-field>
+                                <label class="form-label required" for="reference">Referencia</label>
+                                <input class="form-control @error('reference') is-invalid @enderror" id="reference" name="reference" value="{{ old('reference') }}" maxlength="100" autocomplete="off" placeholder="Número de operación o comprobante" @required(in_array((int) old('payment_method_code', 1), [2, 3], true))>
+                                @error('reference')<div class="invalid-feedback">{{ $message }}</div>@enderror
                             </div>
                             <button class="btn btn-success btn-lg w-100" type="submit"><i class="ti ti-check me-1" aria-hidden="true"></i><span>Registrar pago</span></button>
                         </form>
@@ -132,7 +135,7 @@
                         <td>{{ $payment->paid_at->format('d/m/Y H:i') }}</td>
                         <td><span class="fw-semibold">PAGO-{{ str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT) }}</span></td>
                         <td>#{{ $payment->cash_register_id }}</td>
-                        <td>{{ $payment->payment_method_code }} · {{ $paymentMethodLabels->get((string) $payment->payment_method_code, 'Método SIN') }}</td>
+                        <td>{{ $paymentMethodLabels->get($payment->payment_method_code, 'Método no disponible') }}@if($payment->reference)<small class="d-block text-body-secondary">Ref.: {{ $payment->reference }}</small>@endif</td>
                         <td class="text-end fw-semibold text-success">Bs {{ number_format((float) $payment->amount, 2, ',', '.') }}</td>
                     </tr>
                 @empty

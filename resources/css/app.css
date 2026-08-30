@@ -669,6 +669,29 @@ body {
     }
 }
 
+/* Acciones uniformes para los listados administrativos. */
+.table-actions-stack {
+    display: inline-flex;
+    width: 8.5rem;
+    max-width: 100%;
+    flex-direction: column;
+    gap: .25rem;
+    vertical-align: middle;
+}
+
+.table-actions-stack > form {
+    width: 100%;
+    margin: 0;
+}
+
+.table-actions-stack .btn {
+    width: 100%;
+    padding: .2rem .45rem;
+    font-size: .75rem;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
 .rectorate-wizard { max-width: 1120px; margin: 0 auto; }
 .rectorate-wizard__intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 .rectorate-wizard__intro h2 { margin: .1rem 0 0; font-size: clamp(1.3rem, 2vw, 1.7rem); letter-spacing: -.025em; }

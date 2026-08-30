@@ -34,7 +34,7 @@
                         <td>{{ $payment->paid_at->format('d/m/Y H:i') }}</td>
                         <td>PAGO-{{ str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT) }}</td>
                         <td>{{ collect([$payment->contract?->student?->first_name, $payment->contract?->student?->paternal_surname, $payment->contract?->student?->maternal_surname])->filter()->join(' ') ?: 'No disponible' }}</td>
-                        <td>{{ $payment->payment_method_code }} · {{ $paymentMethodLabels->get((string) $payment->payment_method_code, 'Método SIN') }}</td>
+                        <td>{{ $paymentMethodLabels->get($payment->payment_method_code, 'Método no disponible') }}@if($payment->reference)<small class="d-block text-body-secondary">Ref.: {{ $payment->reference }}</small>@endif</td>
                         <td>{{ $payment->receiver?->name ?? 'Usuario no disponible' }}</td>
                         <td class="text-end fw-semibold">Bs {{ money_format_decimal($payment->amount) }}</td>
                     </tr>

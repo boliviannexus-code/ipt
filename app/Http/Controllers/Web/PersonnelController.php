@@ -20,12 +20,16 @@ class PersonnelController extends Controller
         return view('personnel.index', ['personnel' => Personnel::with(['position.area', 'campus', 'user'])->latest()->paginate(15)]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
-        return view('personnel.create', [
+        $data = [
             'positions' => Position::with('area')->where('is_active', true)->orderBy('name')->get(),
             'campuses' => Campus::query()->orderBy('name')->get(),
-        ]);
+        ];
+
+        return $request->ajax()
+            ? view('personnel.partials.create-form', $data)
+            : view('personnel.create', $data);
     }
 
     public function lookup(Request $request): JsonResponse
@@ -70,36 +74,52 @@ class PersonnelController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse|RedirectResponse
     {
         $position = Position::with('area')->findOrFail($request->integer('position_id'));
         $companyId = CompanyContext::isGlobalAdmin($request->user()) ? (int) $position->company_id : (int) $request->user()->company_id;
         $data = $this->validated($request, $companyId);
-        Personnel::create([...$data, 'company_id' => $companyId, 'is_active' => (bool) ($data['is_active'] ?? false)]);
+        $personnel = Personnel::create([...$data, 'company_id' => $companyId, 'is_active' => (bool) ($data['is_active'] ?? false)]);
+
+        if ($request->ajax() || $request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => 'Personal registrado correctamente.', 'data' => ['id' => $personnel->id]]);
+        }
 
         return redirect()->route('personnel.index')->with('success', 'Personal registrado correctamente. Ahora puede asignarle un usuario.');
     }
 
-    public function show(Personnel $personnel): View
+    public function show(Request $request, Personnel $personnel): View
     {
-        return view('personnel.show', ['personnel' => $personnel->load(['company', 'position.area', 'campus', 'user.roles'])]);
+        $data = ['personnel' => $personnel->load(['company', 'position.area', 'campus', 'user.roles'])];
+
+        return $request->ajax()
+            ? view('personnel.partials.show', $data)
+            : view('personnel.show', $data);
     }
 
-    public function edit(Personnel $personnel): View
+    public function edit(Request $request, Personnel $personnel): View
     {
-        return view('personnel.edit', [
+        $data = [
             'personnel' => $personnel,
             'positions' => Position::with('area')->where('company_id', $personnel->company_id)->orderBy('name')->get(),
             'campuses' => Campus::query()->forCompany((int) $personnel->company_id)->orderBy('name')->get(),
-        ]);
+        ];
+
+        return $request->ajax()
+            ? view('personnel.partials.edit-form', $data)
+            : view('personnel.edit', $data);
     }
 
-    public function update(Request $request, Personnel $personnel): RedirectResponse
+    public function update(Request $request, Personnel $personnel): JsonResponse|RedirectResponse
     {
         $data = $this->validated($request, (int) $personnel->company_id, $personnel);
         $personnel->update([...$data, 'is_active' => (bool) ($data['is_active'] ?? false)]);
         if ($personnel->user) {
             $personnel->user->update(['name' => $personnel->full_name, 'email' => $personnel->email ?? $personnel->user->email]);
+        }
+
+        if ($request->ajax() || $request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => 'Personal actualizado correctamente.', 'data' => ['id' => $personnel->id]]);
         }
 
         return redirect()->route('personnel.index')->with('success', 'Personal actualizado correctamente.');
@@ -113,6 +133,25 @@ class PersonnelController extends Controller
         $personnel->delete();
 
         return redirect()->route('personnel.index')->with('success', 'Personal eliminado correctamente.');
+    }
+
+    public function toggleSalesEnabled(Request $request, Personnel $personnel): JsonResponse|RedirectResponse
+    {
+        $personnel->update(['is_sales_enabled' => ! $personnel->is_sales_enabled]);
+
+        $message = $personnel->is_sales_enabled
+            ? "{$personnel->full_name} fue habilitado para ventas."
+            : "{$personnel->full_name} fue deshabilitado para ventas.";
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => ['id' => $personnel->id, 'is_sales_enabled' => $personnel->is_sales_enabled],
+            ]);
+        }
+
+        return redirect()->route('personnel.index')->with('success', $message);
     }
 
     private function validated(Request $request, int $companyId, ?Personnel $personnel = null): array

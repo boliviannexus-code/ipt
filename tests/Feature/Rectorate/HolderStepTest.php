@@ -99,7 +99,7 @@ class HolderStepTest extends TestCase
             'name' => 'Redes sociales',
         ]);
         $area = Area::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Marketing', 'is_active' => true]);
-        $position = Position::withoutGlobalScope('company')->create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Ejecutivo de Ventas', 'is_active' => true]);
+        $position = Position::withoutGlobalScope('company')->create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Asesor comercial', 'is_sales_executive' => true, 'is_active' => true]);
         $executive = Personnel::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
             'position_id' => $position->id,
@@ -108,6 +108,7 @@ class HolderStepTest extends TestCase
             'identity_document' => '7788991',
             'email' => 'maria@example.com',
             'phone' => '70000001',
+            'is_sales_enabled' => true,
             'is_active' => true,
         ]);
 
@@ -248,6 +249,37 @@ class HolderStepTest extends TestCase
             ->assertStatus(409);
         $this->assertNotSoftDeleted('rectorate_applications', ['id' => $application->id]);
         $this->assertDatabaseHas('students', ['id' => $student->id, 'deleted_at' => null]);
+    }
+
+    public function test_billing_document_types_are_fixed_and_do_not_require_the_siat_catalog(): void
+    {
+        [, $user] = $this->context();
+        SinCatalogItem::withoutGlobalScope('company')->delete();
+
+        $this->actingAs($user)
+            ->get(route('rectorate.new'))
+            ->assertOk()
+            ->assertSee('<option value="1"', false)
+            ->assertSee('>CI</option>', false)
+            ->assertSee('<option value="5"', false)
+            ->assertSee('>NIT</option>', false)
+            ->assertDontSee('Primero sincroniza los tipos de documento');
+
+        $this->actingAs($user)
+            ->post(route('rectorate.new.store'), $this->validData())
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_holder_step_rejects_billing_document_types_other_than_ci_and_nit(): void
+    {
+        [, $user] = $this->context();
+
+        $this->actingAs($user)
+            ->post(route('rectorate.new.store'), [
+                ...$this->validData(),
+                'identity_document_type_code' => '2',
+            ])
+            ->assertSessionHasErrors('identity_document_type_code');
     }
 
     public function test_existing_billing_customer_is_reused_inside_the_company(): void

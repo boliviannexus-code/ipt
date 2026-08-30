@@ -83,10 +83,6 @@
                     <div><h3>Datos para facturación</h3></div>
                 </div>
 
-                @if ($identityDocumentTypes->isEmpty())
-                    <div class="alert alert-warning"><i class="ti ti-alert-triangle me-2"></i>Primero sincroniza los tipos de documento del catálogo SIAT.</div>
-                @endif
-
                 <div class="row g-2">
                     <div class="col-md-6 col-lg-3">
                         <label class="form-label required" for="identity_document_type_code">Tipo de documento</label>

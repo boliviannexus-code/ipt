@@ -11,8 +11,8 @@ use App\Models\EnrollmentContract;
 use App\Models\Personnel;
 use App\Models\Program;
 use App\Models\RectorateApplication;
-use App\Services\Rectorate\EnrollmentStepService;
 use App\Services\Rectorate\EnrollmentContractPdfService;
+use App\Services\Rectorate\EnrollmentStepService;
 use App\Services\Rectorate\HolderStepService;
 use App\Support\SiatIdentityDocumentTypes;
 use Illuminate\Http\JsonResponse;
@@ -31,7 +31,7 @@ class NewApplicationController extends Controller
 
     public function create(): View
     {
-        return view('rectorate.new', ['identityDocumentTypes' => SiatIdentityDocumentTypes::options()]);
+        return view('rectorate.new', ['identityDocumentTypes' => SiatIdentityDocumentTypes::enrollmentOptions()]);
     }
 
     public function index(): View
@@ -58,7 +58,7 @@ class NewApplicationController extends Controller
 
         return view('rectorate.new', [
             'application' => $application,
-            'identityDocumentTypes' => SiatIdentityDocumentTypes::options($application->customer),
+            'identityDocumentTypes' => SiatIdentityDocumentTypes::enrollmentOptions(),
         ]);
     }
 
@@ -113,7 +113,7 @@ class NewApplicationController extends Controller
             'commercialOrigins' => CommercialOrigin::query()->orderBy('name')->get(),
             'salesExecutives' => Personnel::query()
                 ->where('is_active', true)
-                ->whereHas('position', fn ($query) => $query->whereRaw('LOWER(name) = ?', ['ejecutivo de ventas'])->where('is_active', true))
+                ->where('is_sales_enabled', true)
                 ->orderBy('first_name')
                 ->orderBy('paternal_surname')
                 ->get(),

@@ -85,6 +85,7 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
     Route::prefix('reports')->name('reports.')->middleware(['company_user', 'permission:enrollment-reports.view'])->group(function (): void {
         Route::get('enrollments', [EnrollmentReportController::class, 'index'])->name('enrollments.index');
         Route::get('enrollments/pdf', [EnrollmentReportController::class, 'print'])->name('enrollments.pdf');
+        Route::get('enrollments/excel', [EnrollmentReportController::class, 'export'])->name('enrollments.excel');
     });
     Route::prefix('teacher')->name('teacher.')->middleware('company_user')->group(function (): void {
         Route::get('modules', [TeacherModuleController::class, 'index'])->middleware('permission:teaching.view')->name('modules.index');
@@ -580,6 +581,8 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
     ]);
     Route::get('personnel/lookup/identity-document', [PersonnelController::class, 'lookup'])
         ->middleware('permission:personnel.view|personnel.manage')->name('personnel.lookup');
+    Route::patch('personnel/{personnel}/sales-enabled', [PersonnelController::class, 'toggleSalesEnabled'])
+        ->whereNumber('personnel')->middleware('permission:personnel.manage')->name('personnel.sales-enabled');
     Route::resource('personnel', PersonnelController::class)->middleware([
         'index' => 'permission:personnel.view', 'show' => 'permission:personnel.view',
         'create' => 'permission:personnel.manage', 'store' => 'permission:personnel.manage', 'edit' => 'permission:personnel.manage',

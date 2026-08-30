@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Web\Rectorate;
 
+use App\Enums\AccountPaymentMethod;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rectorate\StoreAccountPaymentRequest;
 use App\Models\EnrollmentContract;
-use App\Models\SinCatalogItem;
 use App\Services\CashRegisterService;
 use App\Services\Enrollment\AccountPaymentService;
 use Illuminate\Http\RedirectResponse;
@@ -57,20 +57,11 @@ class AccountStatementController extends Controller
             'payments' => fn ($query) => $query->with('cashRegister')->latest('paid_at'),
         ]);
 
-        $paymentMethods = SinCatalogItem::query()
-            ->where('catalog_key', 'tipos_metodo_pago')
-            ->active()
-            ->orderByRaw("nullif(classifier_code, '')::integer nulls last")
-            ->get(['classifier_code', 'description']);
-        $paymentMethodLabels = SinCatalogItem::query()
-            ->where('catalog_key', 'tipos_metodo_pago')
-            ->pluck('description', 'classifier_code');
-
         return view('rectorate.account-statement', [
             'contract' => $contract,
             'activeCashRegister' => $this->cashRegisters->activeFor($request->user()),
-            'paymentMethods' => $paymentMethods,
-            'paymentMethodLabels' => $paymentMethodLabels,
+            'paymentMethods' => AccountPaymentMethod::options(),
+            'paymentMethodLabels' => AccountPaymentMethod::labels(),
         ]);
     }
 

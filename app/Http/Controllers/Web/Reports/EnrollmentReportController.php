@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Web\Reports;
 
+use App\Enums\AccountPaymentMethod;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reports\EnrollmentReportRequest;
 use App\Models\Campus;
@@ -9,17 +10,20 @@ use App\Models\CommercialOrigin;
 use App\Models\Personnel;
 use App\Models\Plan;
 use App\Models\Program;
+use App\Services\Reports\EnrollmentReportCsvService;
 use App\Services\Reports\EnrollmentReportPdfService;
 use App\Services\Reports\EnrollmentReportService;
 use App\Support\CompanyContext;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EnrollmentReportController extends Controller
 {
     public function __construct(
         private readonly EnrollmentReportService $report,
         private readonly EnrollmentReportPdfService $pdf,
+        private readonly EnrollmentReportCsvService $csv,
     ) {}
 
     public function index(EnrollmentReportRequest $request): View
@@ -44,6 +48,18 @@ class EnrollmentReportController extends Controller
         ]);
     }
 
+    public function export(EnrollmentReportRequest $request): StreamedResponse
+    {
+        $filters = $request->validated();
+        $contents = $this->csv->render($this->report->query($filters)->get());
+
+        return response()->streamDownload(
+            static fn () => print $contents,
+            'reporte-matriculas-'.now()->format('Ymd-His').'.csv',
+            ['Content-Type' => 'text/csv; charset=UTF-8']
+        );
+    }
+
     private function data(array $filters): array
     {
         return [
@@ -54,9 +70,10 @@ class EnrollmentReportController extends Controller
             'programs' => Program::query()->orderBy('title')->get(),
             'plans' => Plan::query()->orderBy('name')->get(),
             'salesExecutives' => Personnel::query()->where('is_active', true)
-                ->whereHas('position', fn ($query) => $query->whereRaw('LOWER(name) = ?', ['ejecutivo de ventas']))
+                ->where('is_sales_enabled', true)
                 ->orderBy('first_name')->orderBy('paternal_surname')->get(),
             'commercialOrigins' => CommercialOrigin::query()->orderBy('name')->get(),
+            'paymentMethods' => AccountPaymentMethod::options(),
         ];
     }
 }

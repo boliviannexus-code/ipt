@@ -12,11 +12,11 @@ class Position extends Model
 {
     use BelongsToCompany, HasFactory;
 
-    protected $fillable = ['company_id', 'area_id', 'name', 'is_academic', 'is_active'];
+    protected $fillable = ['company_id', 'area_id', 'name', 'is_academic', 'is_sales_executive', 'is_active'];
 
     protected function casts(): array
     {
-        return ['is_academic' => 'boolean', 'is_active' => 'boolean'];
+        return ['is_academic' => 'boolean', 'is_sales_executive' => 'boolean', 'is_active' => 'boolean'];
     }
 
     public function company(): BelongsTo
