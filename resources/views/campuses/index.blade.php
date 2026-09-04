@@ -14,31 +14,9 @@
             @endcan
         </x-slot:actions>
 
-        <table class="table table-hover align-middle">
+        <table class="table table-hover align-middle" data-datatable data-url="{{ route('datatables.campuses') }}" data-columns-id="campuses-columns" data-order='[[0,"asc"]]'>
             <thead><tr><th>Nombre</th><th>Código</th><th>Dirección</th><th class="text-end">Acciones</th></tr></thead>
-            <tbody>
-                @forelse ($campuses as $campus)
-                    <tr>
-                        <td class="fw-semibold">{{ $campus->name }}</td>
-                        <td><span class="badge text-bg-secondary">{{ $campus->code }}</span></td>
-                        <td>{{ $campus->address }}</td>
-                        <td class="text-end">
-                            @can('campuses.manage')
-                                <div class="d-inline-flex gap-1">
-                                    <a class="btn btn-outline-primary btn-sm" href="{{ route('campuses.edit', $campus) }}" data-modal-url="{{ route('campuses.edit', $campus) }}" data-modal-title="Editar sede">Editar</a>
-                                    <form method="POST" action="{{ route('campuses.destroy', $campus) }}" data-ajax-form data-refresh-url="{{ route('campuses.index') }}" data-confirm-delete="¿Eliminar la sede {{ $campus->name }}?">
-                                        @csrf @method('DELETE')
-                                        <button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Eliminar {{ $campus->name }}"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                                    </form>
-                                </div>
-                            @endcan
-                        </td>
-                    </tr>
-                @empty
-                    <x-ui.empty-row colspan="4" message="No hay sedes registradas." />
-                @endforelse
-            </tbody>
         </table>
-        <x-slot:footer>{{ $campuses->links() }}</x-slot:footer>
+        <script type="application/json" id="campuses-columns">[{"data":"name","name":"name"},{"data":"code","name":"code"},{"data":"address","name":"address"},{"data":"actions","orderable":false,"searchable":false}]</script>
     </x-ui.table-card>
 @endsection

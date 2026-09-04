@@ -30,6 +30,8 @@ class ModuleCompletionTest extends TestCase
     {
         [$user, $module, $student, $contract] = $this->context();
 
+        $this->actingAs($user)->get(route('teacher.modules.index'))
+            ->assertOk()->assertSee('Finalizar curso');
         $this->actingAs($user)->get(route('teacher.modules.results.edit', $module))
             ->assertOk()->assertSee($student->first_name)->assertSee('Aprobado')->assertSee('Reprobado');
         $this->actingAs($user)->put(route('teacher.modules.results.update', $module), [
@@ -38,8 +40,17 @@ class ModuleCompletionTest extends TestCase
         ])->assertRedirect(route('teacher.modules.index'));
 
         $this->assertDatabaseHas('academic_module_student_results', ['academic_module_id' => $module->id, 'student_id' => $student->id, 'status' => 'approved']);
+        $this->assertNotNull($module->refresh()->closed_at);
+        $this->assertSame($user->id, $module->closed_by);
         $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'concept' => 'Mensualidad', 'amount' => '320.00', 'status' => 'pending']);
         $this->assertSame(2, $contract->charges()->count());
+
+        $this->actingAs($user)->get(route('academic.promotions.index'))
+            ->assertOk()
+            ->assertSee('Promover módulo')
+            ->assertSee($module->name)
+            ->assertSee('Promover')
+            ->assertSee('disabled', false);
 
         $this->actingAs($user)->put(route('teacher.modules.results.update', $module), [
             'results' => [$student->id => 'failed'],
@@ -50,16 +61,31 @@ class ModuleCompletionTest extends TestCase
         $this->assertSame(2, $contract->charges()->count());
     }
 
+    public function test_finish_course_button_is_disabled_until_the_module_end_date(): void
+    {
+        [$user, $module] = $this->context();
+        $module->update(['end_date' => today()->addDay()]);
+
+        $this->actingAs($user)->get(route('teacher.modules.index'))
+            ->assertOk()
+            ->assertSee('Finalizar curso')
+            ->assertSee('Disponible desde el '.$module->end_date->format('d/m/Y'))
+            ->assertSee('disabled', false);
+
+        $this->actingAs($user)->get(route('teacher.modules.results.edit', $module))->assertStatus(409);
+    }
+
     private function context(): array
     {
         $company = Company::factory()->create();
         Permission::findOrCreate('teaching.view');
         Permission::findOrCreate('teaching.manage');
+        Permission::findOrCreate('academic-modules.view');
         $area = Area::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Académico', 'is_active' => true]);
         $position = Position::withoutGlobalScope('company')->create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Docente', 'is_academic' => true, 'is_active' => true]);
         $personnel = Personnel::withoutGlobalScope('company')->create(['company_id' => $company->id, 'position_id' => $position->id, 'first_name' => 'Ana', 'paternal_surname' => 'Flores', 'identity_document' => '9101', 'phone' => '70000001', 'email' => 'ana@example.com', 'is_active' => true]);
         $user = User::factory()->create(['company_id' => $company->id, 'personnel_id' => $personnel->id]);
-        $user->givePermissionTo(['teaching.view', 'teaching.manage']);
+        $user->givePermissionTo(['teaching.view', 'teaching.manage', 'academic-modules.view']);
         $program = Program::withoutGlobalScope('company')->create(['company_id' => $company->id, 'title' => 'Inglés', 'duration_months' => 12]);
         $level = ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'name' => 'Básico 1', 'position' => 1]);
         $module = AcademicModule::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'program_level_id' => $level->id, 'name' => 'Módulo Básico 1', 'modality' => 'virtual', 'starts_at' => '18:00', 'ends_at' => '20:00', 'start_date' => today()->subMonth(), 'end_date' => today()->subDay()]);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
+use App\Models\AcademicModule;
 use App\Models\Student;
 use App\Services\Academic\StudentKardexPdfService;
 use App\Services\Academic\StudentKardexService;
@@ -19,6 +20,11 @@ class StudentKardexController extends Controller
     public function show(Student $student): View
     {
         return view('students.kardex', $this->kardex->build($student));
+    }
+
+    public function details(Student $student, AcademicModule $module): View
+    {
+        return view('students.kardex-details', $this->kardex->dailyDetails($student, $module));
     }
 
     public function print(Student $student): Response

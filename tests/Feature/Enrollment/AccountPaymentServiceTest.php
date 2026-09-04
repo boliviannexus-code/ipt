@@ -13,6 +13,7 @@ use App\Models\RectorateApplication;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\Enrollment\AccountPaymentService;
+use App\Services\Rectorate\EnrollmentContractDisablingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
@@ -134,6 +135,23 @@ class AccountPaymentServiceTest extends TestCase
         }
 
         $this->assertDatabaseCount('account_payments', 0);
+    }
+
+    public function test_contract_with_a_recorded_payment_cannot_be_deleted(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        app(AccountPaymentService::class)->record($user, $contract, '25.00', ['payment_method_code' => 1]);
+
+        try {
+            app(EnrollmentContractDisablingService::class)->disable($contract);
+            $this->fail('Se esperaba una validación por cobros registrados.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('contract', $exception->errors());
+        }
+
+        $this->assertDatabaseHas('enrollment_contracts', ['id' => $contract->id]);
+        $this->assertDatabaseCount('account_payments', 1);
     }
 
     private function contract(): array

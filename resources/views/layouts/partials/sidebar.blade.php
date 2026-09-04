@@ -57,9 +57,11 @@
         && auth()->user()?->can('rectorate.create');
     $canAcademicModules = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('academic-modules.view');
+    $canAcademicControl = \App\Support\CompanyContext::id(auth()->user()) !== null
+        && auth()->user()?->can('academic-control.view');
     $canStudents = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('students.view');
-    $canAcademic = $canAcademicModules || $canStudents;
+    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents;
     $canTeacher = auth()->user()?->personnel_id !== null
         && auth()->user()?->can('teaching.view');
     $canReports = \App\Support\CompanyContext::id(auth()->user()) !== null
@@ -77,6 +79,9 @@
 
 <aside class="navbar navbar-vertical navbar-expand-lg app-sidebar" id="adminSidebar" data-bs-theme="dark">
     <div class="container-fluid">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" aria-expanded="false" aria-label="Abrir menú principal">
+            <span class="navbar-toggler-icon"></span>
+        </button>
         <h1 class="navbar-brand navbar-brand-autodark justify-content-start">
             <a href="{{ route('dashboard') }}" class="d-flex align-items-center gap-2 text-decoration-none">
                 <span class="lh-sm">
@@ -132,11 +137,25 @@
                         </button>
                         <div class="collapse {{ $academicOpen ? 'show' : '' }}" id="menu-academic">
                             <ul class="nav app-submenu">
+                                @if ($canAcademicControl)
+                                    <li class="nav-item {{ request()->routeIs('academic.control.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('academic.control.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-chart-bar"></i></span>
+                                            <span class="nav-link-title">Control académico</span>
+                                        </a>
+                                    </li>
+                                @endif
                                 @if ($canAcademicModules)
                                     <li class="nav-item {{ request()->routeIs('academic.modules.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('academic.modules.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-layout-grid"></i></span>
                                             <span class="nav-link-title">Módulos</span>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item {{ request()->routeIs('academic.promotions.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('academic.promotions.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-arrow-big-up-lines"></i></span>
+                                            <span class="nav-link-title">Promover módulo</span>
                                         </a>
                                     </li>
                                 @endif
@@ -183,6 +202,12 @@
                                     <a class="nav-link" href="{{ route('teacher.modules.index') }}">
                                         <span class="nav-link-icon"><i class="ti ti-books"></i></span>
                                         <span class="nav-link-title">Mis módulos</span>
+                                    </a>
+                                </li>
+                                <li class="nav-item {{ request()->routeIs('teacher.tracking.*') ? 'active' : '' }}">
+                                    <a class="nav-link" href="{{ route('teacher.tracking.index') }}">
+                                        <span class="nav-link-icon"><i class="ti ti-chart-dots-3"></i></span>
+                                        <span class="nav-link-title">Seguimiento</span>
                                     </a>
                                 </li>
                             </ul>

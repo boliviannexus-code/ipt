@@ -43,8 +43,13 @@ class CommercialOriginTest extends TestCase
 
         $this->actingAs($user)->get(route('parameters.commercial-origins.index'))
             ->assertOk()
-            ->assertSee('Redes sociales')
+            ->assertSee('data-datatable', false)
+            ->assertSee(route('datatables.commercial-origins'), false)
             ->assertSee('Origen comercial');
+
+        $this->actingAs($user)->getJson(route('datatables.commercial-origins', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertJsonFragment(['name' => 'Redes sociales']);
 
         $this->actingAs($user)
             ->deleteJson(route('parameters.commercial-origins.destroy', $origin))
@@ -66,6 +71,8 @@ class CommercialOriginTest extends TestCase
         CommercialOrigin::withoutGlobalScope('company')->create(['company_id' => $otherCompany->id, 'name' => 'Sitio ajeno']);
 
         $this->actingAs($user)->post(route('parameters.commercial-origins.store'), ['name' => 'Referido'])->assertSessionHasErrors('name');
-        $this->actingAs($user)->get(route('parameters.commercial-origins.index'))->assertOk()->assertDontSee('Sitio ajeno');
+        $this->actingAs($user)->getJson(route('datatables.commercial-origins', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertDontSee('Sitio ajeno', false);
     }
 }

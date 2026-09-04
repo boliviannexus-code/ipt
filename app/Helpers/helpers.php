@@ -42,6 +42,7 @@ if (! function_exists('permission_module_label')) {
             'personnel' => 'Personal',
             'rectorate' => 'Inscripciones',
             'accounts' => 'Cobros',
+            'academic-control' => 'Control académico',
             'academic-modules' => 'Módulos académicos',
             'students' => 'Estudiantes',
             'enrollment-reports' => 'Matrículas',

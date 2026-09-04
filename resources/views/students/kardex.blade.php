@@ -25,9 +25,26 @@
         </div>
     </div>
 
+    <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title"><i class="ti ti-user-shield me-2 text-primary" aria-hidden="true"></i>Datos del titular</h3></div>
+        <div class="card-body">
+            @if($holder)
+                @php($holderName = collect([$holder->first_name, $holder->paternal_surname, $holder->maternal_surname])->filter()->join(' '))
+                <div class="row g-3">
+                    <div class="col-md-6 col-xl-3"><div class="text-secondary small">Nombre completo</div><div class="fw-semibold">{{ $holderName }}</div></div>
+                    <div class="col-md-6 col-xl-3"><div class="text-secondary small">CI / Parentesco</div><div class="fw-semibold">{{ $holder->identity_document ?: 'No registrado' }}</div><div class="text-secondary">{{ $holder->student_relationship ?: 'No registrado' }}</div></div>
+                    <div class="col-md-6 col-xl-3"><div class="text-secondary small">Teléfono</div><div class="fw-semibold">{{ $holder->phone ?: 'No registrado' }}</div></div>
+                    <div class="col-md-6 col-xl-3"><div class="text-secondary small">Correo electrónico</div><div class="fw-semibold text-break">{{ $holder->email ?: 'No registrado' }}</div></div>
+                </div>
+            @else
+                <div class="text-secondary"><i class="ti ti-info-circle me-1" aria-hidden="true"></i>No existen datos de titular vinculados a este estudiante.</div>
+            @endif
+        </div>
+    </div>
+
     <x-ui.table-card title="Trayectoria académica">
-        <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Programa / Nivel</th><th>Módulo</th><th>Modalidad y periodo</th><th>Docente</th><th>Asistencia</th><th>Resultado</th></tr></thead>
+        <table class="table table-hover align-middle mb-0 kardex-table">
+            <thead><tr><th>Programa / Nivel</th><th>Módulo</th><th>Modalidad y periodo</th><th>Docente</th><th class="text-center">Nota final</th><th>Resultado</th><th class="text-end">Acciones</th></tr></thead>
             <tbody>
                 @forelse($academicRows as $row)
                     @php($module = $row['module'])
@@ -36,11 +53,12 @@
                         <td>{{ $module->name }}</td>
                         <td><span class="d-block">{{ $module->modality === 'virtual' ? 'Virtual' : 'Presencial' }}</span><small class="text-secondary">{{ $module->start_date->format('d/m/Y') }} – {{ $module->end_date->format('d/m/Y') }}</small></td>
                         <td>{{ $module->currentTeacherAssignment?->personnel?->full_name ?? 'Sin docente' }}</td>
-                        <td><span class="d-block">{{ $row['attendance']['present'] }} presentes · {{ $row['attendance']['late'] }} tardanzas</span><small class="text-secondary">{{ $row['attendance']['absent'] }} ausencias · {{ $row['attendance']['excused'] }} justificadas · {{ $row['attendance']['total'] }} clases</small></td>
+                        <td class="text-center">@if($row['grading']['overall_score'] !== null)@php($isPassing = $row['grading']['overall_score'] >= $row['grading']['passing_score'])<span class="badge fs-5 {{ $isPassing ? 'text-bg-success' : 'text-bg-danger' }}">{{ number_format($row['grading']['overall_score'], 2, ',', '.') }}</span><small class="d-block text-secondary mt-1">Mín. {{ number_format($row['grading']['passing_score'], 2, ',', '.') }}</small>@else<span class="text-secondary">—</span>@endif</td>
                         <td>@if($row['result'])<span class="badge {{ $row['result']->status === 'approved' ? 'text-bg-success' : 'text-bg-danger' }}">{{ $resultLabels[$row['result']->status] ?? $row['result']->status }}</span>@else<span class="badge text-bg-secondary">En curso</span>@endif</td>
+                        <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{{ route('students.kardex.details', [$student, $module]) }}"><i class="ti ti-calendar-stats me-1" aria-hidden="true"></i>Ver detalles</a></td>
                     </tr>
                 @empty
-                    <x-ui.empty-row colspan="6" message="El estudiante aún no tiene módulos asignados." />
+                    <x-ui.empty-row colspan="7" message="El estudiante aún no tiene módulos asignados." />
                 @endforelse
             </tbody>
         </table>

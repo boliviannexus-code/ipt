@@ -11,6 +11,7 @@ use App\Models\EnrollmentContract;
 use App\Models\Personnel;
 use App\Models\Program;
 use App\Models\RectorateApplication;
+use App\Services\Rectorate\EnrollmentContractDisablingService;
 use App\Services\Rectorate\EnrollmentContractPdfService;
 use App\Services\Rectorate\EnrollmentStepService;
 use App\Services\Rectorate\HolderStepService;
@@ -27,6 +28,7 @@ class NewApplicationController extends Controller
         private readonly HolderStepService $holders,
         private readonly EnrollmentStepService $steps,
         private readonly EnrollmentContractPdfService $contractPdf,
+        private readonly EnrollmentContractDisablingService $contractDisabling,
     ) {}
 
     public function create(): View
@@ -36,12 +38,7 @@ class NewApplicationController extends Controller
 
     public function index(): View
     {
-        return view('rectorate.index', [
-            'applications' => RectorateApplication::query()
-                ->with(['customer', 'campus', 'program', 'plan', 'contract'])
-                ->latest('id')
-                ->paginate(15),
-        ]);
+        return view('rectorate.index');
     }
 
     public function store(StoreHolderStepRequest $request): RedirectResponse
@@ -178,6 +175,13 @@ class NewApplicationController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$this->contractPdf->filename($contract->account_number).'"',
         ]);
+    }
+
+    public function disableContract(EnrollmentContract $contract): RedirectResponse
+    {
+        $this->contractDisabling->disable($contract);
+
+        return redirect()->route('rectorate.index')->with('success', 'Contrato inhabilitado correctamente y retirado de los reportes económicos.');
     }
 
     public function destroy(RectorateApplication $application): RedirectResponse

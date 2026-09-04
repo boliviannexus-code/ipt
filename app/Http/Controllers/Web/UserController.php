@@ -29,9 +29,7 @@ class UserController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        return view('users.index', [
-            'users' => $this->users->paginate(withTrashed: true),
-        ]);
+        return view('users.index');
     }
 
     public function create(Request $request): View

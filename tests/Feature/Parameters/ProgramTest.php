@@ -31,6 +31,9 @@ class ProgramTest extends TestCase
         $program = Program::withoutGlobalScope('company')->sole();
         $this->assertSame('CAP', $program->enrollment_code);
         $this->assertCount(0, $program->plans);
+        $this->actingAs($user)->getJson(route('datatables.programs', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertJsonFragment(['plans_count' => 0, 'levels_count' => 0]);
 
         $this->actingAs($user)->put(route('parameters.programs.update', $program), [
             'title' => 'Programa actualizado',

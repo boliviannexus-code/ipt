@@ -16,9 +16,7 @@ class ProgramController extends Controller
 {
     public function index(): View
     {
-        return view('parameters.programs.index', [
-            'programs' => Program::query()->withCount(['plans', 'levels'])->orderBy('title')->paginate(15),
-        ]);
+        return view('parameters.programs.index');
     }
 
     public function create(): View

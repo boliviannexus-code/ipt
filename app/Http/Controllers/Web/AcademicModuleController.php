@@ -19,9 +19,7 @@ class AcademicModuleController extends Controller
 {
     public function index(): View
     {
-        return view('academic-modules.index', [
-            'modules' => AcademicModule::query()->with(['program', 'level', 'currentTeacherAssignment.personnel'])->orderBy('name')->paginate(15),
-        ]);
+        return view('academic-modules.index');
     }
 
     public function create(Request $request): View

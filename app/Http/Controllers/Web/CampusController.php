@@ -17,9 +17,7 @@ class CampusController extends Controller
 {
     public function index(): View
     {
-        return view('campuses.index', [
-            'campuses' => Campus::query()->orderBy('name')->paginate(15),
-        ]);
+        return view('campuses.index');
     }
 
     public function create(Request $request): View

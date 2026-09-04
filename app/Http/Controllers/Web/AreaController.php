@@ -15,7 +15,7 @@ class AreaController extends Controller
 {
     public function index(): View
     {
-        return view('areas.index', ['areas' => Area::query()->withCount('positions')->orderBy('name')->paginate(15)]);
+        return view('areas.index');
     }
 
     public function create(Request $request): View

@@ -57,4 +57,9 @@ class Student extends Model
     {
         return $this->hasMany(AcademicModuleStudentResult::class);
     }
+
+    public function singleGrades(): HasMany
+    {
+        return $this->hasMany(StudentSingleGrade::class);
+    }
 }

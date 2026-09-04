@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Program extends Model
 {
@@ -48,5 +49,28 @@ class Program extends Model
     public function academicModules(): HasMany
     {
         return $this->hasMany(AcademicModule::class);
+    }
+
+    public function gradingScheme(): HasOne
+    {
+        return $this->hasOne(ProgramGradingScheme::class)->latestOfMany('version');
+    }
+
+    public function gradingSchemes(): HasMany
+    {
+        return $this->hasMany(ProgramGradingScheme::class)->orderByDesc('version');
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (Program $program): void {
+            $program->gradingSchemes()->create([
+                'company_id' => $program->company_id,
+                'version' => 1,
+                'passing_score' => 51,
+                'status' => 'draft',
+                'is_active' => false,
+            ]);
+        });
     }
 }

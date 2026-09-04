@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Web\AcademicControlController;
 use App\Http\Controllers\Web\AcademicModuleController;
 use App\Http\Controllers\Web\AcademicModuleTeacherController;
 use App\Http\Controllers\Web\ActiveCompanyController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\Web\CashRegisterController;
 use App\Http\Controllers\Web\CompanyController;
 use App\Http\Controllers\Web\DashboardController;
 use App\Http\Controllers\Web\DatabaseBackupController;
+use App\Http\Controllers\Web\ModulePromotionController;
 use App\Http\Controllers\Web\MyAccountController;
 use App\Http\Controllers\Web\NotificationController;
 use App\Http\Controllers\Web\Parameters\CommercialOriginController;
@@ -50,6 +52,8 @@ use App\Http\Controllers\Web\StudentKardexController;
 use App\Http\Controllers\Web\StudentModuleAssignmentController;
 use App\Http\Controllers\Web\TeacherModuleController;
 use App\Http\Controllers\Web\TeacherModuleResultController;
+use App\Http\Controllers\Web\TeacherSingleGradeController;
+use App\Http\Controllers\Web\TeacherTrackingController;
 use App\Http\Controllers\Web\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -66,6 +70,12 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
 
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::prefix('academic')->name('academic.')->middleware('company_user')->group(function (): void {
+        Route::get('control', [AcademicControlController::class, 'index'])->middleware('permission:academic-control.view')->name('control.index');
+        Route::get('control/programs/{program}', [AcademicControlController::class, 'show'])->whereNumber('program')->middleware('permission:academic-control.view')->name('control.show');
+        Route::put('control/programs/{program}/versions/{scheme}', [AcademicControlController::class, 'update'])->whereNumber(['program', 'scheme'])->middleware('permission:academic-control.manage')->name('control.update');
+        Route::post('control/programs/{program}/versions/{scheme}/finalize', [AcademicControlController::class, 'finalize'])->whereNumber(['program', 'scheme'])->middleware('permission:academic-control.manage')->name('control.finalize');
+        Route::delete('control/programs/{program}/versions/{scheme}', [AcademicControlController::class, 'destroyVersion'])->whereNumber(['program', 'scheme'])->middleware('permission:academic-control.manage')->name('control.versions.destroy');
+        Route::post('control/programs/{program}/versions', [AcademicControlController::class, 'createVersion'])->whereNumber('program')->middleware('permission:academic-control.manage')->name('control.versions.store');
         Route::get('modules', [AcademicModuleController::class, 'index'])->middleware('permission:academic-modules.view')->name('modules.index');
         Route::get('modules/create', [AcademicModuleController::class, 'create'])->middleware('permission:academic-modules.manage')->name('modules.create');
         Route::post('modules', [AcademicModuleController::class, 'store'])->middleware('permission:academic-modules.manage')->name('modules.store');
@@ -74,16 +84,19 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::delete('modules/{module}', [AcademicModuleController::class, 'destroy'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('modules.destroy');
         Route::get('modules/{module}/teacher', [AcademicModuleTeacherController::class, 'edit'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('modules.teacher.edit');
         Route::put('modules/{module}/teacher', [AcademicModuleTeacherController::class, 'update'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('modules.teacher.update');
+        Route::get('promotions', [ModulePromotionController::class, 'index'])->middleware('permission:academic-modules.view')->name('promotions.index');
     });
     Route::prefix('students')->name('students.')->middleware('company_user')->group(function (): void {
         Route::get('/', [StudentController::class, 'index'])->middleware('permission:students.view')->name('index');
         Route::get('{student}/kardex', [StudentKardexController::class, 'show'])->whereNumber('student')->middleware('permission:students.view')->name('kardex.show');
+        Route::get('{student}/kardex/modules/{module}', [StudentKardexController::class, 'details'])->whereNumber(['student', 'module'])->middleware('permission:students.view')->name('kardex.details');
         Route::get('{student}/kardex/pdf', [StudentKardexController::class, 'print'])->whereNumber('student')->middleware('permission:students.view')->name('kardex.pdf');
         Route::get('{student}/modules/create', [StudentModuleAssignmentController::class, 'create'])->whereNumber('student')->middleware('permission:students.manage')->name('modules.create');
         Route::post('{student}/modules', [StudentModuleAssignmentController::class, 'store'])->whereNumber('student')->middleware('permission:students.manage')->name('modules.store');
     });
     Route::prefix('reports')->name('reports.')->middleware(['company_user', 'permission:enrollment-reports.view'])->group(function (): void {
         Route::get('enrollments', [EnrollmentReportController::class, 'index'])->name('enrollments.index');
+        Route::get('enrollments/data', [EnrollmentReportController::class, 'dataTable'])->name('enrollments.data');
         Route::get('enrollments/pdf', [EnrollmentReportController::class, 'print'])->name('enrollments.pdf');
         Route::get('enrollments/excel', [EnrollmentReportController::class, 'export'])->name('enrollments.excel');
     });
@@ -92,8 +105,13 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::post('modules/{module}/sessions', [TeacherModuleController::class, 'start'])->whereNumber('module')->middleware('permission:teaching.manage')->name('modules.sessions.start');
         Route::get('modules/{module}/sessions/{session}/attendance', [TeacherModuleController::class, 'editAttendance'])->whereNumber(['module', 'session'])->middleware('permission:teaching.manage')->name('modules.attendance.edit');
         Route::put('modules/{module}/sessions/{session}/attendance', [TeacherModuleController::class, 'updateAttendance'])->whereNumber(['module', 'session'])->middleware('permission:teaching.manage')->name('modules.attendance.update');
+        Route::patch('modules/{module}/sessions/{session}/daily-record', [TeacherModuleController::class, 'autosaveDailyRecord'])->whereNumber(['module', 'session'])->middleware('permission:teaching.manage')->name('modules.daily-record.autosave');
+        Route::get('modules/{module}/single-grades', [TeacherSingleGradeController::class, 'edit'])->whereNumber('module')->middleware('permission:teaching.manage')->name('modules.single-grades.edit');
+        Route::put('modules/{module}/single-grades', [TeacherSingleGradeController::class, 'update'])->whereNumber('module')->middleware('permission:teaching.manage')->name('modules.single-grades.update');
         Route::get('modules/{module}/results', [TeacherModuleResultController::class, 'edit'])->whereNumber('module')->middleware('permission:teaching.manage')->name('modules.results.edit');
         Route::put('modules/{module}/results', [TeacherModuleResultController::class, 'update'])->whereNumber('module')->middleware('permission:teaching.manage')->name('modules.results.update');
+        Route::get('tracking', [TeacherTrackingController::class, 'index'])->middleware('permission:teaching.view')->name('tracking.index');
+        Route::get('tracking/modules/{module}', [TeacherTrackingController::class, 'show'])->whereNumber('module')->middleware('permission:teaching.view')->name('tracking.show');
     });
     Route::post('notifications/read-all', [NotificationController::class, 'readAll'])
         ->name('notifications.read-all');
@@ -533,6 +551,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
             Route::get('contratos/{contract}/imprimir', [NewApplicationController::class, 'printContract'])
                 ->whereNumber('contract')->middleware('permission:rectorate.create')
                 ->name('contracts.print');
+            Route::patch('contratos/{contract}/inhabilitar', [NewApplicationController::class, 'disableContract'])
+                ->whereNumber('contract')->middleware('permission:rectorate.delete')
+                ->name('contracts.disable');
             Route::post('contratos/{contract}/pagos', [AccountStatementController::class, 'store'])
                 ->whereNumber('contract')->middleware('permission:accounts.collect')
                 ->name('contracts.payments.store');
@@ -541,6 +562,18 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->name('applications.destroy');
         });
     Route::prefix('datatables')->name('datatables.')->group(function (): void {
+        Route::get('areas', [AdminDataTableController::class, 'areas'])->name('areas');
+        Route::get('campuses', [AdminDataTableController::class, 'campuses'])->name('campuses');
+        Route::get('companies', [AdminDataTableController::class, 'companies'])->name('companies');
+        Route::get('commercial-origins', [AdminDataTableController::class, 'commercialOrigins'])->name('commercial-origins');
+        Route::get('programs', [AdminDataTableController::class, 'programs'])->name('programs');
+        Route::get('permissions', [AdminDataTableController::class, 'permissions'])->name('permissions');
+        Route::get('roles', [AdminDataTableController::class, 'roles'])->name('roles');
+        Route::get('users', [AdminDataTableController::class, 'users'])->name('users');
+        Route::get('academic-modules', [AdminDataTableController::class, 'academicModules'])
+            ->middleware(['company_user', 'permission:academic-modules.view'])->name('academic-modules');
+        Route::get('enrollments', [AdminDataTableController::class, 'enrollments'])
+            ->middleware(['company_user', 'permission:rectorate.create'])->name('enrollments');
         Route::get('audits', [AdminDataTableController::class, 'audits'])->name('audits');
         Route::get('invoices', [AdminDataTableController::class, 'invoices'])
             ->middleware(['company_user', 'permission:invoices.view'])

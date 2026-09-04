@@ -22,9 +22,7 @@ class CompanyController extends Controller
     {
         abort_unless(auth()->user()?->can('companies.view'), 403);
 
-        return view('companies.index', [
-            'companies' => $this->companies->paginate(),
-        ]);
+        return view('companies.index');
     }
 
     public function create(Request $request): View

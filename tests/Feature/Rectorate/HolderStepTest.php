@@ -78,9 +78,13 @@ class HolderStepTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.index'))
             ->assertOk()
-            ->assertSee('Álvaro Pacheco Rojas')
-            ->assertSee('Paso 2 de 4')
-            ->assertSee('Continuar programa');
+            ->assertSee('data-datatable', false)
+            ->assertSee(route('datatables.enrollments'), false);
+        $tableResponse = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk();
+        $this->assertStringContainsString('Álvaro Pacheco Rojas', $tableResponse->json('data.0.holder'));
+        $this->assertStringContainsString('Paso 2 de 4', $tableResponse->json('data.0.progress'));
 
         $plan = Plan::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
@@ -180,8 +184,12 @@ class HolderStepTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.index'))
             ->assertOk()
-            ->assertSee('Paso 4 de 4')
-            ->assertSee('Confirmación');
+            ->assertSee('data-datatable', false);
+        $progress = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->json('data.0.progress');
+        $this->assertStringContainsString('Paso 4 de 4', $progress);
+        $this->assertStringContainsString('Confirmación', $progress);
 
         $this->actingAs($user)
             ->get(route('rectorate.applications.confirmation.show', $application))
@@ -234,9 +242,15 @@ class HolderStepTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.index'))
             ->assertOk()
-            ->assertSee('Completada')
-            ->assertSee('Ver resumen')
-            ->assertSee('Contrato');
+            ->assertSee('data-datatable', false);
+        $completedRow = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->json('data.0');
+        $this->assertStringContainsString('Completada', $completedRow['progress']);
+        $this->assertStringContainsString('Ver resumen', $completedRow['actions']);
+        $this->assertStringContainsString('Contrato', $completedRow['actions']);
+        $this->assertStringContainsString('Inhabilitar contrato', $completedRow['actions']);
+        $this->assertStringContainsString('data-confirm-title=', $completedRow['actions']);
 
         $this->actingAs($user)
             ->get(route('rectorate.contracts.print', $contract))
@@ -245,10 +259,19 @@ class HolderStepTest extends TestCase
             ->assertHeader('content-disposition', 'inline; filename="contrato-CAP10001.pdf"');
 
         $this->actingAs($user)
-            ->delete(route('rectorate.applications.destroy', $application))
-            ->assertStatus(409);
+            ->patch(route('rectorate.contracts.disable', $contract))
+            ->assertRedirect(route('rectorate.index'))
+            ->assertSessionHas('success');
+        $this->assertDatabaseHas('enrollment_contracts', ['id' => $contract->id, 'status' => 'cancelled']);
+        $this->assertDatabaseMissing('account_charges', ['enrollment_contract_id' => $contract->id]);
         $this->assertNotSoftDeleted('rectorate_applications', ['id' => $application->id]);
-        $this->assertDatabaseHas('students', ['id' => $student->id, 'deleted_at' => null]);
+        $this->assertSoftDeleted('students', ['id' => $student->id]);
+
+        $disabledRow = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->json('data.0');
+        $this->assertStringContainsString('Inhabilitada', $disabledRow['progress']);
+        $this->assertStringNotContainsString('Inhabilitar contrato', $disabledRow['actions']);
     }
 
     public function test_billing_document_types_are_fixed_and_do_not_require_the_siat_catalog(): void

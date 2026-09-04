@@ -6,17 +6,18 @@ use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class AcademicModule extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'program_id', 'program_level_id', 'name', 'modality', 'starts_at', 'ends_at', 'start_date', 'end_date'];
+    protected $fillable = ['company_id', 'program_id', 'program_level_id', 'name', 'modality', 'starts_at', 'ends_at', 'start_date', 'end_date', 'closed_at', 'closed_by'];
 
     protected function casts(): array
     {
-        return ['start_date' => 'date', 'end_date' => 'date'];
+        return ['start_date' => 'date', 'end_date' => 'date', 'closed_at' => 'immutable_datetime'];
     }
 
     public function program(): BelongsTo
@@ -52,5 +53,20 @@ class AcademicModule extends Model
     public function studentResults(): HasMany
     {
         return $this->hasMany(AcademicModuleStudentResult::class);
+    }
+
+    public function closedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function academicObservations(): HasManyThrough
+    {
+        return $this->hasManyThrough(StudentAcademicObservation::class, ClassSession::class);
+    }
+
+    public function singleGrades(): HasMany
+    {
+        return $this->hasMany(StudentSingleGrade::class);
     }
 }

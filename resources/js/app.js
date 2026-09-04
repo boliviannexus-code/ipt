@@ -9,6 +9,7 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 import 'tom-select/dist/css/tom-select.bootstrap5.min.css';
 
 window.Swal = Swal;
+window.bootstrap = bootstrap;
 
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 const ajaxModalElement = document.getElementById('ajaxModal');
@@ -1714,6 +1715,7 @@ function initUserDropdowns(scope = document) {
 function initSidebarToggle() {
     const toggle = document.querySelector('[data-sidebar-toggle]');
     const sidebar = document.querySelector('.app-sidebar');
+    const mobileMenu = document.getElementById('sidebar-menu');
 
     if (!toggle || toggle.dataset.sidebarToggleInitialized === '1') {
         return;
@@ -1756,16 +1758,21 @@ function initSidebarToggle() {
     };
 
     sidebar?.addEventListener('click', (event) => {
+        const mobileLink = event.target.closest('a.nav-link');
+
+        if (mobileLink && window.matchMedia('(max-width: 991.98px)').matches && mobileMenu) {
+            bootstrap.Collapse.getOrCreateInstance(mobileMenu, { toggle: false }).hide();
+        }
+
         if (!document.body.classList.contains('app-sidebar-collapsed')) {
             return;
         }
 
         openPeek();
 
-        const link = event.target.closest('a.nav-link');
         const toggleButton = event.target.closest('.app-menu-toggle');
 
-        if (link && !toggleButton) {
+        if (mobileLink && !toggleButton) {
             closePeek();
         }
     }, true);

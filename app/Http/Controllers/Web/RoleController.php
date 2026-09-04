@@ -28,9 +28,7 @@ class RoleController extends Controller
     {
         $this->authorize('viewAny', Role::class);
 
-        return view('roles.index', [
-            'roles' => $this->roles->paginate(),
-        ]);
+        return view('roles.index');
     }
 
     public function create(Request $request): View
