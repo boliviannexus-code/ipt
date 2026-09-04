@@ -56,6 +56,8 @@ class ModuleCompletionService
                     ],
                 );
             }
+
+            $module->update(['closed_at' => now(), 'closed_by' => $user->id]);
         });
     }
 }

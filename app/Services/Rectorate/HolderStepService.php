@@ -4,6 +4,7 @@ namespace App\Services\Rectorate;
 
 use App\Models\Campus;
 use App\Models\Customer;
+use App\Models\Personnel;
 use App\Models\RectorateApplication;
 use App\Models\User;
 use App\Services\Parameters\CustomerService;
@@ -21,13 +22,12 @@ class HolderStepService
         return DB::transaction(function () use ($user, $data): RectorateApplication {
             $companyId = (int) CompanyContext::id($user);
             $campus = $this->campusFor($user, $companyId);
-            $accountNumber = $this->nextAccountNumber($campus);
             $customer = $this->resolveCustomer($user, $companyId, $data);
 
             return RectorateApplication::create([
                 'company_id' => $companyId,
                 'campus_id' => $campus->id,
-                'account_number' => $accountNumber,
+                'account_number' => null,
                 'customer_id' => $customer->id,
                 'identity_document' => $data['identity_document'],
                 'first_name' => $this->name($data['first_name']),
@@ -96,11 +96,21 @@ class HolderStepService
 
     private function campusFor(User $user, int $companyId): Campus
     {
-        $campusId = $user->personnel?->campus_id;
+        $personnel = $user->personnel_id !== null
+            ? Personnel::withoutGlobalScope('company')->find($user->personnel_id)
+            : null;
+
+        $campusId = $personnel?->campus_id;
 
         if ($campusId === null) {
             throw ValidationException::withMessages([
                 'campus' => 'Tu usuario debe estar vinculado a personal con una sede asignada antes de iniciar una inscripción.',
+            ]);
+        }
+
+        if ((int) $personnel->company_id !== $companyId) {
+            throw ValidationException::withMessages([
+                'campus' => 'El personal vinculado a tu usuario no pertenece a la empresa activa.',
             ]);
         }
 
@@ -111,30 +121,6 @@ class HolderStepService
         }
 
         return $campus;
-    }
-
-    private function nextAccountNumber(Campus $campus): string
-    {
-        DB::table('campus_enrollment_sequences')->insertOrIgnore([
-            'campus_id' => $campus->id,
-            'last_number' => 0,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $sequence = DB::table('campus_enrollment_sequences')->where('campus_id', $campus->id)->lockForUpdate()->first();
-        $number = ((int) $sequence->last_number) + 1;
-
-        if ($number > 9999) {
-            throw ValidationException::withMessages(['campus' => 'La sede alcanzó el límite de 9.999 números de cuenta.']);
-        }
-
-        DB::table('campus_enrollment_sequences')->where('campus_id', $campus->id)->update([
-            'last_number' => $number,
-            'updated_at' => now(),
-        ]);
-
-        return $campus->code.str_pad((string) $number, 4, '0', STR_PAD_LEFT);
     }
 
     private function name(string $value): string

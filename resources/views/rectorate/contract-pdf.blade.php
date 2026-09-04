@@ -20,8 +20,8 @@
     <tr>
         <td width="17%" style="padding-top:18px;">
             <table border="1" cellpadding="2" cellspacing="0" width="100%">
-                <tr style="background-color:#000000;color:#ffffff;font-size:8px;font-weight:bold;"><td align="center">CONTRATO</td></tr>
-                <tr><td align="center" style="color:#e00000;font-size:11px;font-weight:bold;">N.º {{ str_pad((string) $contract->contract_number, 5, '0', STR_PAD_LEFT) }}</td></tr>
+                <tr style="background-color:#000000;color:#ffffff;font-size:8px;font-weight:bold;"><td align="center">MATRÍCULA</td></tr>
+                <tr><td align="center" style="color:#e00000;font-size:11px;font-weight:bold;">N.º {{ $contract->account_number }}</td></tr>
             </table>
         </td>
         <td width="66%" align="center">
@@ -45,7 +45,7 @@
         <td width="15%"></td>
         <td width="50%" align="center">NOMBRES Y APELLIDOS COMPLETOS</td>
         <td width="15%" align="center">CARNET IDENTIDAD</td>
-        <td width="10%" align="center" style="color:#2222ff;">FECHA NACIDO</td>
+        <td width="10%" align="center" style="color:#000000;">FECHA NACIDO</td>
         <td width="10%" align="center">EDAD</td>
     </tr>
     <tr>
@@ -134,7 +134,7 @@
         <td width="66%">
             <table border="1" cellpadding="4" cellspacing="0" width="100%">
                 <tr><td colspan="2" style="font-weight:bold;line-height:16px;">BS. {{ number_format((float) $contract->monthly_amount, 2, ',', '.') }} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="font-family:dejavusans;">&#9744;</span> COMPLETA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="font-family:dejavusans;">&#9744;</span> ABONO<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="font-family:dejavusans;">&#9744;</span> EFECTIVO &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="font-family:dejavusans;">&#9744;</span> TARJETA DE CRÉDITO O DÉBITO<br><span style="font-size:6.5px;">(*) VALOR CORRESPONDIENTE A LA PRIMERA MENSUALIDAD</span></td></tr>
-                <tr><td width="20%" align="center" style="font-weight:bold;">DATOS<br>FACTURA</td><td width="80%"><b>RAZÓN SOCIAL Y/O NOMBRE: {{ mb_strtoupper($application->customer?->name ?? '') }}</b><br><b>NIT: {{ $application->customer?->document_number }}</b></td></tr>
+                <tr><td width="20%" align="center" style="font-weight:bold;">DATOS<br>FACTURA</td><td width="80%"><b>NIT: {{ $application->customer?->document_number }}</b></td></tr>
             </table>
         </td>
     </tr>
@@ -149,8 +149,6 @@
         <tr><td style="border-bottom:1px dotted #555555;line-height:13px;">&nbsp;</td></tr>
     </table>
 </div>
-
-<table cellpadding="3" cellspacing="0" width="100%" style="font-size:7px;font-weight:bold;"><tr><td align="center" style="line-height:14px;"><br><br><br>________________________________________<br>FIRMA ESTUDIANTE Y/O RESPONSABLE Y/O TUTOR<br>N.º C.I. ______________________________</td></tr></table>
 
 <br pagebreak="true" />
 
@@ -190,7 +188,7 @@
     <tr><td>Suscrito en la ciudad de <b>{{ $city }}</b> a los <b>{{ $date?->format('d') }}</b> días del mes de <b>{{ mb_strtoupper($date?->locale('es')->translatedFormat('F') ?? '') }}</b> de <b>{{ $date?->format('Y') }}</b>.</td></tr>
     <tr><td>
         <table cellpadding="3" cellspacing="0" width="100%" style="font-size:7.5px;font-weight:bold;">
-            <tr><td width="50%" align="center" style="line-height:25px;">__________________________________<br>FIRMA ESTUDIANTE Y/O TUTOR<br>N.º C.I. <b>{{ $application->identity_document }}</b></td><td width="50%" align="center" style="line-height:25px;">__________________________________<br>REPRESENTANTE LEGAL<br><b>{{ mb_strtoupper($company?->legal_name ?: $company?->name ?: 'INSTITUTO TÉCNICO “INGLÉS PARA TODOS”') }}</b></td></tr>
+            <tr><td width="50%" align="center" style="line-height:25px;">__________________________________<br>FIRMA ESTUDIANTE Y/O TUTOR<br>N.º C.I. <b>{{ $application->identity_document }}</b></td><td width="50%" align="center" style="line-height:25px;">__________________________________<br>RECTORÍA</td></tr>
         </table>
     </td></tr>
 </table>

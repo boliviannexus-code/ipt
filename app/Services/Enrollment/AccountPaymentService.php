@@ -2,12 +2,12 @@
 
 namespace App\Services\Enrollment;
 
+use App\Enums\AccountPaymentMethod;
 use App\Models\AccountCharge;
 use App\Models\AccountPayment;
 use App\Models\CashRegister;
 use App\Models\EnrollmentContract;
 use App\Models\PaymentAllocation;
-use App\Models\SinCatalogItem;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -37,14 +37,13 @@ class AccountPaymentService
             }
 
             $paymentMethodCode = (int) ($data['payment_method_code'] ?? 0);
-            $validPaymentMethod = SinCatalogItem::withoutGlobalScope('company')
-                ->where('company_id', $contract->company_id)
-                ->where('catalog_key', 'tipos_metodo_pago')
-                ->where('classifier_code', (string) $paymentMethodCode)
-                ->where('is_active', true)
-                ->exists();
-            if (! $validPaymentMethod) {
-                throw ValidationException::withMessages(['payment_method_code' => 'Selecciona un método de pago vigente del catálogo del SIN.']);
+            $paymentMethod = AccountPaymentMethod::tryFrom($paymentMethodCode);
+            if ($paymentMethod === null) {
+                throw ValidationException::withMessages(['payment_method_code' => 'Selecciona Efectivo, QR o Transferencia.']);
+            }
+            $reference = trim((string) ($data['reference'] ?? ''));
+            if ($paymentMethod->requiresReference() && $reference === '') {
+                throw ValidationException::withMessages(['reference' => 'Ingresa la referencia del pago.']);
             }
 
             $charges = AccountCharge::query()
@@ -66,7 +65,7 @@ class AccountPaymentService
                 'received_by' => $user->id,
                 'amount' => $this->fromCents($paymentCents),
                 'payment_method_code' => $paymentMethodCode,
-                'reference' => $data['reference'] ?? null,
+                'reference' => $paymentMethod->requiresReference() ? $reference : null,
                 'paid_at' => $data['paid_at'] ?? now(),
             ]);
 

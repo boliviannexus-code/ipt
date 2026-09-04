@@ -9,6 +9,7 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 import 'tom-select/dist/css/tom-select.bootstrap5.min.css';
 
 window.Swal = Swal;
+window.bootstrap = bootstrap;
 
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 const ajaxModalElement = document.getElementById('ajaxModal');
@@ -1527,6 +1528,9 @@ function initPermissionMatrices(scope = document) {
         const search = matrix.querySelector('[data-permission-search]');
         const empty = matrix.querySelector('[data-permission-empty]');
         const selectedCount = matrix.querySelector('[data-permission-selected-count]');
+        const copyRole = matrix.querySelector('[data-permission-copy-role]');
+        const copyButton = matrix.querySelector('[data-permission-copy-button]');
+        const copyStatus = matrix.querySelector('[data-permission-copy-status]');
         const visibleOptions = () => checkboxes.filter((checkbox) => !checkbox.closest('[data-permission-option]')?.classList.contains('d-none'));
 
         const update = () => {
@@ -1595,6 +1599,33 @@ function initPermissionMatrices(scope = document) {
                 checkbox.checked = false;
             });
             update();
+        });
+
+        copyButton?.addEventListener('click', () => {
+            const option = copyRole?.selectedOptions[0];
+
+            if (!option?.value) {
+                copyRole?.focus();
+                copyRole?.classList.add('is-invalid');
+                if (copyStatus) copyStatus.textContent = 'Selecciona primero el rol que deseas copiar.';
+                return;
+            }
+
+            copyRole.classList.remove('is-invalid');
+            const copiedPermissions = new Set(JSON.parse(option.dataset.permissions ?? '[]'));
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = copiedPermissions.has(checkbox.value);
+            });
+            update();
+
+            if (copyStatus) {
+                copyStatus.textContent = `Se copiaron ${copiedPermissions.size} permisos de ${option.textContent.trim()}. Revisa y guarda los cambios.`;
+            }
+        });
+
+        copyRole?.addEventListener('change', () => {
+            copyRole.classList.remove('is-invalid');
+            if (copyStatus) copyStatus.textContent = 'Pulsa Copiar configuración para cargar estos permisos.';
         });
 
         modules.forEach((module) => {
@@ -1684,6 +1715,7 @@ function initUserDropdowns(scope = document) {
 function initSidebarToggle() {
     const toggle = document.querySelector('[data-sidebar-toggle]');
     const sidebar = document.querySelector('.app-sidebar');
+    const mobileMenu = document.getElementById('sidebar-menu');
 
     if (!toggle || toggle.dataset.sidebarToggleInitialized === '1') {
         return;
@@ -1726,16 +1758,21 @@ function initSidebarToggle() {
     };
 
     sidebar?.addEventListener('click', (event) => {
+        const mobileLink = event.target.closest('a.nav-link');
+
+        if (mobileLink && window.matchMedia('(max-width: 991.98px)').matches && mobileMenu) {
+            bootstrap.Collapse.getOrCreateInstance(mobileMenu, { toggle: false }).hide();
+        }
+
         if (!document.body.classList.contains('app-sidebar-collapsed')) {
             return;
         }
 
         openPeek();
 
-        const link = event.target.closest('a.nav-link');
         const toggleButton = event.target.closest('.app-menu-toggle');
 
-        if (link && !toggleButton) {
+        if (mobileLink && !toggleButton) {
             closePeek();
         }
     }, true);
@@ -1809,6 +1846,28 @@ function initAcademicModuleForms(scope = document) {
     });
 }
 
+function initAccountPaymentForms(scope = document) {
+    scope.querySelectorAll('[data-account-payment-form]').forEach((form) => {
+        if (form.dataset.accountPaymentInitialized === '1') return;
+
+        const method = form.elements.namedItem('payment_method_code');
+        const referenceField = form.querySelector('[data-payment-reference-field]');
+        const reference = form.elements.namedItem('reference');
+        if (!method || !referenceField || !reference) return;
+
+        const syncReference = () => {
+            const requiresReference = method.selectedOptions[0]?.dataset.requiresReference === '1';
+            referenceField.classList.toggle('d-none', !requiresReference);
+            reference.required = requiresReference;
+            if (!requiresReference) reference.value = '';
+        };
+
+        method.addEventListener('change', syncReference);
+        syncReference();
+        form.dataset.accountPaymentInitialized = '1';
+    });
+}
+
 function initializeUi(scope = document) {
     disableBusinessFormAutocomplete(scope);
     initTomSelects(scope);
@@ -1826,6 +1885,7 @@ function initializeUi(scope = document) {
     initProgramPlanForms(scope);
     initAcademicModuleForms(scope);
     initUserPersonnelSelect(scope);
+    initAccountPaymentForms(scope);
 }
 
 showInitialAlerts();
@@ -1836,20 +1896,48 @@ document.addEventListener('click', (event) => {
     const passwordReset = event.target.closest('[data-user-password-reset]');
 
     if (passwordReset) {
+        const containingModal = passwordReset.closest('.modal');
+
         Swal.fire({
+            target: containingModal ?? document.body,
             icon: 'warning',
             title: '¿Restablecer contraseña?',
-            text: 'Se cerrarán las sesiones del usuario y se enviará una nueva contraseña temporal por correo.',
+            html: `
+                <p class="text-secondary">Se cerrarán las sesiones activas del usuario.</p>
+                <input id="reset-password" class="swal2-input" type="password" minlength="8" placeholder="Nueva contraseña" autocomplete="new-password">
+                <input id="reset-password-confirmation" class="swal2-input" type="password" minlength="8" placeholder="Confirmar contraseña" autocomplete="new-password">
+            `,
             showCancelButton: true,
             confirmButtonText: 'Sí, restablecer',
             cancelButtonText: 'Cancelar',
+            focusConfirm: false,
+            preConfirm: () => {
+                const password = document.getElementById('reset-password').value;
+                const passwordConfirmation = document.getElementById('reset-password-confirmation').value;
+
+                if (password.length < 8) {
+                    Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');
+                    return false;
+                }
+
+                if (password !== passwordConfirmation) {
+                    Swal.showValidationMessage('Las contraseñas no coinciden.');
+                    return false;
+                }
+
+                return { password, passwordConfirmation };
+            },
         }).then(async (result) => {
             if (!result.isConfirmed) return;
             passwordReset.disabled = true;
             try {
                 const response = await fetch(passwordReset.dataset.resetUrl, {
                     method: 'PATCH',
-                    headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify({
+                        password: result.value.password,
+                        password_confirmation: result.value.passwordConfirmation,
+                    }),
                 });
                 const payload = await response.json();
                 if (!response.ok || payload.success === false) throw new Error(payload.message ?? 'No se pudo restablecer la contraseña.');

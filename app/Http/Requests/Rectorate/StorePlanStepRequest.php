@@ -59,12 +59,10 @@ class StorePlanStepRequest extends FormRequest
 
             if (! $validator->errors()->has('sales_executive_id')) {
                 $isSalesExecutive = DB::table('personnel')
-                    ->join('positions', 'positions.id', '=', 'personnel.position_id')
                     ->where('personnel.id', $this->integer('sales_executive_id'))
                     ->where('personnel.company_id', CompanyContext::id($this->user()))
                     ->where('personnel.is_active', true)
-                    ->where('positions.is_active', true)
-                    ->whereRaw('LOWER(positions.name) = ?', ['ejecutivo de ventas'])
+                    ->where('personnel.is_sales_enabled', true)
                     ->exists();
 
                 if (! $isSalesExecutive) {

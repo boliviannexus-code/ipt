@@ -2,9 +2,9 @@
 
 namespace App\Http\Requests\Rectorate;
 
-use App\Support\CompanyContext;
 use App\Support\SiatIdentityDocumentTypes;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class StoreHolderStepRequest extends FormRequest
@@ -24,7 +24,14 @@ class StoreHolderStepRequest extends FormRequest
             'birth_date' => ['required', 'date', 'before:today'],
             'email' => ['required', 'email', 'max:255'],
             'phone' => ['required', 'string', 'max:30'],
-            'identity_document_type_code' => ['required', 'integer', 'min:1'],
+            'identity_document_type_code' => [
+                'required',
+                'integer',
+                Rule::in([
+                    SiatIdentityDocumentTypes::IDENTITY_CARD_CODE,
+                    SiatIdentityDocumentTypes::NIT_CODE,
+                ]),
+            ],
             'document_number' => ['required', 'string', 'max:80'],
             'document_complement' => ['nullable', 'string', 'max:20'],
             'legal_name' => ['required', 'string', 'max:255'],
@@ -61,12 +68,9 @@ class StoreHolderStepRequest extends FormRequest
             if ($validator->errors()->hasAny(['identity_document_type_code', 'document_number'])) {
                 return;
             }
-            $companyId = CompanyContext::id($this->user());
             $code = (string) $this->input('identity_document_type_code');
             $number = (string) $this->input('document_number');
-            if (! SiatIdentityDocumentTypes::canBeUsed($companyId, $code)) {
-                $validator->errors()->add('identity_document_type_code', 'Selecciona un tipo de documento activo del catálogo SIAT.');
-            } elseif (SiatIdentityDocumentTypes::requiresIdentityCardDigits($code) && ! preg_match('/^\d{5,10}$/', $number)) {
+            if (SiatIdentityDocumentTypes::requiresIdentityCardDigits($code) && ! preg_match('/^\d{5,10}$/', $number)) {
                 $validator->errors()->add('document_number', 'El carnet debe tener entre 5 y 10 dígitos.');
             } elseif (SiatIdentityDocumentTypes::requiresNitDigits($code) && ! preg_match('/^\d{7,13}$/', $number)) {
                 $validator->errors()->add('document_number', 'El NIT debe tener entre 7 y 13 dígitos.');

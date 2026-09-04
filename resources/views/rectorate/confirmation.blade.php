@@ -7,7 +7,7 @@
 @section('content')
     <div class="rectorate-wizard">
         <div class="rectorate-wizard__intro">
-            <div><span class="rectorate-wizard__eyebrow">Cuenta {{ $application->account_number }} · Inscripción #{{ $application->id }}</span><h2>Resumen</h2></div>
+            <div><span class="rectorate-wizard__eyebrow">Matrícula {{ $application->account_number }}</span><h2>Resumen</h2></div>
             <span class="rectorate-wizard__step-count">04 <small>/ 04</small></span>
         </div>
 
@@ -24,7 +24,7 @@
                     <div class="col-lg-6">
                         <div class="rectorate-summary">
                             <div class="rectorate-section-heading"><span class="rectorate-section-heading__icon"><i class="ti ti-user"></i></span><div><h3>Titular</h3></div></div>
-                            <dl><dt>Número de cuenta</dt><dd class="fw-semibold">{{ $application->account_number }}</dd><dt>Sede</dt><dd>{{ $application->campus->name }} · {{ $application->campus->code }}</dd><dt>Nombre</dt><dd>{{ $application->first_name }} {{ $application->paternal_surname }} {{ $application->maternal_surname }}</dd><dt>CI</dt><dd>{{ $application->identity_document }}</dd><dt>Nacimiento</dt><dd>{{ $application->birth_date->format('d/m/Y') }}</dd><dt>Contacto</dt><dd>{{ $application->email }} · {{ $application->phone }}</dd></dl>
+                            <dl><dt>Número de matrícula</dt><dd class="fw-semibold">{{ $application->account_number }}</dd><dt>Sede</dt><dd>{{ $application->campus->name }} · {{ $application->campus->code }}</dd><dt>Nombre</dt><dd>{{ $application->first_name }} {{ $application->paternal_surname }} {{ $application->maternal_surname }}</dd><dt>CI</dt><dd>{{ $application->identity_document }}</dd><dt>Nacimiento</dt><dd>{{ $application->birth_date->format('d/m/Y') }}</dd><dt>Contacto</dt><dd>{{ $application->email }} · {{ $application->phone }}</dd></dl>
                         </div>
                     </div>
                     <div class="col-lg-6">
@@ -36,7 +36,7 @@
                     <div class="col-12">
                         <div class="rectorate-summary">
                             <div class="rectorate-section-heading"><span class="rectorate-section-heading__icon"><i class="ti ti-user-heart"></i></span><div><h3>Estudiante</h3></div></div>
-                            <dl class="rectorate-summary__student"><dt>Número de cuenta</dt><dd class="fw-semibold">{{ $application->account_number }}</dd><dt>Sede</dt><dd>{{ $application->campus->name }}</dd><dt>Nombre</dt><dd>{{ $application->student_first_name }} {{ $application->student_paternal_surname }} {{ $application->student_maternal_surname }}</dd><dt>CI</dt><dd>{{ $application->student_identity_document }}</dd><dt>Nacimiento</dt><dd>{{ $application->student_birth_date->format('d/m/Y') }}</dd><dt>Parentesco</dt><dd>{{ $application->student_relationship }}</dd><dt>Género</dt><dd>{{ $application->student_gender }}</dd><dt>Contacto</dt><dd>{{ $application->student_email ?: '—' }} · {{ $application->student_phone ?: '—' }}</dd></dl>
+                            <dl class="rectorate-summary__student"><dt>Número de matrícula</dt><dd class="fw-semibold">{{ $application->account_number }}</dd><dt>Sede</dt><dd>{{ $application->campus->name }}</dd><dt>Nombre</dt><dd>{{ $application->student_first_name }} {{ $application->student_paternal_surname }} {{ $application->student_maternal_surname }}</dd><dt>CI</dt><dd>{{ $application->student_identity_document }}</dd><dt>Nacimiento</dt><dd>{{ $application->student_birth_date->format('d/m/Y') }}</dd><dt>Parentesco</dt><dd>{{ $application->student_relationship }}</dd><dt>Género</dt><dd>{{ $application->student_gender }}</dd><dt>Contacto</dt><dd>{{ $application->student_email ?: '—' }} · {{ $application->student_phone ?: '—' }}</dd></dl>
                         </div>
                     </div>
                     <div class="col-12">

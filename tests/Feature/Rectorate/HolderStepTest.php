@@ -51,7 +51,7 @@ class HolderStepTest extends TestCase
         $this->assertSame('8324984', $application->identity_document);
         $this->assertSame('Álvaro', $application->first_name);
         $this->assertSame('Pacheco', $application->paternal_surname);
-        $this->assertSame('10001', $application->account_number);
+        $this->assertNull($application->account_number);
         $this->assertSame(2, $application->current_step);
 
         $this->actingAs($user)
@@ -78,9 +78,13 @@ class HolderStepTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.index'))
             ->assertOk()
-            ->assertSee('Álvaro Pacheco Rojas')
-            ->assertSee('Paso 2 de 4')
-            ->assertSee('Continuar programa');
+            ->assertSee('data-datatable', false)
+            ->assertSee(route('datatables.enrollments'), false);
+        $tableResponse = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk();
+        $this->assertStringContainsString('Álvaro Pacheco Rojas', $tableResponse->json('data.0.holder'));
+        $this->assertStringContainsString('Paso 2 de 4', $tableResponse->json('data.0.progress'));
 
         $plan = Plan::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
@@ -90,6 +94,7 @@ class HolderStepTest extends TestCase
         $program = Program::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
             'title' => 'Inglés intensivo',
+            'enrollment_code' => 'CAP',
             'duration_months' => 12,
         ]);
         $program->plans()->attach($plan);
@@ -98,7 +103,7 @@ class HolderStepTest extends TestCase
             'name' => 'Redes sociales',
         ]);
         $area = Area::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Marketing', 'is_active' => true]);
-        $position = Position::withoutGlobalScope('company')->create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Ejecutivo de Ventas', 'is_active' => true]);
+        $position = Position::withoutGlobalScope('company')->create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Asesor comercial', 'is_sales_executive' => true, 'is_active' => true]);
         $executive = Personnel::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
             'position_id' => $position->id,
@@ -107,6 +112,7 @@ class HolderStepTest extends TestCase
             'identity_document' => '7788991',
             'email' => 'maria@example.com',
             'phone' => '70000001',
+            'is_sales_enabled' => true,
             'is_active' => true,
         ]);
 
@@ -178,8 +184,12 @@ class HolderStepTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.index'))
             ->assertOk()
-            ->assertSee('Paso 4 de 4')
-            ->assertSee('Confirmación');
+            ->assertSee('data-datatable', false);
+        $progress = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->json('data.0.progress');
+        $this->assertStringContainsString('Paso 4 de 4', $progress);
+        $this->assertStringContainsString('Confirmación', $progress);
 
         $this->actingAs($user)
             ->get(route('rectorate.applications.confirmation.show', $application))
@@ -203,7 +213,7 @@ class HolderStepTest extends TestCase
         $this->assertSame($company->id, $student->company_id);
         $this->assertSame('8324984', $student->identity_document);
         $this->assertSame('Álvaro', $student->first_name);
-        $this->assertSame('10001', $student->account_number);
+        $this->assertSame('CAP10001', $student->account_number);
         $this->assertSame($application->campus_id, $student->campus_id);
         $this->assertDatabaseHas('rectorate_applications', [
             'id' => $application->id,
@@ -211,8 +221,8 @@ class HolderStepTest extends TestCase
             'status' => 'completed',
         ]);
         $contract = EnrollmentContract::withoutGlobalScope('company')->sole();
-        $this->assertSame(1, $contract->contract_number);
-        $this->assertSame('10001', $contract->account_number);
+        $this->assertSame(10001, $contract->contract_number);
+        $this->assertSame('CAP10001', $contract->account_number);
         $this->assertSame($application->campus_id, $contract->campus_id);
         $this->assertSame('pre_enrolled', $contract->status);
         $this->assertSame('250.00', $contract->monthly_amount);
@@ -232,21 +242,67 @@ class HolderStepTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.index'))
             ->assertOk()
-            ->assertSee('Completada')
-            ->assertSee('Ver resumen')
-            ->assertSee('Contrato');
+            ->assertSee('data-datatable', false);
+        $completedRow = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->json('data.0');
+        $this->assertStringContainsString('Completada', $completedRow['progress']);
+        $this->assertStringContainsString('Ver resumen', $completedRow['actions']);
+        $this->assertStringContainsString('Contrato', $completedRow['actions']);
+        $this->assertStringContainsString('Inhabilitar contrato', $completedRow['actions']);
+        $this->assertStringContainsString('data-confirm-title=', $completedRow['actions']);
 
         $this->actingAs($user)
             ->get(route('rectorate.contracts.print', $contract))
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf')
-            ->assertHeader('content-disposition', 'inline; filename="contrato-00001.pdf"');
+            ->assertHeader('content-disposition', 'inline; filename="contrato-CAP10001.pdf"');
 
         $this->actingAs($user)
-            ->delete(route('rectorate.applications.destroy', $application))
-            ->assertStatus(409);
+            ->patch(route('rectorate.contracts.disable', $contract))
+            ->assertRedirect(route('rectorate.index'))
+            ->assertSessionHas('success');
+        $this->assertDatabaseHas('enrollment_contracts', ['id' => $contract->id, 'status' => 'cancelled']);
+        $this->assertDatabaseMissing('account_charges', ['enrollment_contract_id' => $contract->id]);
         $this->assertNotSoftDeleted('rectorate_applications', ['id' => $application->id]);
-        $this->assertDatabaseHas('students', ['id' => $student->id, 'deleted_at' => null]);
+        $this->assertSoftDeleted('students', ['id' => $student->id]);
+
+        $disabledRow = $this->actingAs($user)->getJson(route('datatables.enrollments', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->json('data.0');
+        $this->assertStringContainsString('Inhabilitada', $disabledRow['progress']);
+        $this->assertStringNotContainsString('Inhabilitar contrato', $disabledRow['actions']);
+    }
+
+    public function test_billing_document_types_are_fixed_and_do_not_require_the_siat_catalog(): void
+    {
+        [, $user] = $this->context();
+        SinCatalogItem::withoutGlobalScope('company')->delete();
+
+        $this->actingAs($user)
+            ->get(route('rectorate.new'))
+            ->assertOk()
+            ->assertSee('<option value="1"', false)
+            ->assertSee('>CI</option>', false)
+            ->assertSee('<option value="5"', false)
+            ->assertSee('>NIT</option>', false)
+            ->assertDontSee('Primero sincroniza los tipos de documento');
+
+        $this->actingAs($user)
+            ->post(route('rectorate.new.store'), $this->validData())
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_holder_step_rejects_billing_document_types_other_than_ci_and_nit(): void
+    {
+        [, $user] = $this->context();
+
+        $this->actingAs($user)
+            ->post(route('rectorate.new.store'), [
+                ...$this->validData(),
+                'identity_document_type_code' => '2',
+            ])
+            ->assertSessionHasErrors('identity_document_type_code');
     }
 
     public function test_existing_billing_customer_is_reused_inside_the_company(): void
@@ -270,10 +326,7 @@ class HolderStepTest extends TestCase
 
         $this->assertSame(1, Customer::withoutGlobalScope('company')->count());
         $this->assertSame(2, RectorateApplication::withoutGlobalScope('company')->count());
-        $this->assertEqualsCanonicalizing(
-            ['10001', '10002'],
-            RectorateApplication::withoutGlobalScope('company')->pluck('account_number')->all(),
-        );
+        $this->assertTrue(RectorateApplication::withoutGlobalScope('company')->pluck('account_number')->every(fn ($number) => $number === null));
         $this->assertDatabaseHas('customers', ['id' => $customer->id, 'name' => 'Pacheco Servicios']);
         $this->assertDatabaseHas('rectorate_applications', ['customer_id' => $customer->id, 'company_id' => $company->id]);
 

@@ -30,7 +30,20 @@
         </div>
     </div>
 
-    @if ($isCreate)<div class="col-12"><div class="alert alert-info mb-0"><i class="ti ti-mail-forward me-2"></i>El sistema generará una contraseña temporal y la enviará al correo registrado del personal.</div></div>@endif
+    @if ($isCreate)
+        <div class="col-md-6">
+            <label class="form-label" for="user-password">Contraseña temporal</label>
+            <input class="form-control" id="user-password" name="password" type="password" minlength="8" required autocomplete="new-password">
+            <div class="form-text">Mínimo 8 caracteres. Entrégala al usuario por un medio seguro.</div>
+            <div class="invalid-feedback d-block" data-error-for="password">{{ ($errors ?? null)?->first('password') }}</div>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="user-password-confirmation">Confirmar contraseña</label>
+            <input class="form-control" id="user-password-confirmation" name="password_confirmation" type="password" minlength="8" required autocomplete="new-password">
+            <div class="invalid-feedback d-block" data-error-for="password_confirmation">{{ ($errors ?? null)?->first('password_confirmation') }}</div>
+        </div>
+        <div class="col-12"><div class="alert alert-info mb-0"><i class="ti ti-key me-2"></i>El usuario deberá cambiar esta contraseña temporal después de ingresar.</div></div>
+    @endif
 
     <div class="col-12">
         <input type="hidden" name="is_active" value="0">

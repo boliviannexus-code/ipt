@@ -19,6 +19,8 @@ class StoreUserRequest extends FormRequest
     {
         return [
             'personnel_id' => ['required', 'exists:personnel,id', 'unique:users,personnel_id'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password_confirmation' => ['required', 'string', 'min:8'],
             'roles' => ['nullable', 'array'],
             'roles.*' => ['exists:roles,name'],
             'is_active' => ['sometimes', 'boolean'],

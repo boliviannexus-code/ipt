@@ -38,8 +38,227 @@ body {
     min-width: 13rem;
 }
 
+.daily-wizard-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .75rem;
+}
+
+.daily-wizard-step {
+    display: flex;
+    min-width: 0;
+    min-height: 3.25rem;
+    align-items: center;
+    gap: .625rem;
+    padding: .5rem .75rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: transparent;
+    color: var(--tblr-secondary);
+    text-align: left;
+}
+
+.daily-wizard-step-number {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 2rem;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--tblr-bg-surface-secondary);
+}
+
+.daily-wizard-step strong,
+.daily-wizard-step small {
+    display: block;
+}
+
+.daily-wizard-step.is-active,
+.daily-wizard-step.is-complete {
+    border-color: rgba(var(--tblr-primary-rgb), .45);
+    color: var(--tblr-primary);
+}
+
+.daily-wizard-step.is-active .daily-wizard-step-number,
+.daily-wizard-step.is-complete .daily-wizard-step-number {
+    background: var(--tblr-primary);
+    color: #fff;
+}
+
+.daily-skill-option,
+.daily-grade-switch {
+    min-height: 2rem;
+    align-items: center;
+}
+
+.daily-skill-option {
+    margin-bottom: 0;
+    padding-block: .125rem;
+}
+
+.daily-grade-switch {
+    display: flex;
+    gap: .5rem;
+}
+
+.daily-wizard-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface);
+}
+
+.daily-student-list .daily-student-name {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 10rem;
+    background: var(--tblr-bg-surface);
+}
+
+.daily-student-list thead .daily-student-name {
+    z-index: 2;
+}
+
+.daily-student-list .daily-skill-column {
+    width: 5.75rem;
+    min-width: 5.75rem;
+    padding-inline: .25rem;
+    overflow-wrap: anywhere;
+}
+
+.daily-percentage-input {
+    max-width: 5.25rem;
+}
+
+.daily-save-status {
+    display: block;
+    min-height: .85rem;
+    margin-top: .1rem;
+    font-size: .625rem;
+    line-height: 1;
+}
+
+.daily-student-list > :not(caption) > * > * {
+    padding-block: .3rem;
+}
+
 .table-card .table {
     margin-bottom: 0;
+}
+
+.tracking-grade-table {
+    --tracking-group-separator: color-mix(in srgb, var(--tblr-body-color) 72%, transparent);
+    font-size: .8125rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.tracking-grade-table > :not(caption) > * > * {
+    padding: .35rem .5rem;
+}
+
+.tracking-grade-table thead th {
+    vertical-align: middle;
+    line-height: 1.2;
+}
+
+.tracking-grade-table thead tr:last-child > th {
+    border-bottom: 3px solid var(--tracking-group-separator) !important;
+}
+
+.tracking-grade-table tbody tr:last-child > td {
+    border-bottom: 3px solid var(--tracking-group-separator) !important;
+}
+
+.tracking-grade-table .tracking-group {
+    min-width: 6.5rem;
+    border: 3px solid var(--tracking-group-separator);
+    color: var(--tblr-body-color);
+}
+
+.tracking-grade-table .tracking-group small {
+    color: var(--tblr-secondary-color);
+    font-weight: 500;
+}
+
+.tracking-grade-table .tracking-skill,
+.tracking-grade-table .tracking-score {
+    min-width: 5.75rem;
+    border-inline-start: 1px solid var(--tracking-group-border);
+}
+
+.tracking-grade-table .tracking-score {
+    background: color-mix(in srgb, var(--tracking-group-bg) 45%, transparent);
+}
+
+.tracking-grade-table .is-group-start {
+    border-inline-start: 3px solid var(--tracking-group-separator) !important;
+}
+
+.tracking-grade-table .is-group-end {
+    border-inline-end: 3px solid var(--tracking-group-separator) !important;
+}
+
+.tracking-grade-table .tracking-component-terminal {
+    min-width: 6.25rem;
+    border-inline: 3px solid var(--tracking-group-separator) !important;
+    background: var(--tracking-group-strong) !important;
+    color: var(--tblr-body-color);
+    font-weight: 600;
+}
+
+.tracking-group-tone-0 { --tracking-group-bg: rgba(var(--tblr-blue-rgb), .13); --tracking-group-strong: rgba(var(--tblr-blue-rgb), .26); --tracking-group-border: rgba(var(--tblr-blue-rgb), .55); background: var(--tracking-group-bg); }
+.tracking-group-tone-1 { --tracking-group-bg: rgba(var(--tblr-teal-rgb), .13); --tracking-group-strong: rgba(var(--tblr-teal-rgb), .26); --tracking-group-border: rgba(var(--tblr-teal-rgb), .55); background: var(--tracking-group-bg); }
+.tracking-group-tone-2 { --tracking-group-bg: rgba(var(--tblr-purple-rgb), .12); --tracking-group-strong: rgba(var(--tblr-purple-rgb), .24); --tracking-group-border: rgba(var(--tblr-purple-rgb), .52); background: var(--tracking-group-bg); }
+.tracking-group-tone-3 { --tracking-group-bg: rgba(var(--tblr-orange-rgb), .12); --tracking-group-strong: rgba(var(--tblr-orange-rgb), .24); --tracking-group-border: rgba(var(--tblr-orange-rgb), .52); background: var(--tracking-group-bg); }
+
+.tracking-grade-table .tracking-student-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 11rem;
+    max-width: 13rem;
+    border-inline: 3px solid var(--tracking-group-separator) !important;
+    background: var(--tblr-bg-surface);
+}
+
+.tracking-grade-table .tracking-final-cell {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    min-width: 7rem;
+    border-inline: 3px solid var(--tracking-group-separator) !important;
+    background: var(--tblr-bg-surface);
+}
+
+.tracking-grade-table thead .tracking-student-cell,
+.tracking-grade-table thead .tracking-final-cell {
+    z-index: 3;
+    border-block: 3px solid var(--tracking-group-separator) !important;
+}
+
+.tracking-final-score {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 5.25rem;
+    padding: .4rem .55rem;
+    line-height: 1.05;
+}
+
+.tracking-final-score strong {
+    font-size: 1.125rem;
+}
+
+.tracking-final-score small {
+    margin-top: .2rem;
+    font-size: .625rem;
+    font-weight: 600;
+    letter-spacing: .035em;
+    text-transform: uppercase;
 }
 
 .admin-filter-bar {
@@ -669,6 +888,29 @@ body {
     }
 }
 
+/* Acciones uniformes para los listados administrativos. */
+.table-actions-stack {
+    display: inline-flex;
+    width: 8.5rem;
+    max-width: 100%;
+    flex-direction: column;
+    gap: .25rem;
+    vertical-align: middle;
+}
+
+.table-actions-stack > form {
+    width: 100%;
+    margin: 0;
+}
+
+.table-actions-stack .btn {
+    width: 100%;
+    padding: .2rem .45rem;
+    font-size: .75rem;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
 .rectorate-wizard { max-width: 1120px; margin: 0 auto; }
 .rectorate-wizard__intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 .rectorate-wizard__intro h2 { margin: .1rem 0 0; font-size: clamp(1.3rem, 2vw, 1.7rem); letter-spacing: -.025em; }
@@ -1109,6 +1351,17 @@ body {
         width: 100%;
     }
 
+    .app-sidebar .navbar-toggler {
+        width: 2.75rem;
+        height: 2.75rem;
+    }
+
+    .app-sidebar .navbar-collapse {
+        max-height: calc(100vh - 4rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
     .admin-filter-bar {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1117,6 +1370,41 @@ body {
 @media (max-width: 575.98px) {
     .admin-filter-bar {
         grid-template-columns: 1fr;
+    }
+
+    .daily-wizard-steps {
+        gap: .25rem;
+    }
+
+    .daily-wizard-step {
+        min-height: 3rem;
+        justify-content: center;
+        padding: .375rem;
+    }
+
+    .daily-wizard-step > span:last-child {
+        display: none;
+    }
+
+    .daily-wizard-actions {
+        position: sticky;
+        bottom: .5rem;
+        z-index: 10;
+    }
+
+    .daily-wizard-actions .btn {
+        min-height: 2.75rem;
+        flex: 1 1 0;
+    }
+
+    .daily-student-list .daily-student-name {
+        min-width: 8.5rem;
+        max-width: 8.5rem;
+        white-space: normal;
+    }
+
+    .daily-grade-switch {
+        min-height: 2.5rem;
     }
 }
 

@@ -45,6 +45,14 @@ class PersonnelIdentityDocumentTest extends TestCase
         ]);
 
         $this->actingAs($user)->get(route('personnel.index'))->assertOk()->assertSee('Sede Central')->assertSee('CEN');
+
+        $personnel = Personnel::query()->where('identity_document', '7456123')->firstOrFail();
+        $this->actingAs($user)
+            ->patch(route('personnel.sales-enabled', $personnel))
+            ->assertRedirect(route('personnel.index'));
+
+        $this->assertTrue($personnel->refresh()->is_sales_enabled);
+        $this->actingAs($user)->get(route('personnel.index'))->assertOk()->assertSee('Habilitado para ventas');
     }
 
     public function test_existing_identity_document_is_found_and_cannot_be_registered_twice_in_company(): void

@@ -8,5 +8,7 @@ return [
     'timeout' => (int) env('BACKUP_TIMEOUT', 600),
     'upload_max_kilobytes' => (int) env('BACKUP_UPLOAD_MAX_KB', 102400),
     'restore_max_bytes' => (int) env('BACKUP_RESTORE_MAX_BYTES', 2147483648),
+    'pg_dump_binary' => env('BACKUP_PG_DUMP_BINARY', 'pg_dump'),
+    'psql_binary' => env('BACKUP_PSQL_BINARY', 'psql'),
     'required_tables' => ['migrations', 'users', 'companies', 'permissions', 'roles'],
 ];

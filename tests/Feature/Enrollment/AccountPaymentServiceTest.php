@@ -10,10 +10,10 @@ use App\Models\EnrollmentContract;
 use App\Models\Plan;
 use App\Models\Program;
 use App\Models\RectorateApplication;
-use App\Models\SinCatalogItem;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\Enrollment\AccountPaymentService;
+use App\Services\Rectorate\EnrollmentContractDisablingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
@@ -48,7 +48,9 @@ class AccountPaymentServiceTest extends TestCase
             ->assertSee('Plan')
             ->assertSee('Monto a pagar')
             ->assertSee('Método de pago')
-            ->assertSee('1 · EFECTIVO')
+            ->assertSee('Efectivo')
+            ->assertSee('QR')
+            ->assertSee('Transferencia')
             ->assertSee('Historial de pagos');
 
         $service = app(AccountPaymentService::class);
@@ -84,6 +86,43 @@ class AccountPaymentServiceTest extends TestCase
             ->assertSee('Historial de pagos');
     }
 
+    public function test_qr_and_transfer_require_a_reference_without_the_siat_catalog(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+
+        foreach ([2, 3] as $methodCode) {
+            try {
+                $service->record($user, $contract, '25.00', ['payment_method_code' => $methodCode]);
+                $this->fail('Se esperaba una validación por referencia obligatoria.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('reference', $exception->errors());
+            }
+        }
+
+        $payment = $service->record($user, $contract, '25.00', [
+            'payment_method_code' => 2,
+            'reference' => 'QR-123456',
+        ]);
+
+        $this->assertSame(2, $payment->payment_method_code);
+        $this->assertSame('QR-123456', $payment->reference);
+    }
+
+    public function test_cash_discards_an_unneeded_reference(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+
+        $payment = app(AccountPaymentService::class)->record($user, $contract, '25.00', [
+            'payment_method_code' => 1,
+            'reference' => 'NO-DEBE-GUARDARSE',
+        ]);
+
+        $this->assertNull($payment->reference);
+    }
+
     public function test_payment_requires_an_open_cash_register(): void
     {
         [$user, $contract] = $this->contract();
@@ -98,15 +137,27 @@ class AccountPaymentServiceTest extends TestCase
         $this->assertDatabaseCount('account_payments', 0);
     }
 
+    public function test_contract_with_a_recorded_payment_cannot_be_deleted(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        app(AccountPaymentService::class)->record($user, $contract, '25.00', ['payment_method_code' => 1]);
+
+        try {
+            app(EnrollmentContractDisablingService::class)->disable($contract);
+            $this->fail('Se esperaba una validación por cobros registrados.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('contract', $exception->errors());
+        }
+
+        $this->assertDatabaseHas('enrollment_contracts', ['id' => $contract->id]);
+        $this->assertDatabaseCount('account_payments', 1);
+    }
+
     private function contract(): array
     {
         $company = Company::factory()->create();
         $user = User::factory()->create(['company_id' => $company->id]);
-        SinCatalogItem::withoutGlobalScope('company')->create([
-            'company_id' => $company->id, 'catalog_key' => 'tipos_metodo_pago', 'item_key' => '1',
-            'classifier_code' => '1', 'description' => 'EFECTIVO', 'is_active' => true,
-            'raw_data' => [], 'synced_at' => now(),
-        ]);
         $customer = Customer::factory()->create(['company_id' => $company->id]);
         $plan = Plan::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Mensual', 'monthly_cost' => 250]);
         $program = Program::withoutGlobalScope('company')->create(['company_id' => $company->id, 'title' => 'Inglés', 'duration_months' => 12]);
