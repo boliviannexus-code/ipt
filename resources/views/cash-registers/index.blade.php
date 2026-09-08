@@ -158,6 +158,11 @@
                         </div>
                     </div>
 
+                    @if ($activeCashRegister)
+                        @can('accounts.collect')
+                            <a class="btn btn-success mb-3" href="{{ route('rectorate.collectible-accounts.index') }}"><i class="ti ti-cash me-1" aria-hidden="true"></i>Recibir cobro o anticipo</a>
+                        @endcan
+                    @endif
                     <div class="row g-3">
                         <div class="col-sm-6">
                             <div class="border rounded p-3 h-100">
@@ -178,6 +183,8 @@
     </div>
 
     @if ($activeCashRegister)
+        @include('cash-registers.partials.collection-summary', ['register' => $activeCashRegister])
+        @include('cash-registers.partials.credit-applications', ['applications' => $activeCashRegister->creditApplications])
         <x-ui.table-card title="Movimientos de la caja activa">
             <table class="table table-hover align-middle mb-0">
                 <thead><tr><th>Fecha y hora</th><th>Comprobante</th><th>Estudiante</th><th>Método de pago</th><th class="text-end">Monto</th></tr></thead>

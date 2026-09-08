@@ -71,4 +71,9 @@ class EnrollmentContract extends Model
     {
         return $this->hasMany(ContractPlanHistory::class);
     }
+
+    public function creditApplications(): HasMany
+    {
+        return $this->hasMany(AccountCreditApplication::class);
+    }
 }

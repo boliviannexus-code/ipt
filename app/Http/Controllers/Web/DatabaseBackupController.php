@@ -78,7 +78,7 @@ final class DatabaseBackupController extends Controller
             report($exception);
 
             return back()->with('error', $exception->safetyRecovered
-                ? 'El archivo contenía un error. El estado anterior fue recuperado automáticamente.'
+                ? 'No se pudo aplicar el respaldo. El estado anterior fue recuperado automáticamente.'
                 : 'Error crítico: no se pudo restaurar ni recuperar automáticamente el estado anterior. No realices más operaciones y revisa los registros.');
         } catch (Throwable $exception) {
             report($exception);

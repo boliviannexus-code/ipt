@@ -23,6 +23,7 @@ class CashRegisterController extends Controller
         $this->authorize('viewAny', CashRegister::class);
         $activeCashRegister = $this->cashRegisters->activeFor($request->user());
         $activeCashRegister?->load([
+            'creditApplications.contract.student', 'creditApplications.operator',
             'accountPayments' => fn ($query) => $query
                 ->with('contract.student:id,first_name,paternal_surname,maternal_surname')
                 ->latest('paid_at'),
@@ -51,6 +52,7 @@ class CashRegisterController extends Controller
 
         $cashRegister->load([
             'user:id,name,email',
+            'creditApplications.contract.student', 'creditApplications.operator',
             'accountPayments' => fn ($query) => $query
                 ->with(['contract.student:id,first_name,paternal_surname,maternal_surname', 'receiver:id,name'])
                 ->oldest('paid_at'),

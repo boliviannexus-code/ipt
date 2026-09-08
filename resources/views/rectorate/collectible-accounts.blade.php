@@ -40,7 +40,7 @@
                         <td class="text-end"><a class="btn btn-success" href="{{ route('rectorate.contracts.account.show', $contract) }}"><i class="ti ti-cash me-1" aria-hidden="true"></i>Cobrar</a></td>
                     </tr>
                 @empty
-                    <x-ui.empty-row colspan="6" message="No existen cuentas con saldo pendiente para cobrar." />
+                    <x-ui.empty-row colspan="6" message="No existen matrículas disponibles para registrar cobros o anticipos." />
                 @endforelse
             </tbody>
         </table>

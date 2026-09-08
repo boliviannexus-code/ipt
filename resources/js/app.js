@@ -1853,16 +1853,20 @@ function initAccountPaymentForms(scope = document) {
         const method = form.elements.namedItem('payment_method_code');
         const referenceField = form.querySelector('[data-payment-reference-field]');
         const reference = form.elements.namedItem('reference');
+        const amount = form.elements.namedItem('amount');
         if (!method || !referenceField || !reference) return;
 
         const syncReference = () => {
-            const requiresReference = method.selectedOptions[0]?.dataset.requiresReference === '1';
+            const hasNewPayment = Number(amount?.value || 0) > 0;
+            method.required = hasNewPayment;
+            const requiresReference = hasNewPayment && method.selectedOptions[0]?.dataset.requiresReference === '1';
             referenceField.classList.toggle('d-none', !requiresReference);
             reference.required = requiresReference;
             if (!requiresReference) reference.value = '';
         };
 
         method.addEventListener('change', syncReference);
+        amount?.addEventListener('input', syncReference);
         syncReference();
         form.dataset.accountPaymentInitialized = '1';
     });

@@ -154,6 +154,98 @@ class AccountPaymentServiceTest extends TestCase
         $this->assertDatabaseCount('account_payments', 1);
     }
 
+    public function test_next_payment_automatically_uses_credit_and_only_records_new_money(): void
+    {
+        [$user, $contract] = $this->contract();
+        $register = CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $first = $service->record($user, $contract, '350.00', ['payment_method_code' => 1]);
+        $this->assertSame('100.00', $first->credit_amount);
+        $future = $this->futureCharge($contract);
+        foreach (['accounts.collect', 'cash-registers.view'] as $permission) {
+            Permission::findOrCreate($permission);
+            $user->givePermissionTo($permission);
+        }
+        $this->actingAs($user)->get(route('rectorate.contracts.account.show', $contract))
+            ->assertOk()->assertSee('value="150.00"', false)->assertDontSee('Destino del cobro')->assertDontSee('Aplicar saldo a favor');
+        $this->actingAs($user)->post(route('rectorate.contracts.payments.store', $contract), ['amount' => '150.00', 'payment_method_code' => 1])->assertSessionHasNoErrors();
+        $this->assertSame('250.00', $future->refresh()->paid_amount);
+        $this->assertSame('paid', $future->status);
+        $this->assertDatabaseCount('account_payments', 2);
+        $this->assertEquals(500, $register->accountPayments()->sum('amount'));
+        $this->assertEquals(100, $register->creditApplications()->sum('amount'));
+        $this->actingAs($user)->get(route('cash-registers.index'))->assertOk()->assertSee('Resumen de cobros realizados');
+    }
+
+    public function test_credit_can_cover_the_entire_next_payment_without_a_new_cash_receipt(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $payment = $service->record($user, $contract, '550.00', ['payment_method_code' => 1]);
+        $future = $this->futureCharge($contract);
+        Permission::findOrCreate('accounts.collect');
+        $user->givePermissionTo('accounts.collect');
+        $this->actingAs($user)->post(route('rectorate.contracts.payments.store', $contract), ['amount' => '0.00'])->assertSessionHasNoErrors();
+        $this->assertSame('paid', $future->refresh()->status);
+        $this->assertEquals(500, $payment->allocations()->sum('amount'));
+        $this->assertDatabaseCount('account_payments', 1);
+        $this->assertDatabaseHas('account_credit_applications', ['amount' => 250]);
+    }
+
+    public function test_partial_payment_and_new_excess_keep_the_correct_available_balance(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $service->record($user, $contract, '350.00', ['payment_method_code' => 1]);
+        $future = $this->futureCharge($contract);
+        $service->record($user, $contract, '50.00', ['payment_method_code' => 1]);
+        $this->assertSame('150.00', $future->refresh()->paid_amount);
+        $last = $service->record($user, $contract, '125.01', ['payment_method_code' => 1]);
+        $this->assertSame('25.01', $last->credit_amount);
+        $this->assertSame('paid', $future->refresh()->status);
+        $this->assertDatabaseCount('account_credit_applications', 1);
+    }
+
+    public function test_destination_cannot_bypass_paying_pending_charges(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $payment = app(AccountPaymentService::class)->record($user, $contract, '100.00', ['payment_method_code' => 1, 'destination' => 'credit']);
+        $this->assertSame('100.00', $contract->charges()->first()->paid_amount);
+        $this->assertSame('0.00', $payment->credit_amount);
+    }
+
+    public function test_invalid_payment_does_not_consume_the_existing_credit(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $service->record($user, $contract, '350.00', ['payment_method_code' => 1]);
+        $future = $this->futureCharge($contract);
+        foreach ([['0.00', 1], ['150.00', 2]] as [$amount, $method]) {
+            try {
+                $service->record($user, $contract, $amount, ['payment_method_code' => $method]);
+                $this->fail('Invalid payment must be rejected.');
+            } catch (ValidationException $exception) {
+                $this->assertNotEmpty($exception->errors());
+            }
+        }
+        $this->assertSame('0.00', $future->refresh()->paid_amount);
+        $this->assertDatabaseCount('account_credit_applications', 0);
+        $this->assertDatabaseCount('account_payments', 1);
+    }
+
+    private function futureCharge(EnrollmentContract $contract): AccountCharge
+    {
+        return AccountCharge::create([
+            'company_id' => $contract->company_id, 'enrollment_contract_id' => $contract->id, 'plan_id' => $contract->plan_id,
+            'period' => today()->addMonth()->startOfMonth(), 'due_date' => today()->addMonth(),
+            'amount' => 250, 'paid_amount' => 0, 'status' => 'pending',
+        ]);
+    }
+
     private function contract(): array
     {
         $company = Company::factory()->create();

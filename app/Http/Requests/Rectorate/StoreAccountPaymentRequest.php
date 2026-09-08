@@ -16,14 +16,15 @@ class StoreAccountPaymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gte:0', 'max:9999999999.99'],
             'payment_method_code' => [
-                'required',
+                Rule::requiredIf(fn (): bool => (float) $this->input('amount') > 0),
+                'nullable',
                 'integer',
                 Rule::in(AccountPaymentMethod::values()),
             ],
             'reference' => [
-                Rule::requiredIf(fn (): bool => AccountPaymentMethod::tryFrom((int) $this->input('payment_method_code'))?->requiresReference() ?? false),
+                Rule::requiredIf(fn (): bool => (float) $this->input('amount') > 0 && (AccountPaymentMethod::tryFrom((int) $this->input('payment_method_code'))?->requiresReference() ?? false)),
                 'nullable',
                 'string',
                 'max:100',

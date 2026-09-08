@@ -47,18 +47,18 @@ final class DatabaseBackupModuleTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_restore_requires_exact_confirmation_and_creates_safety_backup(): void
+    public function test_restore_requires_checked_confirmation_and_creates_safety_backup(): void
     {
         $fake = new FakeDatabaseBackupManager;
         $this->app->instance(DatabaseBackupManager::class, $fake);
         $user = $this->userWithPermissions(['backups.restore']);
         $route = route('backups.restore', FakeDatabaseBackupManager::FILE);
 
-        $this->actingAs($user)->post($route, ['confirmation' => 'restaurar'])
+        $this->actingAs($user)->post($route, ['confirmation' => '0'])
             ->assertSessionHasErrors('confirmation');
         $this->assertSame(0, $fake->createCalls);
 
-        $this->actingAs($user)->post($route, ['confirmation' => 'RESTAURAR'])
+        $this->actingAs($user)->post($route, ['confirmation' => '1'])
             ->assertRedirect(route('backups.index'))
             ->assertSessionHas('success');
 
@@ -78,7 +78,7 @@ final class DatabaseBackupModuleTest extends TestCase
 
         $this->actingAs($user)->post(route('backups.upload-restore'), [
             'backup_file' => $file,
-            'confirmation' => 'RESTAURAR',
+            'confirmation' => '1',
         ])->assertRedirect(route('backups.index'))->assertSessionHas('success');
 
         $this->assertSame(1, $fake->createCalls);
@@ -94,7 +94,7 @@ final class DatabaseBackupModuleTest extends TestCase
 
         $this->actingAs($user)->post(route('backups.upload-restore'), [
             'backup_file' => UploadedFile::fake()->createWithContent('respaldo.zip', 'invalid'),
-            'confirmation' => 'restaurar',
+            'confirmation' => '0',
         ])->assertSessionHasErrors(['backup_file', 'confirmation']);
 
         $this->assertSame(0, $fake->createCalls);
@@ -110,30 +110,30 @@ final class DatabaseBackupModuleTest extends TestCase
         $user = $this->userWithPermissions(['backups.restore']);
 
         $this->actingAs($user)->post(route('backups.restore', FakeDatabaseBackupManager::FILE), [
-            'confirmation' => 'RESTAURAR',
+            'confirmation' => '1',
         ])->assertSessionHas('error', 'La restauración tuvo un error. El estado anterior fue recuperado automáticamente.');
 
         $this->assertSame(1, $fake->createCalls);
         $this->assertSame([[FakeDatabaseBackupManager::FILE, FakeDatabaseBackupManager::FILE]], $fake->safeRestores);
     }
 
-    public function test_backup_deletion_requires_exact_confirmation_and_permission(): void
+    public function test_backup_deletion_requires_checked_confirmation_and_permission(): void
     {
         $fake = new FakeDatabaseBackupManager;
         $this->app->instance(DatabaseBackupManager::class, $fake);
         $route = route('backups.destroy', FakeDatabaseBackupManager::FILE);
         $authorized = $this->userWithPermissions(['backups.delete']);
 
-        $this->actingAs($authorized)->delete($route, ['confirmation' => 'eliminar'])
+        $this->actingAs($authorized)->delete($route, ['confirmation' => '0'])
             ->assertSessionHasErrors('confirmation');
         $this->assertSame([], $fake->deleted);
 
-        $this->actingAs($authorized)->delete($route, ['confirmation' => 'ELIMINAR'])
+        $this->actingAs($authorized)->delete($route, ['confirmation' => '1'])
             ->assertRedirect(route('backups.index'))
             ->assertSessionHas('success');
         $this->assertSame([FakeDatabaseBackupManager::FILE], $fake->deleted);
 
-        $this->actingAs(User::factory()->create())->delete($route, ['confirmation' => 'ELIMINAR'])
+        $this->actingAs(User::factory()->create())->delete($route, ['confirmation' => '1'])
             ->assertForbidden();
     }
 
@@ -176,6 +176,26 @@ final class DatabaseBackupModuleTest extends TestCase
 
         $this->assertContains('--single-transaction', $command);
         $this->assertContains('--set=ON_ERROR_STOP=1', $command);
+    }
+
+    public function test_download_returns_the_original_compressed_backup(): void
+    {
+        Storage::fake('backup-download-test');
+        config(['backups.disk' => 'backup-download-test']);
+        $manager = new PostgresDatabaseBackupManager;
+        $this->app->instance(DatabaseBackupManager::class, $manager);
+        $contents = gzencode("-- PostgreSQL database dump\nSELECT 1;\n");
+        $backup = $manager->import(UploadedFile::fake()->createWithContent('aws.sql.gz', $contents));
+        $user = $this->userWithPermissions(['backups.download']);
+
+        $response = $this->actingAs($user)->get(route('backups.download', $backup['name']))
+            ->assertOk()
+            ->assertDownload($backup['name'])
+            ->assertHeader('Content-Type', 'application/gzip');
+
+        $this->assertSame($contents, file_get_contents($response->baseResponse->getFile()->getPathname()));
+        $this->assertSame(hash('sha256', $contents), $backup['checksum']);
+        $this->actingAs(User::factory()->create())->get(route('backups.download', $backup['name']))->assertForbidden();
     }
 
     /** @param list<string> $permissions */

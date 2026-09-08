@@ -112,7 +112,9 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
     {
         $this->ensurePostgres();
         $this->ensureBinaryAvailable((string) config('backups.psql_binary'), 'psql');
-        $source = gzopen($this->absolutePath($name), 'rb');
+        $path = $this->absolutePath($name);
+        $this->assertValidPostgresDump($path);
+        $source = gzopen($path, 'rb');
 
         if ($source === false) {
             throw new RuntimeException('No se pudo leer el respaldo seleccionado.');
@@ -148,7 +150,6 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
             $process = new Process($this->restoreCommand($temporaryPath), null, $this->processEnvironment());
             $process->setTimeout((int) config('backups.timeout', 600));
             $process->mustRun();
-            $this->verifyRestoredDatabase();
         } catch (\Throwable $exception) {
             throw new RuntimeException('No se pudo restaurar la base de datos: '.trim($exception->getMessage()), 0, $exception);
         } finally {
@@ -213,11 +214,13 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
     }
 
     /** @return list<string> */
+    // Clear the destination schema inside the same transaction as the dump.
+    // Local-only foreign keys otherwise prevent pg_dump --clean from dropping old tables.
     private function restoreCommand(string $path): array
     {
         $db = config('database.connections.pgsql');
 
-        return [(string) config('backups.psql_binary', 'psql'), '--host='.(string) $db['host'], '--port='.(string) $db['port'], '--username='.(string) $db['username'], '--dbname='.(string) $db['database'], '--set=ON_ERROR_STOP=1', '--single-transaction', '--file='.$path];
+        return [(string) config('backups.psql_binary', 'psql'), '--host='.(string) $db['host'], '--port='.(string) $db['port'], '--username='.(string) $db['username'], '--dbname='.(string) $db['database'], '--no-psqlrc', '--set=ON_ERROR_STOP=1', '--single-transaction', '--command=DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;', '--file='.$path, '--command='.$this->verificationSql()];
     }
 
     /** @return array<string, string> */
@@ -266,7 +269,7 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
         }
     }
 
-    private function verifyRestoredDatabase(): void
+    private function verificationSql(): string
     {
         $tables = array_values((array) config('backups.required_tables', []));
 
@@ -278,21 +281,13 @@ final class PostgresDatabaseBackupManager implements DatabaseBackupManager
             static fn (string $table): string => "'".str_replace("'", "''", $table)."'",
             $tables,
         ));
-        $query = "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename IN ({$quotedTables}); SELECT count(*) FROM migrations;";
-        $db = config('database.connections.pgsql');
-        $process = new Process([
-            (string) config('backups.psql_binary', 'psql'), '--host='.(string) $db['host'], '--port='.(string) $db['port'],
-            '--username='.(string) $db['username'], '--dbname='.(string) $db['database'],
-            '--set=ON_ERROR_STOP=1', '--tuples-only', '--no-align', '--command='.$query,
-        ], null, $this->processEnvironment());
-        $process->setTimeout(60);
-        $process->mustRun();
+        $count = count($tables);
 
-        $results = array_values(array_filter(array_map('trim', preg_split('/\R/', $process->getOutput()) ?: []), 'strlen'));
-
-        if ((int) ($results[0] ?? 0) !== count($tables) || (int) ($results[1] ?? 0) < 1) {
-            throw new RuntimeException('La verificación posterior detectó una restauración incompleta.');
-        }
+        return 'DO $verification$ BEGIN '
+            ."IF (SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename IN ({$quotedTables})) <> {$count} THEN "
+            ."RAISE EXCEPTION 'La restauración no contiene todas las tablas requeridas.'; END IF; "
+            ."IF (SELECT count(*) FROM public.migrations) < 1 THEN RAISE EXCEPTION 'El respaldo no contiene migraciones.'; END IF; "
+            .'END $verification$;';
     }
 
     private function ensureBinaryAvailable(string $binary, string $label): void

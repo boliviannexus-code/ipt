@@ -90,8 +90,10 @@
                     @error('backup_file')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
                 <div class="alert alert-warning"><i class="ti ti-shield-check me-1"></i> Primero se guardará el estado actual. La restauración se aplica en una sola transacción y solo se confirma después de verificarla.</div>
-                <label class="form-label" for="upload-restore-confirmation">Escribe <strong>RESTAURAR</strong> para continuar</label>
-                <input class="form-control @error('confirmation') is-invalid @enderror" id="upload-restore-confirmation" name="confirmation" autocomplete="off" required data-upload-confirmation>
+                <label class="form-check" for="upload-restore-confirmation">
+                    <input class="form-check-input" id="upload-restore-confirmation" type="checkbox" name="confirmation" value="1" required data-upload-confirmation>
+                    <span class="form-check-label">Confirmo que deseo reemplazar la base de datos con el archivo seleccionado.</span>
+                </label>
                 @error('confirmation')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
             <div class="modal-footer">
@@ -113,8 +115,10 @@
             <div class="modal-body">
                 <p>Se reemplazarán los datos actuales con <strong data-restore-name></strong>.</p>
                 <div class="alert alert-warning"><i class="ti ti-shield-check me-1"></i> Antes de restaurar se guardará el estado actual. Si una sentencia falla, todos los cambios se revierten automáticamente.</div>
-                <label class="form-label" for="restore-confirmation">Escribe <strong>RESTAURAR</strong> para continuar</label>
-                <input class="form-control @error('confirmation') is-invalid @enderror" id="restore-confirmation" name="confirmation" autocomplete="off" required data-restore-confirmation>
+                <label class="form-check" for="restore-confirmation">
+                    <input class="form-check-input" id="restore-confirmation" type="checkbox" name="confirmation" value="1" required data-restore-confirmation>
+                    <span class="form-check-label">Confirmo que deseo restaurar este respaldo y reemplazar los datos actuales.</span>
+                </label>
                 @error('confirmation')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
             <div class="modal-footer">
@@ -139,8 +143,10 @@
             <div class="modal-body">
                 <p>Se eliminará permanentemente <strong data-delete-name></strong>.</p>
                 <div class="alert alert-danger"><i class="ti ti-alert-triangle me-1"></i> Este archivo ya no podrá descargarse ni utilizarse para una restauración.</div>
-                <label class="form-label" for="delete-confirmation">Escribe <strong>ELIMINAR</strong> para continuar</label>
-                <input class="form-control" id="delete-confirmation" name="confirmation" autocomplete="off" required data-delete-confirmation>
+                <label class="form-check" for="delete-confirmation">
+                    <input class="form-check-input" id="delete-confirmation" type="checkbox" name="confirmation" value="1" required data-delete-confirmation>
+                    <span class="form-check-label">Confirmo que deseo eliminar este archivo de respaldo.</span>
+                </label>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-link" type="button" data-bs-dismiss="modal">Cancelar</button>
@@ -160,6 +166,6 @@
 
 @push('scripts')
 <script>
-document.addEventListener('DOMContentLoaded',()=>{const modal=document.getElementById('restoreBackupModal');if(modal){const form=modal.querySelector('[data-restore-form]');const input=modal.querySelector('[data-restore-confirmation]');const submit=modal.querySelector('[data-restore-submit]');modal.addEventListener('show.bs.modal',event=>{const button=event.relatedTarget;form.action=button.dataset.restoreUrl;modal.querySelector('[data-restore-name]').textContent=button.dataset.backupName;input.value='';submit.disabled=true});input.addEventListener('input',()=>{submit.disabled=input.value!=='RESTAURAR'})}const uploadModal=document.getElementById('uploadRestoreModal');if(uploadModal){const input=uploadModal.querySelector('[data-upload-confirmation]');const submit=uploadModal.querySelector('[data-upload-submit]');uploadModal.addEventListener('show.bs.modal',()=>{input.value='';submit.disabled=true});input.addEventListener('input',()=>{submit.disabled=input.value!=='RESTAURAR'})}const deleteModal=document.getElementById('deleteBackupModal');if(deleteModal){const form=deleteModal.querySelector('[data-delete-form]');const input=deleteModal.querySelector('[data-delete-confirmation]');const submit=deleteModal.querySelector('[data-delete-submit]');deleteModal.addEventListener('show.bs.modal',event=>{const button=event.relatedTarget;form.action=button.dataset.deleteUrl;deleteModal.querySelector('[data-delete-name]').textContent=button.dataset.backupName;input.value='';submit.disabled=true});input.addEventListener('input',()=>{submit.disabled=input.value!=='ELIMINAR'})}});
+document.addEventListener('DOMContentLoaded',()=>{const modal=document.getElementById('restoreBackupModal');if(modal){const form=modal.querySelector('[data-restore-form]');const input=modal.querySelector('[data-restore-confirmation]');const submit=modal.querySelector('[data-restore-submit]');modal.addEventListener('show.bs.modal',event=>{const button=event.relatedTarget;form.action=button.dataset.restoreUrl;modal.querySelector('[data-restore-name]').textContent=button.dataset.backupName;input.checked=false;submit.disabled=true});input.addEventListener('change',()=>{submit.disabled=!input.checked})}const uploadModal=document.getElementById('uploadRestoreModal');if(uploadModal){const input=uploadModal.querySelector('[data-upload-confirmation]');const submit=uploadModal.querySelector('[data-upload-submit]');uploadModal.addEventListener('show.bs.modal',()=>{input.checked=false;submit.disabled=true});input.addEventListener('change',()=>{submit.disabled=!input.checked})}const deleteModal=document.getElementById('deleteBackupModal');if(deleteModal){const form=deleteModal.querySelector('[data-delete-form]');const input=deleteModal.querySelector('[data-delete-confirmation]');const submit=deleteModal.querySelector('[data-delete-submit]');deleteModal.addEventListener('show.bs.modal',event=>{const button=event.relatedTarget;form.action=button.dataset.deleteUrl;deleteModal.querySelector('[data-delete-name]').textContent=button.dataset.backupName;input.checked=false;submit.disabled=true});input.addEventListener('change',()=>{submit.disabled=!input.checked})}});
 </script>
 @endpush

@@ -32,7 +32,7 @@ class AccountStatementController extends Controller
             ->with(['student.campus', 'program', 'plan', 'application.campus'])
             ->withSum(['charges as total_charged' => fn ($query) => $query->where('status', '!=', 'cancelled')], 'amount')
             ->withSum(['charges as total_paid' => fn ($query) => $query->where('status', '!=', 'cancelled')], 'paid_amount')
-            ->whereHas('charges', fn ($query) => $query->whereIn('status', ['pending', 'partial']))
+            ->where('status', '!=', 'cancelled')
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($query) use ($search): void {
                     $query->whereHas('student', fn ($student) => $student
@@ -52,9 +52,10 @@ class AccountStatementController extends Controller
     public function show(Request $request, EnrollmentContract $contract): View
     {
         $contract->load([
+            'creditApplications.operator', 'creditApplications.contract',
             'student.campus', 'program', 'plan', 'application.customer', 'application.campus',
             'charges' => fn ($query) => $query->orderBy('period'),
-            'payments' => fn ($query) => $query->with('cashRegister')->latest('paid_at'),
+            'payments' => fn ($query) => $query->with('cashRegister')->withSum('allocations', 'amount')->latest('paid_at'),
         ]);
 
         return view('rectorate.account-statement', [
@@ -75,6 +76,6 @@ class AccountStatementController extends Controller
         );
 
         return redirect()->route('rectorate.contracts.account.show', $contract)
-            ->with('success', 'Pago registrado y aplicado correctamente al estado de cuenta.');
+            ->with('success', 'Pago registrado correctamente.');
     }
 }

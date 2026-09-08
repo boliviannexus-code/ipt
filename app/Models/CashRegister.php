@@ -67,4 +67,9 @@ class CashRegister extends Model implements Auditable
     {
         return $this->hasMany(AccountPayment::class);
     }
+
+    public function creditApplications(): HasMany
+    {
+        return $this->hasMany(AccountCreditApplication::class);
+    }
 }

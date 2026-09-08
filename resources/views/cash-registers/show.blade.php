@@ -25,6 +25,9 @@
         </div>
     </div>
 
+    @include('cash-registers.partials.collection-summary', ['register' => $cashRegister])
+    @include('cash-registers.partials.credit-applications', ['applications' => $cashRegister->creditApplications])
+
     <x-ui.table-card title="Pagos registrados en esta caja">
         <table class="table table-hover align-middle mb-0">
             <thead><tr><th>Fecha</th><th>Comprobante</th><th>Estudiante</th><th>Método</th><th>Registrado por</th><th class="text-end">Monto</th></tr></thead>
