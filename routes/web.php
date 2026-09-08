@@ -85,6 +85,9 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::get('modules/{module}/teacher', [AcademicModuleTeacherController::class, 'edit'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('modules.teacher.edit');
         Route::put('modules/{module}/teacher', [AcademicModuleTeacherController::class, 'update'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('modules.teacher.update');
         Route::get('promotions', [ModulePromotionController::class, 'index'])->middleware('permission:academic-modules.view')->name('promotions.index');
+        Route::get('promotions/{module}/create', [ModulePromotionController::class, 'create'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('promotions.create');
+        Route::post('promotions/{module}/students', [ModulePromotionController::class, 'students'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('promotions.students');
+        Route::post('promotions/{module}', [ModulePromotionController::class, 'store'])->whereNumber('module')->middleware('permission:academic-modules.manage')->name('promotions.store');
     });
     Route::prefix('students')->name('students.')->middleware('company_user')->group(function (): void {
         Route::get('/', [StudentController::class, 'index'])->middleware('permission:students.view')->name('index');

@@ -36,15 +36,61 @@ class StudentModuleAssignmentTest extends TestCase
         [$user, $student, $program] = $this->context();
         $level = ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Básico 1', 'position' => 1]);
         $module = $this->module($program, $level, 'Módulo Básico 1');
+        $nextModule = $this->module($program, $level, 'Módulo Básico 2');
+        $higherLevel = ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Básico 2', 'position' => 2]);
+        $higherModule = $this->module($program, $higherLevel, 'Módulo de nivel 2');
         $otherProgram = Program::withoutGlobalScope('company')->create(['company_id' => $program->company_id, 'title' => 'Francés', 'duration_months' => 12]);
         $otherLevel = ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $program->company_id, 'program_id' => $otherProgram->id, 'name' => 'Inicial', 'position' => 1]);
         $otherModule = $this->module($otherProgram, $otherLevel, 'Módulo Inicial');
 
         $this->actingAs($user)->get(route('students.modules.create', $student), ['X-Requested-With' => 'XMLHttpRequest'])
-            ->assertOk()->assertSee('Módulo Básico 1')->assertDontSee('Módulo Inicial');
+            ->assertOk()
+            ->assertSee('Módulo Básico 1')
+            ->assertDontSee('Módulo de nivel 2')
+            ->assertDontSee('Módulo Inicial');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $higherModule->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('academic_module_id');
         $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $module->id])
             ->assertOk()->assertJsonPath('success', true);
         $this->assertDatabaseHas('academic_module_student_assignments', ['student_id' => $student->id, 'academic_module_id' => $module->id]);
+        $this->actingAs($user)->get(route('students.index'))
+            ->assertOk()
+            ->assertSee('Nivel del estudiante')
+            ->assertDontSee('>CI<', false)
+            ->assertDontSee('>Programa<', false)
+            ->assertSee('Básico 1')
+            ->assertSee('Módulo actual')
+            ->assertDontSee('>Módulos<', false)
+            ->assertSee('Módulo Básico 1 / Virtual')
+            ->assertDontSee(route('students.modules.create', $student), false);
+
+        $this->actingAs($user)->get(route('students.modules.create', $student), ['X-Requested-With' => 'XMLHttpRequest'])
+            ->assertOk()
+            ->assertDontSee('Módulo Básico 2')
+            ->assertSee('debe cerrarse antes de realizar una nueva asignación');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $nextModule->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('academic_module_id');
+        $this->assertDatabaseMissing('academic_module_student_assignments', ['student_id' => $student->id, 'academic_module_id' => $nextModule->id]);
+
+        $module->update(['closed_at' => now(), 'closed_by' => $user->id]);
+        $student->moduleAssignments()->where('academic_module_id', $module->id)->update(['released_at' => now()]);
+        $this->actingAs($user)->get(route('students.index'))
+            ->assertOk()
+            ->assertSee('Sin módulo')
+            ->assertSee(route('students.modules.create', $student), false);
+        $this->actingAs($user)->get(route('students.modules.create', $student), ['X-Requested-With' => 'XMLHttpRequest'])
+            ->assertOk()
+            ->assertSee('Módulo Básico 2')
+            ->assertDontSee('Módulo de nivel 2');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $higherModule->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('academic_module_id');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $nextModule->id])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+        $this->assertDatabaseHas('academic_module_student_assignments', ['student_id' => $student->id, 'academic_module_id' => $nextModule->id]);
 
         $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $otherModule->id])
             ->assertUnprocessable()->assertJsonValidationErrors('academic_module_id');

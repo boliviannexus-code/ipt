@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Student extends Model
@@ -46,6 +47,13 @@ class Student extends Model
     public function moduleAssignments(): HasMany
     {
         return $this->hasMany(AcademicModuleStudentAssignment::class);
+    }
+
+    public function currentModuleAssignment(): HasOne
+    {
+        return $this->hasOne(AcademicModuleStudentAssignment::class)
+            ->whereNull('released_at')
+            ->latestOfMany('assigned_at');
     }
 
     public function attendances(): HasMany

@@ -27,7 +27,7 @@
         <td width="66%" align="center">
             <div style="font-size:13px;font-weight:bold;font-style:italic;">INSTITUTO TÉCNICO “INGLÉS PARA TODOS”</div>
             <div style="font-size:10px;font-weight:bold;">R.M. 0557/2021</div>
-            <div style="font-size:15px;font-weight:bold;font-style:italic;line-height:24px;">INSCRIPCIÓN CURSOS DE CAPACITACIÓN</div>
+            <div style="font-size:15px;font-weight:bold;font-style:italic;line-height:24px;">FORMULARIO DE INSCRIPCION CURSOS DE CAPACITACION</div>
         </td>
         <td width="17%" style="padding-top:18px;">
             <table border="1" cellpadding="2" cellspacing="0" width="100%">
@@ -156,7 +156,7 @@
     <tr style="background-color:#b8b7b2;font-size:10px;font-weight:bold;"><td align="center">CONTRATO PRIVADO DE PRESTACIÓN DE SERVICIO EDUCATIVO</td></tr>
     <tr><td>Conste por el presente documento privado un Contrato de Prestación de Servicio Educativo, que con reconocimiento de firmas y rúbricas surtirá efectos de instrumento público, y que se suscribe a tenor de las cláusulas siguientes:</td></tr>
     <tr><td><b>Primera (Partes).-</b> El presente documento se encuentra suscrito por las siguientes partes:<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;<b>1.1</b> La institución <b>{{ mb_strtoupper($company?->legal_name ?: $company?->name ?: 'INSTITUTO TÉCNICO “INGLÉS PARA TODOS”') }}</b>, legalmente constituida bajo las leyes del Estado Plurinacional de Bolivia, con Número de Identificación Tributaria <b>{{ $company?->tax_id ?: '________________' }}</b>, que para efectos del presente contrato se denominará el <b>“INSTITUTO”</b>.<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<b>1.1</b> La institución <b>{{ mb_strtoupper($company?->legal_name ?: $company?->name ?: 'INSTITUTO TÉCNICO “INGLÉS PARA TODOS”') }}</b>, legalmente constituida bajo las leyes del Estado Plurinacional de Bolivia, que para efectos del presente contrato se denominará el <b>“INSTITUTO”</b>.<br>
         &nbsp;&nbsp;&nbsp;&nbsp;<b>1.2</b> El/la Sr.(a) <b>{{ $holderName }}</b>, con C.I. <b>{{ $application->identity_document }}</b>, en calidad de <b>{{ mb_strtoupper($application->student_relationship ?: 'RESPONSABLE Y/O TUTOR') }}</b> del estudiante <b>{{ $studentName }}</b>, con C.I. <b>{{ $student->identity_document }}</b>, quien para efectos del presente contrato será denominado(a) el/la <b>“ESTUDIANTE y/o TUTOR”</b>.<br>
         &nbsp;&nbsp;&nbsp;&nbsp;<b>1.3</b> Cuando el presente contrato se refiera a la <b>“INSTITUCIÓN”</b> y al <b>“ESTUDIANTE”</b> de forma conjunta, los mismos serán denominados <b>“LAS PARTES”</b>.</td></tr>
     <tr><td><b>Segunda (Antecedentes).-</b> El <b>INSTITUTO</b> es una institución educativa de formación Técnica Superior que opera legalmente en la ciudad de <b>{{ $city }}</b>, en virtud de la Resolución Ministerial N.º 557/2021, que lo hace parte del Subsistema de Educación Superior en Idiomas.</td></tr>
@@ -187,8 +187,9 @@
     <tr><td><b>Novena (Aceptación).-</b> Las <b>PARTES</b> declaran conocer el contenido de cada una de las cláusulas, por lo que suscriben el presente documento en total acto de buena fe y voluntad, sin que medie vicio del consentimiento, en doble ejemplar.</td></tr>
     <tr><td>Suscrito en la ciudad de <b>{{ $city }}</b> a los <b>{{ $date?->format('d') }}</b> días del mes de <b>{{ mb_strtoupper($date?->locale('es')->translatedFormat('F') ?? '') }}</b> de <b>{{ $date?->format('Y') }}</b>.</td></tr>
     <tr><td>
-        <table cellpadding="3" cellspacing="0" width="100%" style="font-size:7.5px;font-weight:bold;">
-            <tr><td width="50%" align="center" style="line-height:25px;">__________________________________<br>FIRMA ESTUDIANTE Y/O TUTOR<br>N.º C.I. <b>{{ $application->identity_document }}</b></td><td width="50%" align="center" style="line-height:25px;">__________________________________<br>RECTORÍA</td></tr>
+        <table cellpadding="0" cellspacing="0" width="100%" style="font-size:7.5px;font-weight:bold;" nobr="true">
+            <tr><td colspan="2" height="105" style="line-height:55px;">&nbsp;</td></tr>
+            <tr><td width="50%" align="center" style="line-height:10px;">__________________________________<br>FIRMA ESTUDIANTE Y/O TUTOR<br>N.º C.I. <b>{{ $application->identity_document }}</b></td><td width="50%" align="center" style="line-height:10px;">__________________________________<br>RECTORÍA<br>{{ mb_strtoupper($company?->legal_name ?: $company?->name ?: '') }}</td></tr>
         </table>
     </td></tr>
 </table>

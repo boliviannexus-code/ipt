@@ -13,8 +13,11 @@ class StudentController extends Controller
     {
         $search = trim((string) $request->input('q'));
         $students = Student::query()
-            ->with(['campus', 'contracts' => fn ($query) => $query->with('program')->where('status', 'enrolled')])
-            ->withCount('moduleAssignments')
+            ->with([
+                'campus',
+                'contracts' => fn ($query) => $query->with(['currentProgramLevel', 'program.levels'])->where('status', 'enrolled'),
+                'currentModuleAssignment.module',
+            ])
             ->where('is_active', true)
             ->whereHas('contracts', fn ($query) => $query->where('status', 'enrolled'))
             ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {

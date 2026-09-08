@@ -12,6 +12,7 @@ use App\Models\Personnel;
 use App\Models\Plan;
 use App\Models\Position;
 use App\Models\Program;
+use App\Models\ProgramLevel;
 use App\Models\RectorateApplication;
 use App\Models\SinCatalogItem;
 use App\Models\Student;
@@ -96,6 +97,12 @@ class HolderStepTest extends TestCase
             'title' => 'Inglés intensivo',
             'enrollment_code' => 'CAP',
             'duration_months' => 12,
+        ]);
+        $initialLevel = ProgramLevel::withoutGlobalScope('company')->create([
+            'company_id' => $company->id,
+            'program_id' => $program->id,
+            'name' => 'Nivel 1',
+            'position' => 1,
         ]);
         $program->plans()->attach($plan);
         $origin = CommercialOrigin::withoutGlobalScope('company')->create([
@@ -224,6 +231,7 @@ class HolderStepTest extends TestCase
         $this->assertSame(10001, $contract->contract_number);
         $this->assertSame('CAP10001', $contract->account_number);
         $this->assertSame($application->campus_id, $contract->campus_id);
+        $this->assertSame($initialLevel->id, $contract->current_program_level_id);
         $this->assertSame('pre_enrolled', $contract->status);
         $this->assertSame('250.00', $contract->monthly_amount);
         $this->assertDatabaseHas('account_charges', [

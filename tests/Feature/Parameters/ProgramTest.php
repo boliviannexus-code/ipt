@@ -62,7 +62,9 @@ class ProgramTest extends TestCase
             ->get(route('parameters.programs.levels.index', $firstProgram))
             ->assertOk()
             ->assertSee('Niveles del programa')
-            ->assertSee('Agregar nivel');
+            ->assertSee('Agregar nivel')
+            ->assertSee('Número de nivel')
+            ->assertDontSee('Posición');
 
         $this->actingAs($user)->post(route('parameters.programs.levels.store', $firstProgram), [
             'name' => 'básico 1',

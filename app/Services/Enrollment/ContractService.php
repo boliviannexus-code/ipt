@@ -6,6 +6,7 @@ use App\Models\AccountCharge;
 use App\Models\ContractPlanHistory;
 use App\Models\EnrollmentContract;
 use App\Models\Plan;
+use App\Models\ProgramLevel;
 use App\Models\RectorateApplication;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,10 @@ class ContractService
         }
 
         $plan = Plan::withoutGlobalScope('company')->findOrFail($application->plan_id);
+        $initialLevelId = ProgramLevel::withoutGlobalScope('company')
+            ->where('program_id', $application->program_id)
+            ->where('position', 1)
+            ->value('id');
         $contract = EnrollmentContract::withoutGlobalScope('company')->create([
             'company_id' => $application->company_id,
             'campus_id' => $application->campus_id,
@@ -30,6 +35,7 @@ class ContractService
             'rectorate_application_id' => $application->id,
             'student_id' => $application->student_id,
             'program_id' => $application->program_id,
+            'current_program_level_id' => $initialLevelId,
             'plan_id' => $plan->id,
             // Campo legado: la matrícula es la única referencia pública.
             'contract_number' => (int) substr($application->account_number, -5),

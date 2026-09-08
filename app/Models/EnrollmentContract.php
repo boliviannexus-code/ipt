@@ -13,7 +13,7 @@ class EnrollmentContract extends Model
     use BelongsToCompany, HasFactory;
 
     protected $fillable = [
-        'company_id', 'campus_id', 'account_number', 'rectorate_application_id', 'student_id', 'program_id', 'plan_id',
+        'company_id', 'campus_id', 'account_number', 'rectorate_application_id', 'student_id', 'program_id', 'current_program_level_id', 'plan_id',
         'contract_number', 'monthly_amount', 'status', 'confirmed_at', 'enrolled_at',
     ];
 
@@ -45,6 +45,11 @@ class EnrollmentContract extends Model
     public function program(): BelongsTo
     {
         return $this->belongsTo(Program::class);
+    }
+
+    public function currentProgramLevel(): BelongsTo
+    {
+        return $this->belongsTo(ProgramLevel::class, 'current_program_level_id');
     }
 
     public function plan(): BelongsTo

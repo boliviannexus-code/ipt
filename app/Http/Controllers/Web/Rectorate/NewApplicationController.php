@@ -174,6 +174,9 @@ class NewApplicationController extends Controller
         return response($contents, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$this->contractPdf->filename($contract->account_number).'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
 
