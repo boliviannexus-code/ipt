@@ -158,6 +158,11 @@
                         </div>
                     </div>
 
+                    @if ($activeCashRegister)
+                        @can('accounts.collect')
+                            <a class="btn btn-success mb-3" href="{{ route('rectorate.collectible-accounts.index') }}"><i class="ti ti-cash me-1" aria-hidden="true"></i>Recibir cobro o anticipo</a>
+                        @endcan
+                    @endif
                     <div class="row g-3">
                         <div class="col-sm-6">
                             <div class="border rounded p-3 h-100">
@@ -178,6 +183,8 @@
     </div>
 
     @if ($activeCashRegister)
+        @include('cash-registers.partials.collection-summary', ['register' => $activeCashRegister])
+        @include('cash-registers.partials.credit-applications', ['applications' => $activeCashRegister->creditApplications])
         <x-ui.table-card title="Movimientos de la caja activa">
             <table class="table table-hover align-middle mb-0">
                 <thead><tr><th>Fecha y hora</th><th>Comprobante</th><th>Estudiante</th><th>Método de pago</th><th class="text-end">Monto</th></tr></thead>
@@ -187,7 +194,7 @@
                             <td>{{ $payment->paid_at->format('d/m/Y H:i') }}</td>
                             <td><span class="fw-semibold">PAGO-{{ str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT) }}</span></td>
                             <td>{{ collect([$payment->contract?->student?->first_name, $payment->contract?->student?->paternal_surname, $payment->contract?->student?->maternal_surname])->filter()->join(' ') ?: 'No disponible' }}</td>
-                            <td>{{ $payment->payment_method_code }} · {{ $paymentMethodLabels->get((string) $payment->payment_method_code, 'Método SIN') }}</td>
+                            <td>{{ $paymentMethodLabels->get($payment->payment_method_code, 'Método no disponible') }}@if($payment->reference)<small class="d-block text-body-secondary">Ref.: {{ $payment->reference }}</small>@endif</td>
                             <td class="text-end fw-semibold text-success">Bs {{ money_format_decimal($payment->amount) }}</td>
                         </tr>
                     @empty

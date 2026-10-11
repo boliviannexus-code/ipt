@@ -72,7 +72,7 @@ class ProgramLevelController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ], [
             'name.unique' => 'Este programa ya tiene un nivel con ese nombre.',
-            'position.unique' => 'Este programa ya tiene un nivel en esa posición.',
+            'position.unique' => 'Este programa ya tiene configurado ese número de nivel.',
         ]);
     }
 

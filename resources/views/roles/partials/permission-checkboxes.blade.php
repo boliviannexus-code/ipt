@@ -17,6 +17,28 @@
         </div>
     </div>
 
+    @if (($copyRoles ?? collect())->isNotEmpty())
+        <div class="card bg-light-subtle border mb-3">
+            <div class="card-body py-3">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md">
+                        <label class="form-label mb-1" for="{{ $permissionMatrixId }}-copy-role">Copiar permisos de otro rol</label>
+                        <select class="form-select" id="{{ $permissionMatrixId }}-copy-role" data-permission-copy-role>
+                            <option value="">Selecciona un rol de referencia</option>
+                            @foreach ($copyRoles as $copyRole)
+                                <option value="{{ $copyRole->id }}" data-permissions="{{ $copyRole->permissions->pluck('name')->values()->toJson() }}">{{ role_label($copyRole->name) }} ({{ $copyRole->permissions->count() }} {{ $copyRole->permissions->count() === 1 ? 'permiso' : 'permisos' }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-auto">
+                        <button class="btn btn-outline-primary w-100" type="button" data-permission-copy-button><i class="ti ti-copy me-1" aria-hidden="true"></i>Copiar configuración</button>
+                    </div>
+                </div>
+                <div class="form-text" data-permission-copy-status>Podrás revisar la selección antes de guardar.</div>
+            </div>
+        </div>
+    @endif
+
     <div class="permission-matrix-toolbar">
         <div class="permission-search">
             <i class="ti ti-search" aria-hidden="true"></i>

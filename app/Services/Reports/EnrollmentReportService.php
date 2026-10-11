@@ -15,6 +15,7 @@ class EnrollmentReportService
             ->with([
                 'campus', 'program', 'plan', 'commercialOrigin', 'salesExecutive', 'student',
                 'contract.charges' => fn ($query) => $query->where('status', '!=', 'cancelled'),
+                'contract.payments',
             ])
             ->whereBetween('created_at', [
                 Carbon::parse($filters['date_from'])->startOfDay(),
@@ -26,6 +27,8 @@ class EnrollmentReportService
             ->when($filters['sales_executive_id'] ?? null, fn ($query, $id) => $query->where('sales_executive_id', $id))
             ->when($filters['commercial_origin_id'] ?? null, fn ($query, $id) => $query->where('commercial_origin_id', $id))
             ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            ->when($filters['payment_method_code'] ?? null, fn ($query, $code) => $query
+                ->whereHas('contract.payments', fn ($payments) => $payments->where('payment_method_code', $code)))
             ->latest('created_at');
     }
 

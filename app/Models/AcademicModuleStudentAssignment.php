@@ -10,11 +10,11 @@ class AcademicModuleStudentAssignment extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'academic_module_id', 'student_id', 'assigned_by', 'assigned_at'];
+    protected $fillable = ['company_id', 'academic_module_id', 'student_id', 'assigned_by', 'assigned_at', 'released_at'];
 
     protected function casts(): array
     {
-        return ['assigned_at' => 'datetime'];
+        return ['assigned_at' => 'datetime', 'released_at' => 'datetime'];
     }
 
     public function module(): BelongsTo

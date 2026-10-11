@@ -11,11 +11,11 @@ class AccountPayment extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'enrollment_contract_id', 'cash_register_id', 'received_by', 'amount', 'payment_method_code', 'reference', 'paid_at'];
+    protected $fillable = ['company_id', 'enrollment_contract_id', 'cash_register_id', 'received_by', 'amount', 'credit_amount', 'payment_method_code', 'reference', 'paid_at'];
 
     protected function casts(): array
     {
-        return ['amount' => 'decimal:2', 'payment_method_code' => 'integer', 'paid_at' => 'immutable_datetime'];
+        return ['amount' => 'decimal:2', 'credit_amount' => 'decimal:2', 'payment_method_code' => 'integer', 'paid_at' => 'immutable_datetime'];
     }
 
     public function contract(): BelongsTo

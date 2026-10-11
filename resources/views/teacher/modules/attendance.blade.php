@@ -1,25 +1,78 @@
 @extends('layouts.admin')
-@section('title', 'Registrar asistencia')
-@section('page-title', 'Registrar asistencia')
+@section('title', 'Registro diario')
+@section('page-title', 'Registro diario')
 @section('page-subtitle', $module->name.' · '.$session->class_date->format('d/m/Y'))
 @section('content')
-<form method="POST" action="{{ route('teacher.modules.attendance.update', [$module, $session]) }}">
+<form method="POST" action="{{ route('teacher.modules.attendance.update', [$module, $session]) }}" data-daily-wizard data-autosave-url="{{ route('teacher.modules.daily-record.autosave', [$module, $session]) }}" data-confirm-action data-confirm-title="¿Finalizar esta clase?" data-confirm-text="Las notas y observaciones quedarán registradas y la clase ya no podrá modificarse." data-confirm-button="Sí, finalizar clase">
     @csrf @method('PUT')
-    <x-ui.table-card title="Lista de estudiantes">
-        <x-slot:actions><span class="badge text-bg-green"><i class="ti ti-player-play me-1"></i>Iniciada {{ $session->started_at->format('H:i') }}</span></x-slot:actions>
-        <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Estudiante</th><th>CI</th><th style="width: 15rem">Asistencia</th></tr></thead>
-            <tbody>
+    <nav class="card mb-3" aria-label="Progreso del registro diario"><div class="card-body py-3"><div class="daily-wizard-steps">
+        @foreach([1 => ['ti-checkbox', 'Habilidades'], 2 => ['ti-users', 'Estudiantes'], 3 => ['ti-clipboard-check', 'Resumen']] as $number => [$icon, $label])
+            <button class="daily-wizard-step {{ $number === 1 ? 'is-active' : '' }}" type="button" data-step-indicator="{{ $number }}" @disabled($number > 1) aria-current="{{ $number === 1 ? 'step' : 'false' }}"><span class="daily-wizard-step-number"><i class="ti {{ $icon }}"></i></span><span><strong>Paso {{ $number }}</strong><small>{{ $label }}</small></span></button>
+        @endforeach
+    </div></div></nav>
+
+    <section data-wizard-panel="1">
+        <x-ui.card title="Habilidades trabajadas hoy"><div class="card-body">
+            @if($dailyComponents->isEmpty())<div class="alert alert-info mb-0"><i class="ti ti-info-circle me-2"></i>No existen ponderaciones diarias activas. Puedes continuar para registrar observaciones.</div>
+            @else<p class="text-secondary mb-2">Selecciona las habilidades evaluadas durante esta clase.</p><div class="row g-2">@foreach($dailyComponents as $component)<div class="col-12 col-md-6"><fieldset class="border rounded p-2 h-100"><legend class="float-none w-auto px-2 h4 mb-1">{{ $component->name }} <span class="badge bg-azure-lt text-azure">{{ $component->weight }}%</span></legend><div class="vstack gap-1">@foreach($component->skills as $skill)@php($isSelected = collect(old('selected_skills', $selectedSkillIds->all()))->contains(fn($id) => (int)$id === $skill->id))<label class="form-check daily-skill-option"><input class="form-check-input" type="checkbox" name="selected_skills[]" value="{{ $skill->id }}" data-daily-skill="{{ $skill->id }}" data-skill-name="{{ $skill->name }}" @checked($isSelected)><span class="form-check-label">{{ $skill->name }} @if($component->skills->count() > 1)<span class="text-secondary">· {{ $skill->weight }}%</span>@endif</span></label>@endforeach</div></fieldset></div>@endforeach</div>@endif
+        </div><x-slot:footer><div class="d-flex justify-content-between"><a class="btn btn-outline-secondary" href="{{ route('teacher.modules.index') }}">Cancelar</a><button class="btn btn-primary" type="button" data-next-step="2">Continuar <i class="ti ti-arrow-right ms-1"></i></button></div></x-slot:footer></x-ui.card>
+    </section>
+
+    <section class="d-none" data-wizard-panel="2">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h2 class="h2 mb-0">Lista de estudiantes</h2><span class="badge text-bg-green"><i class="ti ti-player-play me-1"></i>Iniciada {{ $session->started_at->format('H:i') }}</span></div>
+        <x-ui.table-card title="Estudiantes"><table class="table table-hover align-middle mb-0 daily-student-list"><thead><tr><th class="daily-student-name">Estudiante</th>@foreach($dailySkills as $skill)<th class="text-center d-none daily-skill-column" data-skill-field="{{ $skill->id }}">{{ $skill->name }}</th>@endforeach<th class="text-end" style="min-width: 10rem">Observación</th></tr></thead><tbody>
             @forelse($module->studentAssignments as $assignment)
-                @php($currentStatus = old('attendance.'.$assignment->student_id, $attendanceByStudent->get($assignment->student_id)?->status ?? 'present'))
-                <tr><td class="fw-semibold">{{ trim("{$assignment->student->first_name} {$assignment->student->paternal_surname} {$assignment->student->maternal_surname}") }}</td><td>{{ $assignment->student->identity_document }}</td><td><select class="form-select" name="attendance[{{ $assignment->student_id }}]" aria-label="Asistencia de {{ $assignment->student->first_name }}" required>@foreach(['present'=>'Presente','absent'=>'Ausente','late'=>'Tardanza','excused'=>'Justificado'] as $value=>$label)<option value="{{ $value }}" @selected($currentStatus === $value)>{{ $label }}</option>@endforeach</select></td></tr>
-            @empty
-                <x-ui.empty-row colspan="3" message="Este módulo no tiene estudiantes asignados." />
-            @endforelse
-            </tbody>
-        </table>
-        <x-slot:footer><div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{{ route('teacher.modules.index') }}">Volver</a><button class="btn btn-primary" type="submit" @disabled($module->studentAssignments->isEmpty())><i class="ti ti-device-floppy me-1"></i>Guardar asistencia</button></div></x-slot:footer>
-    </x-ui.table-card>
+                @php($studentName = trim("{$assignment->student->first_name} {$assignment->student->paternal_surname} {$assignment->student->maternal_surname}"))
+                @php($observation = old("observations.{$assignment->student_id}", $observationsByStudent->get($assignment->student_id, '')))
+                <tr><td class="daily-student-name fw-semibold">{{ $studentName }}</td>
+                    @foreach($dailySkills as $skill)
+                        @php($savedGrade = $dailyGradesBySkill->get($skill->id)?->get($assignment->student_id)) @php($isSimple = $skill->component->scoring_method === \App\Enums\GradingScoringMethod::Simple) @php($simpleValue = (string) old("grades.{$skill->id}.{$assignment->student_id}", $savedGrade === null ? '0' : ((float)$savedGrade === 100.0 ? '1' : '0')))
+                        <td class="text-center d-none daily-skill-column" data-skill-field="{{ $skill->id }}">@if($isSimple)<div class="form-check form-switch daily-grade-switch justify-content-center"><input type="hidden" name="grades[{{ $skill->id }}][{{ $assignment->student_id }}]" value="0"><input class="form-check-input" id="grade-{{ $skill->id }}-{{ $assignment->student_id }}" name="grades[{{ $skill->id }}][{{ $assignment->student_id }}]" type="checkbox" role="switch" value="1" data-simple-grade data-autosave-grade data-skill-id="{{ $skill->id }}" data-student-id="{{ $assignment->student_id }}" @checked($simpleValue === '1')><label class="form-check-label fw-semibold" for="grade-{{ $skill->id }}-{{ $assignment->student_id }}"><span data-simple-state>{{ $simpleValue === '1' ? '1' : '0' }}</span></label></div>@else<label class="visually-hidden" for="grade-{{ $skill->id }}-{{ $assignment->student_id }}">{{ $skill->name }} de {{ $studentName }}</label><div class="input-group input-group-sm mx-auto daily-percentage-input"><input class="form-control text-end" id="grade-{{ $skill->id }}-{{ $assignment->student_id }}" name="grades[{{ $skill->id }}][{{ $assignment->student_id }}]" type="number" min="0" max="100" step="0.01" value="{{ old("grades.{$skill->id}.{$assignment->student_id}", $savedGrade ?? 0) }}" inputmode="decimal" data-grade-input="{{ $skill->id }}" data-autosave-grade data-skill-id="{{ $skill->id }}" data-student-id="{{ $assignment->student_id }}"><span class="input-group-text">%</span></div>@endif<small class="daily-save-status" data-save-status aria-live="polite"></small></td>
+                    @endforeach
+                    <td class="text-end"><input type="hidden" name="observations[{{ $assignment->student_id }}]" value="{{ $observation }}" data-observation-value="{{ $assignment->student_id }}"><button class="btn btn-outline-primary btn-sm" type="button" data-observation-open data-student-id="{{ $assignment->student_id }}" data-student-name="{{ $studentName }}"><i class="ti ti-message-circle me-1"></i><span data-observation-label>{{ trim((string)$observation) === '' ? 'Agregar' : 'Ver' }}</span></button></td>
+                </tr>
+            @empty<x-ui.empty-row :colspan="2 + $dailySkills->count()" message="Este módulo no tiene estudiantes asignados." />@endforelse
+        </tbody></table></x-ui.table-card>
+        <div class="daily-wizard-actions"><button class="btn btn-outline-secondary" type="button" data-previous-step="1"><i class="ti ti-arrow-left me-1"></i>Anterior</button><button class="btn btn-primary" type="button" data-next-step="3" @disabled($module->studentAssignments->isEmpty())>Revisar resumen <i class="ti ti-arrow-right ms-1"></i></button></div>
+    </section>
+
+    <section class="d-none" data-wizard-panel="3"><x-ui.card title="Resumen de la clase"><div class="card-body">
+        <div class="row g-3 mb-4">@foreach([['Fecha', $session->class_date->format('d/m/Y'), ''], ['Asistencia', $module->studentAssignments->count().' estudiantes', ''], ['Participación', '0 estudiantes', 'data-summary-participation'], ['Habilidades usadas', 0, 'data-summary-skills']] as [$label, $value, $attribute])<div class="col-6 col-md-3"><div class="border rounded p-3 h-100"><span class="text-secondary small d-block">{{ $label }}</span><strong {{ $attribute }}>{{ $value }}</strong></div></div>@endforeach</div>
+        <h3>Habilidades usadas</h3><div class="d-flex flex-wrap gap-2 mb-4" data-summary-skill-list></div><div class="alert alert-warning mb-0"><i class="ti ti-lock me-2"></i>Al finalizar, el registro de esta clase quedará bloqueado.</div>
+    </div><x-slot:footer><div class="d-flex flex-column-reverse flex-sm-row justify-content-between gap-2"><button class="btn btn-outline-secondary" type="button" data-previous-step="2"><i class="ti ti-arrow-left me-1"></i>Anterior</button><button class="btn btn-success" type="submit"><i class="ti ti-check me-1"></i>Finalizar clase</button></div></x-slot:footer></x-ui.card></section>
 </form>
-@error('attendance')<div class="alert alert-danger mt-3">{{ $message }}</div>@enderror
+<div class="modal modal-blur fade" id="academicObservationModal" tabindex="-1" aria-labelledby="academicObservationTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><div><div class="text-secondary small">Avance académico</div><h2 class="modal-title" id="academicObservationTitle">Observación</h2></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><div class="alert alert-danger d-none" data-observation-error></div><label class="form-label" for="academic-observation-text">Observación académica</label><textarea class="form-control" id="academic-observation-text" rows="6" maxlength="1000" placeholder="Avance, fortalezas o aspectos por reforzar"></textarea><div class="form-hint text-end"><span data-observation-count>0</span>/1000</div></div><div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="button" data-observation-save><span class="spinner-border spinner-border-sm me-1 d-none" data-observation-spinner></span><i class="ti ti-check me-1"></i>Guardar observación</button></div></div></div></div>
+@if($errors->any())<div class="alert alert-danger mt-3"><strong>No se pudo finalizar la clase.</strong><ul class="mb-0 mt-1">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 @endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.querySelector('[data-daily-wizard]'); if (!form) return;
+    let currentStep = @json($errors->any() ? 2 : 1);
+    const csrf = document.querySelector('meta[name="csrf-token"]').content;
+    const autosave = async payload => {
+        const response = await fetch(form.dataset.autosaveUrl, {method:'PATCH',headers:{'Accept':'application/json','Content-Type':'application/json','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},body:JSON.stringify(payload)});
+        const data = await response.json(); if (!response.ok) throw new Error(data.message || 'No se pudo guardar.'); return data;
+    };
+    const setStatus = (input, state) => { const status=input.closest('td').querySelector('[data-save-status]');status.textContent=state==='saving'?'Guardando…':state==='error'?'Error':'';status.className=`daily-save-status ${state==='error'?'text-danger':'text-secondary'}`; };
+    const saveGrade = async input => { if (!input.checkValidity()) return;setStatus(input,'saving');try{await autosave({type:'grade',student_id:Number(input.dataset.studentId),skill_id:Number(input.dataset.skillId),score:input.type==='checkbox'?(input.checked?1:0):Number(input.value)});setStatus(input,'saved')}catch(error){setStatus(input,'error');input.title=error.message;} };
+    const refreshFields = () => form.querySelectorAll('[data-daily-skill]').forEach(box => {form.querySelectorAll(`[data-skill-field="${box.value}"]`).forEach(field=>field.classList.toggle('d-none',!box.checked));form.querySelectorAll(`[data-grade-input="${box.value}"]`).forEach(input=>input.required=box.checked);});
+    const refreshSummary = () => {const selected=[...form.querySelectorAll('[data-daily-skill]:checked')],selectedIds=new Set(selected.map(input=>input.value)),list=form.querySelector('[data-summary-skill-list]'),participatingStudents=new Set();form.querySelectorAll('[data-autosave-grade]').forEach(input=>{if(!selectedIds.has(input.dataset.skillId))return;const score=input.type==='checkbox'?(input.checked?1:0):Number(input.value);if(score>0)participatingStudents.add(input.dataset.studentId)});form.querySelector('[data-summary-skills]').textContent=selected.length;form.querySelector('[data-summary-participation]').textContent=`${participatingStudents.size} estudiantes`;const items=selected.map(input=>{const badge=document.createElement('span');badge.className='badge bg-primary-lt text-primary fs-6';badge.textContent=input.dataset.skillName;return badge});if(!items.length){const empty=document.createElement('span');empty.className='text-secondary';empty.textContent='Ninguna habilidad seleccionada';items.push(empty)}list.replaceChildren(...items);};
+    const showStep = step => {currentStep=step;form.querySelectorAll('[data-wizard-panel]').forEach(panel=>panel.classList.toggle('d-none',Number(panel.dataset.wizardPanel)!==step));form.querySelectorAll('[data-step-indicator]').forEach(indicator=>{const number=Number(indicator.dataset.stepIndicator);indicator.disabled=number>step;indicator.classList.toggle('is-active',number===step);indicator.classList.toggle('is-complete',number<step);indicator.setAttribute('aria-current',number===step?'step':'false');});if(step===3)refreshSummary();window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});};
+    const validateStudents = () => {const invalid=[...form.querySelectorAll('[data-wizard-panel="2"] input:required')].find(input=>!input.checkValidity());if(invalid){invalid.reportValidity();invalid.focus();return false}return true};
+    form.querySelectorAll('[data-next-step]').forEach(button=>button.addEventListener('click',()=>{const target=Number(button.dataset.nextStep);if(currentStep===2&&!validateStudents())return;showStep(target);}));
+    form.querySelectorAll('[data-previous-step]').forEach(button=>button.addEventListener('click',()=>showStep(Number(button.dataset.previousStep))));
+    form.querySelectorAll('[data-step-indicator]').forEach(button=>button.addEventListener('click',()=>{const target=Number(button.dataset.stepIndicator);if(target<=currentStep)showStep(target);}));
+    form.querySelectorAll('[data-daily-skill]').forEach(box=>box.addEventListener('change',refreshFields));
+    form.querySelectorAll('[data-simple-grade]').forEach(box=>box.addEventListener('change',()=>{box.closest('.form-check').querySelector('[data-simple-state]').textContent=box.checked?'1':'0';saveGrade(box);}));
+    const timers = new WeakMap(); form.querySelectorAll('[data-autosave-grade]:not([type="checkbox"])').forEach(input=>{input.addEventListener('input',()=>{clearTimeout(timers.get(input));timers.set(input,setTimeout(()=>saveGrade(input),450));});input.addEventListener('change',()=>saveGrade(input));});
+    const observationElement=document.getElementById('academicObservationModal'),observationModal=bootstrap.Modal.getOrCreateInstance(observationElement),observationText=document.getElementById('academic-observation-text'),observationTitle=document.getElementById('academicObservationTitle'),observationError=observationElement.querySelector('[data-observation-error]'),observationSave=observationElement.querySelector('[data-observation-save]');let observationStudentId=null,observationButton=null;
+    const refreshCount=()=>observationElement.querySelector('[data-observation-count]').textContent=observationText.value.length;
+    form.querySelectorAll('[data-observation-open]').forEach(button=>button.addEventListener('click',()=>{observationStudentId=button.dataset.studentId;observationButton=button;observationTitle.textContent=button.dataset.studentName;observationText.value=form.querySelector(`[data-observation-value="${observationStudentId}"]`).value;observationError.classList.add('d-none');refreshCount();observationModal.show();setTimeout(()=>observationText.focus(),200);}));
+    observationText.addEventListener('input',refreshCount);
+    observationSave.addEventListener('click',async()=>{const value=observationText.value.trim(),input=form.querySelector(`[data-observation-value="${observationStudentId}"]`);observationSave.disabled=true;observationSave.querySelector('[data-observation-spinner]').classList.remove('d-none');try{await autosave({type:'observation',student_id:Number(observationStudentId),observation:value});input.value=value;observationButton.querySelector('[data-observation-label]').textContent=value?'Ver':'Agregar';observationModal.hide();}catch(error){observationError.textContent=error.message;observationError.classList.remove('d-none');}finally{observationSave.disabled=false;observationSave.querySelector('[data-observation-spinner]').classList.add('d-none');}});
+    refreshFields(); showStep(currentStep);
+});
+</script>
+@endpush

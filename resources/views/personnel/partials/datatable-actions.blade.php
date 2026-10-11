@@ -1,0 +1,5 @@
+@can('personnel.manage')
+<div class="table-actions-stack"><a class="btn btn-outline-secondary btn-sm" href="{{ route('personnel.show',$person) }}" data-modal-url="{{ route('personnel.show',$person) }}" data-modal-title="Detalle de personal">Ver</a><a class="btn btn-outline-primary btn-sm" href="{{ route('personnel.edit',$person) }}" data-modal-url="{{ route('personnel.edit',$person) }}" data-modal-title="Editar personal">Editar</a>@if(!$person->user)<a class="btn btn-outline-success btn-sm" href="{{ route('users.create',['personnel_id'=>$person->id]) }}" data-modal-url="{{ route('users.create',['personnel_id'=>$person->id]) }}" data-modal-title="Asignar usuario">Asignar usuario</a>@endif<form method="POST" action="{{ route('personnel.destroy',$person) }}" data-confirm-delete="¿Eliminar a {{ $person->full_name }}?"><button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button>@csrf @method('DELETE')</form></div>
+@else
+<a class="btn btn-outline-secondary btn-sm" href="{{ route('personnel.show', $person) }}" data-modal-url="{{ route('personnel.show', $person) }}" data-modal-title="Detalle de personal">Ver</a>
+@endcan

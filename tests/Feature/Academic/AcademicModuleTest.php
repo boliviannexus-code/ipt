@@ -40,7 +40,10 @@ class AcademicModuleTest extends TestCase
         $module = AcademicModule::withoutGlobalScope('company')->sole();
         $this->assertSame('Módulo Básico 1', $module->name);
         $this->actingAs($user)->get(route('academic.modules.index'))
-            ->assertOk()->assertSee('Módulo Básico 1')->assertSee('Virtual')->assertSee('01/09/2026')->assertSee('31/10/2026');
+            ->assertOk()->assertSee('data-datatable', false)->assertSee(route('datatables.academic-modules'), false);
+        $this->actingAs($user)->getJson(route('datatables.academic-modules', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertJsonFragment(['name' => 'Módulo Básico 1']);
 
         $this->actingAs($user)->putJson(route('academic.modules.update', $module), [
             'program_id' => $program->id,

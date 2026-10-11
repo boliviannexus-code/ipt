@@ -11,11 +11,16 @@ class ProgramLevel extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'program_id', 'name', 'position', 'is_active'];
+    protected $fillable = ['company_id', 'program_id', 'name', 'program_grading_scheme_id', 'position', 'is_active'];
 
     protected function casts(): array
     {
         return ['position' => 'integer', 'is_active' => 'boolean'];
+    }
+
+    public function gradingScheme(): BelongsTo
+    {
+        return $this->belongsTo(ProgramGradingScheme::class, 'program_grading_scheme_id');
     }
 
     public function program(): BelongsTo

@@ -41,7 +41,10 @@ class CampusTest extends TestCase
         ])->assertOk()->assertJsonPath('success', true);
 
         $this->actingAs($user)->get(route('campuses.index'))
-            ->assertOk()->assertSee('Sede Centro')->assertSee('2')->assertSee('Calle Central 456');
+            ->assertOk()->assertSee('data-datatable', false)->assertSee(route('datatables.campuses'), false);
+        $this->actingAs($user)->getJson(route('datatables.campuses', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertJsonFragment(['name' => 'Sede Centro', 'address' => 'Calle Central 456']);
 
         $this->actingAs($user)->deleteJson(route('campuses.destroy', $campus))->assertOk();
         $this->assertDatabaseMissing('campuses', ['id' => $campus->id]);
@@ -60,7 +63,9 @@ class CampusTest extends TestCase
         Campus::withoutGlobalScope('company')->create(['company_id' => $otherCompany->id, 'name' => 'Sede ajena', 'code' => '1', 'address' => 'Dirección ajena']);
 
         $this->actingAs($user)->post(route('campuses.store'), ['name' => 'Otra', 'code' => '1', 'address' => 'Nueva dirección'])->assertSessionHasErrors('code');
-        $this->actingAs($user)->get(route('campuses.index'))->assertOk()->assertDontSee('Sede ajena');
+        $this->actingAs($user)->getJson(route('datatables.campuses', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertDontSee('Sede ajena', false);
     }
 
     public function test_code_must_be_exactly_one_numeric_digit_on_create_and_update(): void

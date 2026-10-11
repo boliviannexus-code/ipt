@@ -12,7 +12,7 @@
             @endcan
         </x-slot:actions>
 
-        <table class="table table-hover align-middle">
+        <table class="table table-hover align-middle" data-datatable data-url="{{ route('datatables.companies') }}" data-columns-id="companies-columns" data-order='[[1,"asc"]]'>
             <thead>
                 <tr>
                     <th>Logo</th>
@@ -24,47 +24,7 @@
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
-            <tbody>
-                @forelse ($companies as $company)
-                    <tr>
-                        <td>
-                            @if ($company->logo_url)
-                                <img class="avatar" src="{{ $company->logo_url }}" alt="{{ $company->name }}">
-                            @else
-                                <span class="avatar bg-primary-lt text-primary"><i class="ti ti-building"></i></span>
-                            @endif
-                        </td>
-                        <td>
-                            <div class="fw-semibold">{{ $company->name }}</div>
-                            <div class="text-body-secondary small">{{ $company->legal_name ?: '-' }}</div>
-                        </td>
-                        <td>{{ $company->tax_id ?: '-' }}</td>
-                        <td>
-                            <div>{{ $company->phone ?: '-' }}</div>
-                            <div class="text-body-secondary small">{{ $company->email ?: '-' }}</div>
-                        </td>
-                        <td>{{ $company->users_count }}</td>
-                        <td><span class="badge text-bg-{{ $company->is_active ? 'success' : 'secondary' }}">{{ $company->is_active ? 'Activo' : 'Inactivo' }}</span></td>
-                        <td class="text-end">
-                            <a class="btn btn-outline-secondary btn-sm" href="{{ route('companies.show', $company) }}" data-modal-url="{{ route('companies.show', $company) }}" data-modal-title="Detalle de empresa">Ver</a>
-                            @can('companies.update')
-                                <a class="btn btn-outline-primary btn-sm" href="{{ route('companies.edit', $company) }}" data-modal-url="{{ route('companies.edit', $company) }}" data-modal-title="Editar empresa">Editar</a>
-                            @endcan
-                            @can('companies.delete')
-                                <form class="d-inline" method="POST" action="{{ route('companies.destroy', $company) }}" data-confirm-delete="Eliminar empresa? Los usuarios asignados quedaran sin empresa.">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button>
-                                </form>
-                            @endcan
-                        </td>
-                    </tr>
-                @empty
-                    <x-ui.empty-row colspan="7" message="No hay empresas registradas." />
-                @endforelse
-            </tbody>
         </table>
-
-        <x-slot:footer>{{ $companies->links() }}</x-slot:footer>
+        <script type="application/json" id="companies-columns">[{"data":"logo","orderable":false,"searchable":false},{"data":"display_name","name":"name"},{"data":"tax_id","name":"tax_id"},{"data":"contact","name":"email"},{"data":"users_count","searchable":false},{"data":"is_active","name":"is_active"},{"data":"actions","orderable":false,"searchable":false}]</script>
     </x-ui.table-card>
 @endsection

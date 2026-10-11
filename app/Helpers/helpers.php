@@ -20,6 +20,7 @@ if (! function_exists('role_label')) {
             'accounting' => 'Contabilidad',
             'tax_responsible' => 'Responsable tributario',
             'technical_support' => 'Soporte técnico',
+            'teacher' => 'Docente',
         ];
 
         return $labels[$name] ?? str($name)->replace(['-', '_'], ' ')->headline()->toString();
@@ -35,14 +36,28 @@ if (! function_exists('permission_module_label')) {
             'roles' => 'Roles',
             'permissions' => 'Permisos',
             'companies' => 'Empresas',
-            'audits' => 'Auditoria',
+            'campuses' => 'Sedes',
+            'areas' => 'Áreas',
+            'positions' => 'Cargos',
+            'personnel' => 'Personal',
+            'rectorate' => 'Inscripciones',
+            'accounts' => 'Cobros',
+            'academic-control' => 'Control académico',
+            'academic-modules' => 'Módulos académicos',
+            'students' => 'Estudiantes',
+            'enrollment-reports' => 'Matrículas',
+            'teaching' => 'Mis módulos',
+            'audits' => 'Auditoría',
             'cash-registers' => 'Cajas',
-            'invoices' => 'Facturacion',
-            'product-categories' => 'Categorias',
+            'invoices' => 'Facturación',
+            'product-categories' => 'Categorías',
             'customers' => 'Clientes',
             'products' => 'Productos',
-            'sin-authorizations' => 'Autorizacion SIN',
-            'backups' => 'Copias de seguridad',
+            'programs' => 'Programas',
+            'plans' => 'Planes',
+            'commercial-origins' => 'Origen comercial',
+            'sin-authorizations' => 'Autorización',
+            'backups' => 'Respaldos',
             'invoice-tests' => 'Pruebas de facturación',
             'cafc-ranges' => 'Rangos CAFC',
             'manual-cafc' => 'Facturación manual CAFC',
@@ -68,7 +83,7 @@ if (! function_exists('permission_action_label')) {
             'update' => 'Actualizar',
             'delete' => 'Eliminar',
             'restore' => 'Restaurar',
-            'change-password' => 'Cambiar contrasena',
+            'change-password' => 'Cambiar contraseña',
             'assign-roles' => 'Asignar roles',
             'assign-permissions' => 'Asignar permisos',
             'manage' => 'Administrar',
@@ -92,6 +107,8 @@ if (! function_exists('permission_action_label')) {
             'verify' => 'Verificar',
             'request' => 'Solicitar',
             'sync' => 'Sincronizar',
+            'collect' => 'Cobrar',
+            'approve' => 'Aprobar',
         ];
 
         return $labels[$action] ?? str($action)->replace(['-', '_'], ' ')->headline()->toString();
@@ -117,14 +134,14 @@ if (! function_exists('permission_action_description')) {
         $descriptions = [
             'view' => 'Puede consultar el listado y el detalle.',
             'create' => 'Puede registrar nuevos elementos.',
-            'edit' => 'Puede modificar la informacion existente.',
-            'update' => 'Puede modificar la informacion existente.',
+            'edit' => 'Puede modificar la información existente.',
+            'update' => 'Puede modificar la información existente.',
             'delete' => 'Puede eliminar elementos.',
             'restore' => 'Puede recuperar elementos eliminados.',
-            'change-password' => 'Puede establecer una nueva contrasena.',
+            'change-password' => 'Puede establecer una nueva contraseña.',
             'assign-roles' => 'Puede cambiar los roles de los usuarios.',
             'assign-permissions' => 'Puede configurar los accesos de los roles.',
-            'manage' => 'Tiene control completo sobre este modulo.',
+            'manage' => 'Tiene control completo sobre este módulo.',
             'approve' => 'Puede revisar y aprobar solicitudes.',
             'open' => 'Puede abrir una caja propia.',
             'close' => 'Puede cerrar su caja activa.',
@@ -146,9 +163,11 @@ if (! function_exists('permission_action_description')) {
             'verify' => 'Puede verificar la conexión con el servicio.',
             'request' => 'Puede solicitar un nuevo código.',
             'sync' => 'Puede sincronizar la información con Impuestos.',
+            'collect' => 'Puede registrar cobros de cuentas pendientes.',
+            'approve' => 'Puede revisar y aprobar solicitudes.',
         ];
 
-        return $descriptions[$action] ?? 'Permite ejecutar la accion '.str($action)->replace(['-', '_'], ' ')->lower()->toString().'.';
+        return $descriptions[$action] ?? 'Permite ejecutar la acción '.str($action)->replace(['-', '_'], ' ')->lower()->toString().'.';
     }
 }
 

@@ -2,34 +2,26 @@
 
 @section('title', 'Planes | '.config('app.name'))
 @section('page-title', 'Planes')
-@section('page-subtitle', 'Planes y costos mensuales de la empresa activa')
+@section('page-subtitle', 'Selecciona un programa para administrar sus planes')
 
 @section('content')
-    <x-ui.table-card title="Listado de planes" data-refresh-container>
-        <x-slot:actions>
-            @can('plans.create')
-                <a class="btn btn-primary btn-sm" href="{{ route('parameters.plans.create') }}" data-modal-url="{{ route('parameters.plans.create') }}" data-modal-title="Nuevo plan">
-                    <i class="ti ti-plus me-1"></i>Nuevo plan
-                </a>
-            @endcan
-        </x-slot:actions>
-
+    <x-ui.table-card title="Programas" data-refresh-container>
         <table class="table table-hover align-middle">
-            <thead><tr><th>Nombre</th><th class="text-end">Costo mensual</th><th>Creado</th><th class="text-end">Acciones</th></tr></thead>
+            <thead><tr><th>Programa</th><th>Código</th><th class="text-center">Planes</th><th class="text-end">Acciones</th></tr></thead>
             <tbody>
-                @forelse ($plans as $plan)
+                @forelse ($programs as $program)
                     <tr>
-                        <td class="fw-semibold">{{ $plan->name }}</td>
-                        <td class="text-end">Bs {{ number_format((float) $plan->monthly_cost, 2, ',', '.') }}</td>
-                        <td>{{ $plan->created_at->format('d/m/Y') }}</td>
-                        <td class="text-end">@can('plans.edit')<a class="btn btn-outline-primary btn-sm" href="{{ route('parameters.plans.edit', $plan) }}" data-modal-url="{{ route('parameters.plans.edit', $plan) }}" data-modal-title="Editar plan">Editar</a>@endcan</td>
+                        <td class="fw-semibold">{{ $program->title }}</td>
+                        <td><span class="badge text-bg-secondary">{{ $program->enrollment_code ?: 'Pendiente' }}</span></td>
+                        <td class="text-center"><span class="badge text-bg-azure">{{ $program->plans_count }}</span></td>
+                        <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{{ route('parameters.plans.show', $program) }}"><i class="ti ti-list me-1"></i>Ver planes</a></td>
                     </tr>
                 @empty
-                    <x-ui.empty-row colspan="4" message="No hay planes registrados." />
+                    <x-ui.empty-row colspan="4" message="No hay programas registrados. Primero crea un programa." />
                 @endforelse
             </tbody>
         </table>
 
-        <x-slot:footer>{{ $plans->links() }}</x-slot:footer>
+        <x-slot:footer>{{ $programs->links() }}</x-slot:footer>
     </x-ui.table-card>
 @endsection

@@ -23,9 +23,7 @@ class PermissionController extends Controller
     {
         $this->authorize('viewAny', Permission::class);
 
-        return view('permissions.index', [
-            'permissions' => $this->permissions->paginate(),
-        ]);
+        return view('permissions.index');
     }
 
     public function create(Request $request): View
