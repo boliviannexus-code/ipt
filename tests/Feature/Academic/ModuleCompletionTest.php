@@ -31,7 +31,7 @@ class ModuleCompletionTest extends TestCase
     public function test_module_results_are_calculated_from_weightings_without_generating_charges(): void
     {
         [$user, $module, $student, $contract] = $this->context();
-        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->where('program_id', $module->program_id)->firstOrFail();
+        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->findOrFail($module->level->program_grading_scheme_id);
         $scheme->update(['passing_score' => 70, 'status' => 'finalized', 'is_active' => true, 'finalized_at' => now()]);
         $component = $scheme->components()->create(['company_id' => $module->company_id, 'name' => 'Examen final', 'weight' => 100, 'frequency' => 'single', 'skill_mode' => 'single_skill', 'scoring_method' => 'percentage', 'position' => 1]);
         $skill = $component->skills()->create(['company_id' => $module->company_id, 'name' => 'Comprensión', 'weight' => 100, 'position' => 1]);
@@ -92,7 +92,7 @@ class ModuleCompletionTest extends TestCase
     public function test_failed_student_is_released_and_keeps_the_same_level(): void
     {
         [$user, $module, $student, $contract] = $this->context();
-        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->where('program_id', $module->program_id)->firstOrFail();
+        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->findOrFail($module->level->program_grading_scheme_id);
         $scheme->update(['passing_score' => 70, 'status' => 'finalized', 'is_active' => true, 'finalized_at' => now()]);
         $component = $scheme->components()->create(['company_id' => $module->company_id, 'name' => 'Examen final', 'weight' => 100, 'frequency' => 'single', 'skill_mode' => 'single_skill', 'scoring_method' => 'percentage', 'position' => 1]);
         $skill = $component->skills()->create(['company_id' => $module->company_id, 'name' => 'Comprensión', 'weight' => 100, 'position' => 1]);
@@ -169,6 +169,8 @@ class ModuleCompletionTest extends TestCase
         $user->givePermissionTo(['teaching.view', 'teaching.manage', 'academic-modules.view', 'academic-modules.manage']);
         $program = Program::withoutGlobalScope('company')->create(['company_id' => $company->id, 'title' => 'Inglés', 'duration_months' => 12]);
         $level = ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'name' => 'Básico 1', 'position' => 1]);
+        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Ponderación de prueba', 'version' => 1, 'status' => 'draft', 'is_active' => false]);
+        $level->update(['program_grading_scheme_id' => $scheme->id]);
         ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'name' => 'Básico 2', 'position' => 2]);
         $module = AcademicModule::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'program_level_id' => $level->id, 'name' => 'Módulo Básico 1', 'modality' => 'virtual', 'starts_at' => '18:00', 'ends_at' => '20:00', 'start_date' => today()->subMonth(), 'end_date' => today()->subDay()]);
         AcademicModuleTeacherAssignment::withoutGlobalScope('company')->create(['company_id' => $company->id, 'academic_module_id' => $module->id, 'personnel_id' => $personnel->id, 'assigned_at' => now()]);

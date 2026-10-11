@@ -17,7 +17,7 @@ class PersonnelController extends Controller
 {
     public function index(): View
     {
-        return view('personnel.index', ['personnel' => Personnel::with(['position.area', 'campus', 'user'])->latest()->paginate(15)]);
+        return view('personnel.index');
     }
 
     public function create(Request $request): View

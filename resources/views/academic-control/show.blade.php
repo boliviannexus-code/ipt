@@ -1,57 +1,55 @@
 @extends('layouts.admin')
-@section('title', 'Ponderaciones de '.$program->title.' | '.config('app.name'))
+@section('title', 'Ponderaciones de '.$scheme->name.' | '.config('app.name'))
 @section('page-title', 'Ponderaciones de notas')
-@section('page-subtitle', $program->title)
+@section('page-subtitle', $scheme->name)
 
 @section('content')
 @php
     $isFinalized = $scheme->isFinalized();
-    $hasDraft = $versions->contains('status', 'draft');
     $initialComponents = $scheme->components->map(fn ($component) => ['name' => $component->name, 'weight' => (float) $component->weight, 'frequency' => $component->frequency->value, 'skill_mode' => $component->skill_mode->value, 'scoring_method' => $component->scoring_method->value, 'skills' => $component->skills->map(fn ($skill) => ['name' => $skill->name, 'weight' => (float) $skill->weight])->values()->all()])->values()->all();
 @endphp
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-3">
-    <a class="btn btn-outline-secondary align-self-start" href="{{ route('academic.control.index') }}"><i class="ti ti-arrow-left me-1"></i>Volver a programas</a>
-    <div class="d-flex flex-wrap align-items-center gap-2"><label class="form-label mb-0" for="grading-version">Versión</label><select class="form-select w-auto" id="grading-version" data-version-select>@foreach($versions as $version)<option value="{{ route('academic.control.show', ['program' => $program, 'version' => $version->version]) }}" @selected($version->is($scheme))>Versión {{ $version->version }} · {{ $version->isFinalized() ? ($version->is_active ? 'Vigente' : 'Finalizada') : 'Borrador' }}</option>@endforeach</select><span class="badge {{ $isFinalized ? 'bg-green-lt text-green' : 'bg-yellow-lt text-yellow' }} fs-6"><i class="ti {{ $isFinalized ? 'ti-lock' : 'ti-edit' }} me-1"></i>{{ $isFinalized ? 'Finalizada' : 'Borrador editable' }}</span></div>
+    <a class="btn btn-outline-secondary align-self-start" href="{{ route('academic.weightings.index') }}"><i class="ti ti-arrow-left me-1"></i>Volver al catálogo</a>
+    <span class="badge {{ $isFinalized ? 'bg-green-lt text-green' : 'bg-yellow-lt text-yellow' }} fs-6">{{ $isFinalized ? 'Activa · configuración protegida' : 'Borrador editable' }}</span>
 </div>
+
+@can('academic-control.manage')
+    <div class="d-flex justify-content-end mb-3">
+        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#renameSchemeModal{{ $scheme->id }}"><i class="ti ti-pencil me-1" aria-hidden="true"></i>Cambiar nombre</button>
+    </div>
+    @include('academic-control.partials.rename-modal', ['scheme' => $scheme])
+@endcan
 
 @if($errors->any())<div class="alert alert-danger"><strong>No se pudo guardar.</strong><ul class="mb-0 mt-1">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 @if($isFinalized)
     <div class="alert alert-success d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
         <div><i class="ti ti-lock-check me-2" aria-hidden="true"></i>Esta versión está protegida y no puede modificarse.</div>
-        @if(!$hasDraft)
-            @can('academic-control.manage')
-                <button class="btn btn-primary flex-shrink-0" type="button" data-bs-toggle="modal" data-bs-target="#createGradingVersionModal"><i class="ti ti-copy-plus me-1" aria-hidden="true"></i>Crear nueva versión</button>
-            @endcan
-        @endif
+
     </div>
 @else
     <div class="alert alert-warning"><i class="ti ti-alert-triangle me-2"></i>Al finalizar, esta versión quedará bloqueada permanentemente.</div>
 @endif
 
-@unless($isFinalized)
+@if($scheme->canBeDeleted())
     @can('academic-control.manage')
         <div class="d-flex justify-content-end mb-3">
-            <form method="POST" action="{{ route('academic.control.versions.destroy', [$program, $scheme]) }}" data-confirm-action data-confirm-title="¿Eliminar este borrador?" data-confirm-text="Se eliminarán todas las ponderaciones y habilidades guardadas en esta versión. Esta acción no se puede deshacer." data-confirm-button="Sí, eliminar borrador">
+            <form method="POST" action="{{ route('academic.weightings.destroy', $scheme) }}" data-confirm-action data-confirm-title="¿Eliminar esta ponderación?" data-confirm-text="Se eliminarán todas las ponderaciones y habilidades guardadas en esta versión. Esta acción no se puede deshacer." data-confirm-button="Sí, eliminar ponderación">
                 @csrf @method('DELETE')
-                <button class="btn btn-outline-danger" type="submit"><i class="ti ti-trash me-1" aria-hidden="true"></i>Eliminar borrador</button>
+                <button class="btn btn-outline-danger" type="submit"><i class="ti ti-trash me-1" aria-hidden="true"></i>Eliminar ponderación</button>
             </form>
         </div>
     @endcan
-@endunless
-
-@if($isFinalized && !$hasDraft)
-    @can('academic-control.manage')
-        @include('academic-control.partials.create-version-modal', ['modalId' => 'createGradingVersionModal'])
-    @endcan
 @endif
 
-<form method="POST" action="{{ route('academic.control.update', [$program, $scheme]) }}" id="grading-draft-form">
+
+
+<form method="POST" action="{{ route('academic.weightings.update', $scheme) }}" id="grading-draft-form">
     @csrf @method('PUT')
     <div data-component-inputs></div>
     <div class="row g-3">
         <div class="col-xl-9">
             <x-ui.table-card title="Tipos de ponderación">
-                @unless($isFinalized)
+                @unless($isFinalized || !auth()->user()->can('academic-control.manage'))
                     <x-slot:actions><button class="btn btn-primary btn-sm" type="button" data-add-weighting><i class="ti ti-plus me-1"></i>Agregar ponderación</button></x-slot:actions>
                 @endunless
                 <table class="table table-hover align-middle mb-0">
@@ -60,9 +58,9 @@
                 </table>
             </x-ui.table-card>
         </div>
-        <div class="col-xl-3"><div class="position-sticky" style="top:1rem"><x-ui.card title="Resumen"><div class="card-body"><div class="d-flex justify-content-between mb-2"><span>Total general</span><strong data-main-total>0%</strong></div><div class="progress mb-3" style="height:8px"><div class="progress-bar" data-main-progress></div></div><label class="form-label required" for="passing-score">Nota mínima</label><div class="input-group"><input class="form-control" id="passing-score" name="passing_score" type="number" min="0" max="100" step="0.01" value="{{ old('passing_score', $scheme->passing_score) }}" required @disabled($isFinalized)><span class="input-group-text">/ 100</span></div></div></x-ui.card>
+        <div class="col-xl-3"><div class="position-sticky" style="top:1rem"><x-ui.card title="Resumen"><div class="card-body"><div class="d-flex justify-content-between mb-2"><span>Total general</span><strong data-main-total>0%</strong></div><div class="progress mb-3" style="height:8px"><div class="progress-bar" data-main-progress></div></div><label class="form-label required" for="passing-score">Nota mínima</label><div class="input-group"><input class="form-control" id="passing-score" name="passing_score" type="number" min="0" max="100" step="0.01" value="{{ old('passing_score', $scheme->passing_score) }}" required @disabled($isFinalized || !auth()->user()->can('academic-control.manage'))><span class="input-group-text">/ 100</span></div></div></x-ui.card>
             @can('academic-control.manage')
-                @unless($isFinalized)
+                @unless($isFinalized || !auth()->user()->can('academic-control.manage'))
                     <div class="d-grid gap-2 mt-3"><button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy me-1"></i>Guardar nota mínima</button><button class="btn btn-outline-danger" type="submit" form="finalize-grading"><i class="ti ti-lock me-1"></i>Finalizar configuración</button></div>
                 @endunless
             @endcan
@@ -70,12 +68,12 @@
     </div>
 </form>
 @can('academic-control.manage')
-    @unless($isFinalized)
-        <form id="finalize-grading" method="POST" action="{{ route('academic.control.finalize', [$program, $scheme]) }}" data-confirm-action data-confirm-title="¿Finalizar la configuración?" data-confirm-text="Esta versión quedará activa y no podrá editarse ni eliminarse después." data-confirm-button="Sí, finalizar configuración">@csrf</form>
+    @unless($isFinalized || !auth()->user()->can('academic-control.manage'))
+        <form id="finalize-grading" method="POST" action="{{ route('academic.weightings.finalize', $scheme) }}" data-confirm-action data-confirm-title="¿Finalizar la configuración?" data-confirm-text="Esta versión quedará activa y no podrá editarse ni eliminarse después." data-confirm-button="Sí, finalizar configuración">@csrf</form>
     @endunless
 @endcan
 
-@unless($isFinalized)
+@unless($isFinalized || !auth()->user()->can('academic-control.manage'))
 <div class="modal modal-blur fade" id="weightingModal" tabindex="-1" aria-labelledby="weightingModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header"><div><div class="text-secondary small">Configuración de evaluación</div><h2 class="modal-title" id="weightingModalTitle">Nueva ponderación</h2></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
@@ -96,7 +94,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('grading-draft-form'); if (!form) return;
-    const editable = @json(!$isFinalized), list = form.querySelector('[data-weighting-list]'), inputs = form.querySelector('[data-component-inputs]');
+    const editable = @json(!$isFinalized && auth()->user()->can('academic-control.manage')), list = form.querySelector('[data-weighting-list]'), inputs = form.querySelector('[data-component-inputs]');
     let components = {{ Illuminate\Support\Js::from($initialComponents) }}, editingIndex = null;
     const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
     const fmt = value => Number(value || 0).toFixed(2).replace(/\.00$/, '');

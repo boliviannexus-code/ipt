@@ -10,6 +10,7 @@ use App\Models\ProgramLevel;
 use App\Models\RectorateApplication;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ContractService
 {
@@ -24,6 +25,8 @@ class ContractService
         }
 
         $plan = Plan::withoutGlobalScope('company')->findOrFail($application->plan_id);
+        $this->ensureValidMonthlyCost($plan);
+        $isFree = (float) $plan->monthly_cost === 0.0;
         $initialLevelId = ProgramLevel::withoutGlobalScope('company')
             ->where('program_id', $application->program_id)
             ->where('position', 1)
@@ -40,8 +43,9 @@ class ContractService
             // Campo legado: la matrícula es la única referencia pública.
             'contract_number' => (int) substr($application->account_number, -5),
             'monthly_amount' => $plan->monthly_cost,
-            'status' => 'pre_enrolled',
+            'status' => $isFree ? 'enrolled' : 'pre_enrolled',
             'confirmed_at' => now(),
+            'enrolled_at' => $isFree ? now() : null,
         ]);
 
         ContractPlanHistory::create([
@@ -61,6 +65,8 @@ class ContractService
         if ((int) $contract->company_id !== (int) $plan->company_id || ! $plan->programs()->whereKey($contract->program_id)->exists()) {
             throw new \LogicException('El plan no pertenece a la empresa y programa del contrato.');
         }
+
+        $this->ensureValidMonthlyCost($plan);
 
         return DB::transaction(function () use ($contract, $plan, $effectiveFrom): EnrollmentContract {
             $contract = EnrollmentContract::query()->lockForUpdate()->findOrFail($contract->id);
@@ -87,8 +93,15 @@ class ContractService
                 'due_date' => $period->toDateString(),
                 'amount' => $contract->monthly_amount,
                 'paid_amount' => 0,
-                'status' => 'pending',
+                'status' => (float) $contract->monthly_amount === 0.0 ? 'paid' : 'pending',
             ],
         );
+    }
+
+    private function ensureValidMonthlyCost(Plan $plan): void
+    {
+        if ((float) $plan->monthly_cost < 0) {
+            throw ValidationException::withMessages(['plan_id' => 'El costo mensual del plan no puede ser negativo.']);
+        }
     }
 }

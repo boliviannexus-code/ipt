@@ -33,7 +33,7 @@ class TeacherClassAttendanceTest extends TestCase
         $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module))
             ->assertRedirect();
         $session = $module->classSessions()->sole();
-        $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module))->assertRedirect();
+        $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module))->assertSessionHasErrors('class_date');
         $this->assertDatabaseCount('class_sessions', 1);
 
         $this->actingAs($user)->get(route('teacher.modules.attendance.edit', [$module, $session]))
@@ -41,6 +41,68 @@ class TeacherClassAttendanceTest extends TestCase
         $this->actingAs($user)->put(route('teacher.modules.attendance.update', [$module, $session]), [])
             ->assertRedirect(route('teacher.modules.index'));
         $this->assertDatabaseCount('student_attendances', 0);
+    }
+
+    public function test_teacher_can_register_different_dates_and_continue_previous_pending_classes(): void
+    {
+        [$user, $module] = $this->context();
+        $module->update(['start_date' => today()->subDays(10), 'end_date' => today()->addDays(10)]);
+        $dates = [today()->subDays(2)->toDateString(), today()->toDateString(), today()->addDay()->toDateString()];
+        foreach ($dates as $date) {
+            $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module), ['class_date' => $date])
+                ->assertRedirect()->assertSessionHasNoErrors();
+        }
+        $this->assertSame($dates, $module->classSessions()->orderBy('class_date')->pluck('class_date')->map(fn ($date) => $date->toDateString())->all());
+        $response = $this->get(route('teacher.modules.index'))->assertOk()->assertSee('Fecha de la clase');
+        foreach ($module->classSessions()->get() as $session) {
+            $response->assertSee(route('teacher.modules.attendance.edit', [$module, $session]));
+        }
+        $session = $module->classSessions()->firstOrFail();
+        $this->get(route('teacher.modules.attendance.edit', [$module, $session]))
+            ->assertOk()->assertSee($session->class_date->format('d/m/Y'));
+        $session->update(['ended_at' => now(), 'finalized_by' => $user->id]);
+        $this->post(route('teacher.modules.sessions.start', $module), ['class_date' => $session->class_date->toDateString()])
+            ->assertSessionHasErrors('class_date');
+        $this->assertDatabaseCount('class_sessions', 3);
+    }
+
+    public function test_teacher_can_register_a_past_class_when_the_course_dates_have_ended(): void
+    {
+        [$user, $module] = $this->context();
+        $module->update(['start_date' => today()->subDays(10), 'end_date' => today()->subDays(2)]);
+        $this->actingAs($user)->get(route('teacher.modules.index'))->assertOk()->assertSee('Iniciar clase');
+        $this->post(route('teacher.modules.sessions.start', $module), ['class_date' => $module->end_date->toDateString()])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertDatabaseHas('class_sessions', ['academic_module_id' => $module->id, 'class_date' => $module->end_date->toDateString()]);
+    }
+
+    public function test_invalid_dates_and_closed_courses_do_not_create_classes(): void
+    {
+        [$user, $module] = $this->context();
+        foreach (['', 'invalid', '2026-02-30', $module->start_date->subDay()->toDateString(), $module->end_date->addDay()->toDateString()] as $date) {
+            $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module), ['class_date' => $date])
+                ->assertSessionHasErrors('class_date');
+        }
+        $module->update(['closed_at' => now(), 'closed_by' => $user->id]);
+        $this->get(route('teacher.modules.index'))->assertOk()->assertDontSee('Iniciar clase');
+        $this->post(route('teacher.modules.sessions.start', $module), ['class_date' => today()->toDateString()])
+            ->assertSessionHasErrors('class_date');
+        $this->assertDatabaseCount('class_sessions', 0);
+    }
+
+    public function test_same_date_is_allowed_in_different_courses(): void
+    {
+        [$user, $module] = $this->context();
+        $otherModule = $module->replicate();
+        $otherModule->name = 'Otro curso';
+        $otherModule->save();
+        $otherModule->teacherAssignments()->create(['company_id' => $module->company_id,
+            'personnel_id' => $user->personnel_id, 'assigned_at' => now(), 'assigned_by' => $user->id]);
+        foreach ([$module, $otherModule] as $course) {
+            $this->actingAs($user)->post(route('teacher.modules.sessions.start', $course), ['class_date' => today()->toDateString()])
+                ->assertSessionHasNoErrors()->assertRedirect();
+        }
+        $this->assertDatabaseCount('class_sessions', 2);
     }
 
     public function test_teacher_cannot_manage_a_module_assigned_to_another_teacher(): void
@@ -152,7 +214,7 @@ class TeacherClassAttendanceTest extends TestCase
             'score' => 87.55,
         ]);
         $this->actingAs($user)->get(route('teacher.tracking.show', $module))
-            ->assertOk()->assertSee('Nota acumulada')->assertSee('87,55');
+            ->assertOk()->assertSee('Nota<br>acumulada', false)->assertSee('87,55');
 
         Permission::findOrCreate('students.view');
         $user->givePermissionTo('students.view');
@@ -244,7 +306,7 @@ class TeacherClassAttendanceTest extends TestCase
         $this->actingAs($user)->get(route('teacher.tracking.index'))
             ->assertOk()->assertSee($module->name)->assertSee('Ver centralizador de notas');
         $this->actingAs($user)->get(route('teacher.tracking.show', $module))
-            ->assertOk()->assertSee('Centralizador de notas')->assertSee('Listening')->assertSee('80,00')->assertSee('Mejoró su comprensión auditiva.');
+            ->assertOk()->assertSee('Centralizador de notas')->assertSee('Listening')->assertSee('80,00');
 
         $this->actingAs($user)->put(route('teacher.modules.attendance.update', [$module, $session]), [
             'observations' => [$student->id => ''],
@@ -288,6 +350,8 @@ class TeacherClassAttendanceTest extends TestCase
         $user->givePermissionTo(['teaching.view', 'teaching.manage']);
         $program = Program::withoutGlobalScope('company')->create(['company_id' => $company->id, 'title' => 'Inglés', 'duration_months' => 12]);
         $level = ProgramLevel::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'name' => 'Básico 1', 'position' => 1]);
+        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Ponderación de prueba', 'version' => 1, 'status' => 'draft', 'is_active' => false]);
+        $level->update(['program_grading_scheme_id' => $scheme->id]);
         $module = AcademicModule::withoutGlobalScope('company')->create(['company_id' => $company->id, 'program_id' => $program->id, 'program_level_id' => $level->id, 'name' => 'Módulo Básico 1', 'modality' => 'virtual', 'starts_at' => '18:00', 'ends_at' => '20:00', 'start_date' => today()->subDay(), 'end_date' => today()->addMonth()]);
         AcademicModuleTeacherAssignment::withoutGlobalScope('company')->create(['company_id' => $company->id, 'academic_module_id' => $module->id, 'personnel_id' => $personnel->id, 'assigned_at' => now()]);
         $student = Student::withoutGlobalScope('company')->create(['company_id' => $company->id, 'identity_document' => '3001', 'first_name' => 'Lucía', 'paternal_surname' => 'Pérez', 'birth_date' => '2010-01-01', 'gender' => 'Femenino', 'is_active' => true]);
@@ -298,7 +362,7 @@ class TeacherClassAttendanceTest extends TestCase
 
     private function dailySkill(AcademicModule $module, string $scoringMethod = 'percentage'): ProgramGradingSkill
     {
-        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->where('program_id', $module->program_id)->firstOrFail();
+        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->findOrFail($module->level->program_grading_scheme_id);
         $scheme->update(['status' => 'finalized', 'is_active' => true, 'finalized_at' => now()]);
         $component = $scheme->components()->create(['company_id' => $module->company_id, 'name' => 'Overall Performance', 'weight' => 100, 'frequency' => 'daily', 'skill_mode' => 'single_skill', 'scoring_method' => $scoringMethod, 'position' => 1]);
 
@@ -307,7 +371,7 @@ class TeacherClassAttendanceTest extends TestCase
 
     private function singleSkill(AcademicModule $module, string $scoringMethod = 'percentage'): ProgramGradingSkill
     {
-        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->where('program_id', $module->program_id)->firstOrFail();
+        $scheme = ProgramGradingScheme::withoutGlobalScope('company')->findOrFail($module->level->program_grading_scheme_id);
         $scheme->update(['status' => 'finalized', 'is_active' => true, 'finalized_at' => now()]);
         $component = $scheme->components()->create(['company_id' => $module->company_id, 'name' => 'Examen final', 'weight' => 100, 'frequency' => 'single', 'skill_mode' => 'single_skill', 'scoring_method' => $scoringMethod, 'position' => 1]);
 

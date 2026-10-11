@@ -19,7 +19,7 @@ class StudentKardexService
             'contracts.plan',
             'applications.customer',
             'moduleAssignments.module.program',
-            'moduleAssignments.module.level',
+            'moduleAssignments.module.level.gradingScheme.components.skills',
             'moduleAssignments.module.currentTeacherAssignment.personnel',
             'moduleAssignments.module.studentAssignments.student',
             'moduleAssignments.module.singleGrades.skill.component',
@@ -39,18 +39,12 @@ class StudentKardexService
         $pinnedSchemes = $pinnedSchemeIds->isEmpty()
             ? collect()
             : ProgramGradingScheme::query()->with('components.skills')->whereIn('id', $pinnedSchemeIds)->get()->keyBy('id');
-        $activeSchemes = ProgramGradingScheme::query()
-            ->with('components.skills')
-            ->whereIn('program_id', $modules->pluck('program_id')->unique())
-            ->where('is_active', true)
-            ->get()
-            ->keyBy('program_id');
         $academicRows = $student->moduleAssignments
             ->sortBy(fn ($assignment) => $assignment->module?->start_date?->timestamp ?? PHP_INT_MAX)
-            ->map(function ($assignment) use ($activeSchemes, $pinnedSchemes, $results, $schemeIdsByModule, $student): array {
+            ->map(function ($assignment) use ($pinnedSchemes, $results, $schemeIdsByModule, $student): array {
                 $module = $assignment->module;
                 $schemeId = $schemeIdsByModule->get($module->id);
-                $scheme = $schemeId ? $pinnedSchemes->get($schemeId) : $activeSchemes->get($module->program_id);
+                $scheme = $schemeId ? $pinnedSchemes->get($schemeId) : $module->configuredGradingScheme();
                 $summary = $this->tracking->summarize($module, $scheme);
                 $studentSummary = $summary['students']->first(
                     fn (array $row): bool => $row['student']->id === $student->id,

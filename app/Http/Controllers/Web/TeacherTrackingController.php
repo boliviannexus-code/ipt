@@ -52,7 +52,7 @@ final class TeacherTrackingController extends Controller
             ?? $module->classSessions->sortByDesc('class_date')->first()?->program_grading_scheme_id;
         $scheme = $schemeId
             ? ProgramGradingScheme::query()->with('components.skills')->find($schemeId)
-            : ProgramGradingScheme::query()->with('components.skills')->where('program_id', $module->program_id)->where('is_active', true)->first();
+            : $module->configuredGradingScheme();
         $summary = $this->tracking->summarize($module, $scheme);
 
         return view('teacher.tracking.show', [...compact('module', 'scheme'), ...$summary]);

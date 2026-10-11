@@ -1,8 +1,24 @@
 @extends('layouts.admin')
-@section('title','Personal') @section('page-title','Personal') @section('page-subtitle','El registro de personal es previo e independiente al acceso de usuario')
+@section('title', 'Personal')
+@section('page-title', 'Personal')
+@section('page-subtitle', 'El registro de personal es previo e independiente al acceso de usuario')
 @section('content')
-<x-ui.table-card title="Listado de personal" data-refresh-container><x-slot:actions><a class="btn btn-primary btn-sm" href="{{ route('personnel.create') }}" data-modal-url="{{ route('personnel.create') }}" data-modal-title="Registrar personal"><i class="ti ti-plus me-1" aria-hidden="true"></i>Registrar personal</a></x-slot:actions>
-<table class="table table-hover align-middle"><thead><tr><th>Nombre</th><th>CI</th><th>Área / Cargo</th><th>Sede</th><th>Contacto</th><th>Usuario</th><th>Ventas</th><th class="text-end">Acciones</th></tr></thead><tbody>
-@forelse($personnel as $person)<tr><td>{{ $person->full_name }}</td><td>{{ $person->identity_document }}</td><td><span class="d-block">{{ $person->position->area->name }}</span><small class="text-body-secondary">{{ $person->position->name }}</small></td><td>@if($person->campus)<span class="d-block">{{ $person->campus->name }}</span><small class="text-body-secondary">{{ $person->campus->code }}</small>@else<span class="text-body-secondary">Sin asignar</span>@endif</td><td>{{ $person->email }}<small class="d-block text-body-secondary">{{ $person->phone }}</small></td><td>@if($person->user)<span class="badge text-bg-success">{{ $person->user->email }}</span>@else<span class="badge text-bg-secondary">Sin usuario</span>@endif</td><td>@can('personnel.manage')<form method="POST" action="{{ route('personnel.sales-enabled', $person) }}">@csrf @method('PATCH')<button class="btn {{ $person->is_sales_enabled ? 'btn-success' : 'btn-outline-secondary' }} btn-sm" type="submit"><i class="ti {{ $person->is_sales_enabled ? 'ti-circle-check' : 'ti-user-dollar' }} me-1" aria-hidden="true"></i>{{ $person->is_sales_enabled ? 'Habilitado para ventas' : 'Habilitar para ventas' }}</button></form>@else<span class="badge {{ $person->is_sales_enabled ? 'text-bg-success' : 'text-bg-secondary' }}">{{ $person->is_sales_enabled ? 'Habilitado' : 'No habilitado' }}</span>@endcan</td><td class="text-end"><div class="table-actions-stack"><a class="btn btn-outline-secondary btn-sm" href="{{ route('personnel.show',$person) }}" data-modal-url="{{ route('personnel.show',$person) }}" data-modal-title="Detalle de personal">Ver</a><a class="btn btn-outline-primary btn-sm" href="{{ route('personnel.edit',$person) }}" data-modal-url="{{ route('personnel.edit',$person) }}" data-modal-title="Editar personal">Editar</a>@if(!$person->user)<a class="btn btn-outline-success btn-sm" href="{{ route('users.create',['personnel_id'=>$person->id]) }}" data-modal-url="{{ route('users.create',['personnel_id'=>$person->id]) }}" data-modal-title="Asignar usuario">Asignar usuario</a>@endif<form method="POST" action="{{ route('personnel.destroy',$person) }}" data-confirm-delete="¿Eliminar a {{ $person->full_name }}?"><button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button>@csrf @method('DELETE')</form></div></td></tr>
-@empty<x-ui.empty-row colspan="8" message="No hay personal registrado."/>@endforelse</tbody></table><x-slot:footer>{{ $personnel->links() }}</x-slot:footer></x-ui.table-card>
+<x-ui.table-card title="Listado de personal" data-refresh-container>
+    @can('personnel.manage')
+        <x-slot:actions><a class="btn btn-primary btn-sm" href="{{ route('personnel.create') }}" data-modal-url="{{ route('personnel.create') }}" data-modal-title="Registrar personal"><i class="ti ti-plus me-1" aria-hidden="true"></i>Registrar personal</a></x-slot:actions>
+    @endcan
+    <table class="table table-hover align-middle" data-datatable data-url="{{ route('datatables.personnel') }}" data-columns-id="personnel-columns" data-order='[[0,"asc"]]'>
+        <thead><tr><th>Nombre</th><th>CI</th><th>Área / Cargo</th><th>Sede</th><th>Contacto</th><th>Usuario</th><th>Ventas</th><th class="text-end">Acciones</th></tr></thead>
+    </table>
+    <script type="application/json" id="personnel-columns">[
+        {"data":"full_name","name":"full_name"},
+        {"data":"identity_document","name":"personnel.identity_document"},
+        {"data":"position_label","name":"position_label","orderable":false},
+        {"data":"campus_label","name":"campus_label","orderable":false},
+        {"data":"contact","name":"contact","orderable":false},
+        {"data":"user_label","name":"user_label","orderable":false},
+        {"data":"sales","name":"personnel.is_sales_enabled","searchable":false},
+        {"data":"actions","orderable":false,"searchable":false}
+    ]</script>
+</x-ui.table-card>
 @endsection

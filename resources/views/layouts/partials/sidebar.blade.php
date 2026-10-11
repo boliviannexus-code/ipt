@@ -138,6 +138,12 @@
                         <div class="collapse {{ $academicOpen ? 'show' : '' }}" id="menu-academic">
                             <ul class="nav app-submenu">
                                 @if ($canAcademicControl)
+                                    <li class="nav-item {{ request()->routeIs('academic.weightings.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('academic.weightings.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-scale"></i></span>
+                                            <span class="nav-link-title">Ponderaciones</span>
+                                        </a>
+                                    </li>
                                     <li class="nav-item {{ request()->routeIs('academic.control.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('academic.control.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-chart-bar"></i></span>

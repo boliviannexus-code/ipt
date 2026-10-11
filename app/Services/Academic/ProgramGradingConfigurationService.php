@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Academic;
 
 use App\Enums\GradingSkillMode;
-use App\Models\Program;
 use App\Models\ProgramGradingScheme;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -53,39 +52,31 @@ final class ProgramGradingConfigurationService
         $this->validateForFinalization($scheme);
 
         return DB::transaction(function () use ($scheme, $user): ProgramGradingScheme {
-            ProgramGradingScheme::query()->where('program_id', $scheme->program_id)->where('is_active', true)->update(['is_active' => false]);
             $scheme->update(['status' => 'finalized', 'is_active' => true, 'finalized_by' => $user->id, 'finalized_at' => now()]);
 
             return $scheme->refresh();
         });
     }
 
-    public function createNextVersion(Program $program, ?ProgramGradingScheme $source = null, bool $createEmpty = false): ProgramGradingScheme
+    public function createIndependent(string $name, int $companyId, ?ProgramGradingScheme $source = null): ProgramGradingScheme
     {
-        if ($program->gradingSchemes()->where('status', 'draft')->exists()) {
-            throw ValidationException::withMessages(['configuration' => 'El programa ya tiene una versión en borrador.']);
-        }
-
-        if (! $createEmpty) {
-            $source ??= $program->gradingSchemes()->with('components.skills')->where('status', 'finalized')->first();
-        }
         if ($source !== null) {
-            abort_unless((int) $source->company_id === $program->company_id && $source->isFinalized(), 404);
+            abort_unless((int) $source->company_id === $companyId && $source->isFinalized(), 404);
             $source->loadMissing('components.skills');
         }
-        $nextVersion = ((int) $program->gradingSchemes()->max('version')) + 1;
 
-        return DB::transaction(function () use ($nextVersion, $program, $source): ProgramGradingScheme {
-            $draft = $program->gradingSchemes()->create([
-                'company_id' => $program->company_id,
-                'version' => $nextVersion,
+        return DB::transaction(function () use ($name, $companyId, $source): ProgramGradingScheme {
+            $draft = ProgramGradingScheme::query()->create([
+                'company_id' => $companyId,
+                'name' => trim($name),
+                'version' => $source ? $source->version + 1 : 1,
                 'passing_score' => $source?->passing_score ?? 51,
                 'status' => 'draft',
                 'is_active' => false,
             ]);
             foreach ($source?->components ?? [] as $sourceComponent) {
                 $component = $draft->components()->create([
-                    'company_id' => $program->company_id,
+                    'company_id' => $companyId,
                     'name' => $sourceComponent->name,
                     'weight' => $sourceComponent->weight,
                     'frequency' => $sourceComponent->frequency,
@@ -94,7 +85,7 @@ final class ProgramGradingConfigurationService
                     'position' => $sourceComponent->position,
                 ]);
                 $component->skills()->createMany($sourceComponent->skills->map(fn ($skill): array => [
-                    'company_id' => $program->company_id,
+                    'company_id' => $companyId,
                     'name' => $skill->name,
                     'weight' => $skill->weight,
                     'position' => $skill->position,
@@ -105,10 +96,23 @@ final class ProgramGradingConfigurationService
         });
     }
 
-    public function deleteDraft(ProgramGradingScheme $scheme): void
+    public function rename(ProgramGradingScheme $scheme, string $name): void
     {
-        $this->ensureEditable($scheme);
-        $scheme->delete();
+        $scheme->update(['name' => trim($name)]);
+    }
+
+    public function delete(ProgramGradingScheme $scheme): void
+    {
+        DB::transaction(function () use ($scheme): void {
+            $scheme = ProgramGradingScheme::query()->lockForUpdate()->findOrFail($scheme->id);
+            $scheme->loadExists(['levels', 'classSessions', 'studentResults']);
+            if (! $scheme->canBeDeleted()) {
+                throw ValidationException::withMessages([
+                    'configuration' => 'No puedes eliminar esta ponderación porque está vinculada a un programa o tiene registros académicos asociados.',
+                ]);
+            }
+            $scheme->delete();
+        });
     }
 
     private function validateForFinalization(ProgramGradingScheme $scheme): void

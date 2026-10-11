@@ -137,6 +137,51 @@ final class DatabaseBackupModuleTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_selected_backups_are_deleted_with_permission_and_confirmation(): void
+    {
+        $fake = new FakeDatabaseBackupManager;
+        $this->app->instance(DatabaseBackupManager::class, $fake);
+        $user = $this->userWithPermissions(['backups.view', 'backups.delete']);
+        $names = [FakeDatabaseBackupManager::FILE, 'facturacion-20260818-130000-a1b2c3.sql.gz'];
+        $route = route('backups.destroy-selected');
+
+        $this->actingAs($user)->get(route('backups.index'))->assertOk()->assertSee('Eliminar seleccionados');
+        $this->actingAs($user)->delete($route, ['backups' => $names, 'confirmation' => '0'])
+            ->assertSessionHasErrors('confirmation');
+        $this->actingAs($user)->delete($route, ['backups' => [], 'confirmation' => '1'])
+            ->assertSessionHasErrors('backups');
+        $this->actingAs($user)->delete($route, ['backups' => [FakeDatabaseBackupManager::FILE, '../secret'], 'confirmation' => '1'])
+            ->assertSessionHasErrors('backups.1');
+        $this->actingAs($user)->delete($route, ['backups' => [FakeDatabaseBackupManager::FILE, FakeDatabaseBackupManager::FILE], 'confirmation' => '1'])
+            ->assertSessionHasErrors('backups.0');
+        $this->assertSame([], $fake->deleted);
+
+        $this->actingAs($user)->delete($route, ['backups' => $names, 'confirmation' => '1'])
+            ->assertRedirect(route('backups.index'))->assertSessionHas('success');
+        $this->assertSame($names, $fake->deleted);
+
+        $this->actingAs(User::factory()->create())->delete($route, ['backups' => $names, 'confirmation' => '1'])
+            ->assertForbidden();
+        $this->assertSame($names, $fake->deleted);
+    }
+
+    public function test_bulk_deletion_reports_partial_failure_and_continues(): void
+    {
+        $fake = new FakeDatabaseBackupManager;
+        $fake->deleteFailure = FakeDatabaseBackupManager::FILE;
+        $this->app->instance(DatabaseBackupManager::class, $fake);
+        $user = $this->userWithPermissions(['backups.delete']);
+        $other = 'facturacion-20260818-130000-a1b2c3.sql.gz';
+
+        $this->actingAs($user)->delete(route('backups.destroy-selected'), [
+            'backups' => [FakeDatabaseBackupManager::FILE, $other],
+            'confirmation' => '1',
+        ])->assertRedirect(route('backups.index'))
+            ->assertSessionHas('error', 'Se eliminaron 1 de 2 respaldos. No se pudieron eliminar los restantes.');
+
+        $this->assertSame([$other], $fake->deleted);
+    }
+
     public function test_manager_accepts_only_a_gzip_postgres_dump(): void
     {
         $disk = 'backup-test';
@@ -229,6 +274,8 @@ final class FakeDatabaseBackupManager implements DatabaseBackupManager
     /** @var list<string> */
     public array $deleted = [];
 
+    public ?string $deleteFailure = null;
+
     public function all(): Collection
     {
         return collect([$this->backup()]);
@@ -269,6 +316,10 @@ final class FakeDatabaseBackupManager implements DatabaseBackupManager
 
     public function delete(string $name): void
     {
+        if ($this->deleteFailure === $name) {
+            throw new RuntimeException('No se pudo eliminar el respaldo.');
+        }
+
         $this->deleted[] = $name;
     }
 

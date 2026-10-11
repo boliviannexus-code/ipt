@@ -13,6 +13,7 @@ use App\Models\RectorateApplication;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\Enrollment\AccountPaymentService;
+use App\Services\Enrollment\ContractService;
 use App\Services\Rectorate\EnrollmentContractDisablingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +23,43 @@ use Tests\TestCase;
 class AccountPaymentServiceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_contract_can_change_to_a_free_plan_and_generate_paid_zero_amount_charges(): void
+    {
+        [$user, $contract] = $this->contract();
+        $this->actingAs($user);
+        $freePlan = Plan::create(['company_id' => $user->company_id, 'name' => 'Gratuito', 'monthly_cost' => 0]);
+        $contract->program->plans()->attach($freePlan);
+        $service = app(ContractService::class);
+        $period = today()->addMonth()->startOfMonth();
+        $service->changePlan($contract, $freePlan, $period);
+        $charge = $service->generateMonthlyCharge($contract->fresh(), $period);
+        $this->assertSame('0.00', $contract->fresh()->monthly_amount);
+        $this->assertSame('0.00', $charge->amount);
+        $this->assertSame('0.00', $charge->paid_amount);
+        $this->assertSame('paid', $charge->status);
+        $this->assertDatabaseHas('contract_plan_histories', ['enrollment_contract_id' => $contract->id,
+            'plan_id' => $freePlan->id, 'monthly_amount' => 0]);
+        $this->assertSame($charge->id, $service->generateMonthlyCharge($contract->fresh(), $period)->id);
+        $this->assertSame(0, $contract->payments()->count());
+        $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'amount' => 250, 'status' => 'pending']);
+    }
+
+    public function test_negative_plan_cost_is_rejected_without_changing_the_contract(): void
+    {
+        [$user, $contract] = $this->contract();
+        $this->actingAs($user);
+        $negativePlan = Plan::create(['company_id' => $user->company_id, 'name' => 'Inválido', 'monthly_cost' => -1]);
+        $contract->program->plans()->attach($negativePlan);
+        try {
+            app(ContractService::class)->changePlan($contract, $negativePlan, today());
+            $this->fail('A negative plan must be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('plan_id', $exception->errors());
+        }
+        $this->assertSame('250.00', $contract->fresh()->monthly_amount);
+        $this->assertDatabaseMissing('contract_plan_histories', ['plan_id' => $negativePlan->id]);
+    }
 
     public function test_partial_payment_keeps_pre_enrollment_and_full_initial_payment_enrolls_student(): void
     {

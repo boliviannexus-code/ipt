@@ -3,6 +3,9 @@
 @section('page-title', 'Mis módulos')
 @section('page-subtitle', 'Clases y asistencia de los módulos asignados')
 @section('content')
+@if($errors->any())
+    <div class="alert alert-danger" role="alert"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
+@endif
 @if(isset($teacherUnavailableMessage))
     <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
         <i class="ti ti-user-exclamation fs-2" aria-hidden="true"></i>
@@ -11,7 +14,8 @@
 @endif
 <div class="row g-3">
     @forelse($modules as $module)
-        @php($todaySession = $module->classSessions->first())
+        @php($todaySession = $module->classSessions->first(fn ($session) => $session->class_date->isToday()))
+        @php($defaultClassDate = today()->lt($module->start_date) ? $module->start_date : (today()->gt($module->end_date) ? $module->end_date : today()))
         @php($isCurrent = today()->betweenIncluded($module->start_date, $module->end_date))
         <div class="col-xl-6">
             <div class="card h-100">
@@ -36,11 +40,23 @@
                     @else
                         <button class="btn btn-outline-secondary" type="button" disabled title="Disponible desde el {{ $module->end_date->format('d/m/Y') }}"><i class="ti ti-calendar-time me-1"></i>Finalizar curso</button>
                     @endif
-                    @if($todaySession && !$todaySession->ended_at)
-                        <a class="btn btn-primary" href="{{ route('teacher.modules.attendance.edit', [$module, $todaySession]) }}"><i class="ti ti-clipboard-check me-1"></i>Continuar registro</a>
-                    @elseif($isCurrent)
-                        <form method="POST" action="{{ route('teacher.modules.sessions.start', $module) }}">@csrf<button class="btn btn-success" type="submit"><i class="ti ti-player-play me-1"></i>Iniciar clase</button></form>
-                    @endif
+                    @unless($module->closed_at || $module->studentResults->isNotEmpty())
+                        @foreach($module->classSessions->whereNull('ended_at') as $pendingSession)
+                            <a class="btn btn-primary" href="{{ route('teacher.modules.attendance.edit', [$module, $pendingSession]) }}"><i class="ti ti-clipboard-check me-1" aria-hidden="true"></i>Continuar registro · {{ $pendingSession->class_date->format('d/m/Y') }}</a>
+                        @endforeach
+                        @can('teaching.manage')
+                            <form class="d-flex flex-wrap align-items-end gap-2 w-100" method="POST" action="{{ route('teacher.modules.sessions.start', $module) }}">
+                                @csrf
+                                <input type="hidden" name="module_id" value="{{ $module->id }}">
+                                <div class="flex-grow-1">
+                                    <label class="form-label" for="class-date-{{ $module->id }}">Fecha de la clase</label>
+                                    <input class="form-control" type="date" id="class-date-{{ $module->id }}" name="class_date" value="{{ (int) old('module_id') === $module->id ? old('class_date', $defaultClassDate->toDateString()) : $defaultClassDate->toDateString() }}" min="{{ $module->start_date->toDateString() }}" max="{{ $module->end_date->toDateString() }}" aria-describedby="class-date-hint-{{ $module->id }}" required>
+                                    <small class="text-secondary" id="class-date-hint-{{ $module->id }}">Solo una clase por fecha en este curso.</small>
+                                </div>
+                                <button class="btn btn-success" type="submit"><i class="ti ti-player-play me-1" aria-hidden="true"></i>Iniciar clase</button>
+                            </form>
+                        @endcan
+                    @endunless
                 </div>
             </div>
         </div>

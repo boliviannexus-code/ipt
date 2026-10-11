@@ -71,11 +71,15 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::prefix('academic')->name('academic.')->middleware('company_user')->group(function (): void {
         Route::get('control', [AcademicControlController::class, 'index'])->middleware('permission:academic-control.view')->name('control.index');
-        Route::get('control/programs/{program}', [AcademicControlController::class, 'show'])->whereNumber('program')->middleware('permission:academic-control.view')->name('control.show');
-        Route::put('control/programs/{program}/versions/{scheme}', [AcademicControlController::class, 'update'])->whereNumber(['program', 'scheme'])->middleware('permission:academic-control.manage')->name('control.update');
-        Route::post('control/programs/{program}/versions/{scheme}/finalize', [AcademicControlController::class, 'finalize'])->whereNumber(['program', 'scheme'])->middleware('permission:academic-control.manage')->name('control.finalize');
-        Route::delete('control/programs/{program}/versions/{scheme}', [AcademicControlController::class, 'destroyVersion'])->whereNumber(['program', 'scheme'])->middleware('permission:academic-control.manage')->name('control.versions.destroy');
-        Route::post('control/programs/{program}/versions', [AcademicControlController::class, 'createVersion'])->whereNumber('program')->middleware('permission:academic-control.manage')->name('control.versions.store');
+        Route::get('weightings', [AcademicControlController::class, 'schemesIndex'])->middleware('permission:academic-control.view')->name('weightings.index');
+        Route::get('control/programs/{program}/levels', [AcademicControlController::class, 'editAssignments'])->whereNumber('program')->middleware('permission:academic-control.view')->name('control.levels.edit');
+        Route::post('weightings', [AcademicControlController::class, 'store'])->middleware('permission:academic-control.manage')->name('weightings.store');
+        Route::get('weightings/{scheme}', [AcademicControlController::class, 'show'])->whereNumber('scheme')->middleware('permission:academic-control.view')->name('weightings.show');
+        Route::put('weightings/{scheme}', [AcademicControlController::class, 'update'])->whereNumber('scheme')->middleware('permission:academic-control.manage')->name('weightings.update');
+        Route::patch('weightings/{scheme}/name', [AcademicControlController::class, 'rename'])->whereNumber('scheme')->middleware('permission:academic-control.manage')->name('weightings.rename');
+        Route::post('weightings/{scheme}/finalize', [AcademicControlController::class, 'finalize'])->whereNumber('scheme')->middleware('permission:academic-control.manage')->name('weightings.finalize');
+        Route::delete('weightings/{scheme}', [AcademicControlController::class, 'destroyVersion'])->whereNumber('scheme')->middleware('permission:academic-control.manage')->name('weightings.destroy');
+        Route::put('control/programs/{program}/levels', [AcademicControlController::class, 'assign'])->whereNumber('program')->middleware('permission:academic-control.manage')->name('control.levels.update');
         Route::get('modules', [AcademicModuleController::class, 'index'])->middleware('permission:academic-modules.view')->name('modules.index');
         Route::get('modules/create', [AcademicModuleController::class, 'create'])->middleware('permission:academic-modules.manage')->name('modules.create');
         Route::post('modules', [AcademicModuleController::class, 'store'])->middleware('permission:academic-modules.manage')->name('modules.store');
@@ -125,6 +129,7 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
     Route::prefix('backups')->name('backups.')->group(function (): void {
         Route::get('/', [DatabaseBackupController::class, 'index'])->middleware('permission:backups.view')->name('index');
         Route::post('/', [DatabaseBackupController::class, 'store'])->middleware('permission:backups.create')->name('store');
+        Route::delete('/', [DatabaseBackupController::class, 'destroySelected'])->middleware('permission:backups.delete')->name('destroy-selected');
         Route::post('upload-restore', [DatabaseBackupController::class, 'uploadAndRestore'])
             ->middleware(['permission:backups.restore', 'throttle:3,10'])->name('upload-restore');
         Route::get('{backup}/download', [DatabaseBackupController::class, 'download'])
@@ -565,6 +570,7 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
                 ->name('applications.destroy');
         });
     Route::prefix('datatables')->name('datatables.')->group(function (): void {
+        Route::get('personnel', [AdminDataTableController::class, 'personnel'])->middleware('permission:personnel.view')->name('personnel');
         Route::get('areas', [AdminDataTableController::class, 'areas'])->name('areas');
         Route::get('campuses', [AdminDataTableController::class, 'campuses'])->name('campuses');
         Route::get('companies', [AdminDataTableController::class, 'companies'])->name('companies');

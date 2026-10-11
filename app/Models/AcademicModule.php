@@ -20,6 +20,15 @@ class AcademicModule extends Model
         return ['start_date' => 'date', 'end_date' => 'date', 'closed_at' => 'immutable_datetime'];
     }
 
+    public function configuredGradingScheme(): ?ProgramGradingScheme
+    {
+        $this->loadMissing('level.gradingScheme.components.skills');
+        $scheme = $this->level?->gradingScheme;
+
+        return $scheme?->is_active && $scheme->isFinalized() && (int) $scheme->company_id === (int) $this->company_id
+            && (int) $this->level->program_id === (int) $this->program_id ? $scheme : null;
+    }
+
     public function program(): BelongsTo
     {
         return $this->belongsTo(Program::class);

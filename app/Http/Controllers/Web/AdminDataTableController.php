@@ -10,6 +10,7 @@ use App\Models\Area;
 use App\Models\Campus;
 use App\Models\CommercialOrigin;
 use App\Models\Company;
+use App\Models\Personnel;
 use App\Models\Program;
 use App\Models\RectorateApplication;
 use App\Models\SinCatalogItem;
@@ -31,6 +32,32 @@ class AdminDataTableController extends Controller
     public function __construct(
         private readonly PurchaseSaleInvoicePdfService $invoicePdf,
     ) {}
+
+    public function personnel(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('personnel.view'), 403);
+
+        return DataTables::eloquent(Personnel::query()->select('personnel.*')->with(['position.area', 'campus', 'user']))
+            ->addColumn('full_name', fn (Personnel $person): string => $person->full_name)
+            ->addColumn('position_label', fn (Personnel $person): string => '<span class="d-block">'.e($person->position?->area?->name ?? '-').'</span><small class="text-body-secondary">'.e($person->position?->name ?? '-').'</small>')
+            ->addColumn('campus_label', fn (Personnel $person): string => $person->campus
+                ? '<span class="d-block">'.e($person->campus->name).'</span><small class="text-body-secondary">'.e($person->campus->code).'</small>'
+                : '<span class="text-body-secondary">Sin asignar</span>')
+            ->addColumn('contact', fn (Personnel $person): string => e($person->email).'<small class="d-block text-body-secondary">'.e($person->phone).'</small>')
+            ->addColumn('user_label', fn (Personnel $person): string => $person->user
+                ? '<span class="badge text-bg-success">'.e($person->user->email).'</span>'
+                : '<span class="badge text-bg-secondary">Sin usuario</span>')
+            ->addColumn('sales', fn (Personnel $person): string => view('personnel.partials.datatable-sales', compact('person'))->render())
+            ->addColumn('actions', fn (Personnel $person): string => view('personnel.partials.datatable-actions', compact('person'))->render())
+            ->filterColumn('full_name', fn ($query, string $keyword) => $query->whereRaw("concat_ws(' ', personnel.first_name, personnel.paternal_surname, personnel.maternal_surname) ilike ?", ["%{$keyword}%"]))
+            ->orderColumn('full_name', fn ($query, string $direction) => $query->orderBy('personnel.first_name', $direction)->orderBy('personnel.paternal_surname', $direction)->orderBy('personnel.maternal_surname', $direction))
+            ->filterColumn('position_label', fn ($query, string $keyword) => $query->whereHas('position', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhereHas('area', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%"))))
+            ->filterColumn('campus_label', fn ($query, string $keyword) => $query->whereHas('campus', fn ($query) => $query->where(fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhere('code', 'ilike', "%{$keyword}%"))))
+            ->filterColumn('contact', fn ($query, string $keyword) => $query->where(fn ($query) => $query->where('personnel.email', 'ilike', "%{$keyword}%")->orWhere('personnel.phone', 'ilike', "%{$keyword}%")))
+            ->filterColumn('user_label', fn ($query, string $keyword) => $query->whereHas('user', fn ($query) => $query->where('email', 'ilike', "%{$keyword}%")))
+            ->rawColumns(['position_label', 'campus_label', 'contact', 'user_label', 'sales', 'actions'])
+            ->toJson();
+    }
 
     public function areas(): JsonResponse
     {

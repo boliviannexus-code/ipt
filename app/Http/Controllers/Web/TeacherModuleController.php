@@ -9,6 +9,7 @@ use App\Models\AcademicModule;
 use App\Models\ClassSession;
 use App\Models\Personnel;
 use App\Models\ProgramGradingScheme;
+use App\Services\Academic\ClassSessionService;
 use App\Services\Academic\DailyGradeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +20,7 @@ use Illuminate\View\View;
 
 class TeacherModuleController extends Controller
 {
-    public function __construct(private readonly DailyGradeService $dailyGrades) {}
+    public function __construct(private readonly DailyGradeService $dailyGrades, private readonly ClassSessionService $sessions) {}
 
     public function index(Request $request): View
     {
@@ -33,7 +34,7 @@ class TeacherModuleController extends Controller
         }
 
         $modules = AcademicModule::query()
-            ->with(['program', 'level', 'studentAssignments', 'studentResults', 'classSessions' => fn ($query) => $query->whereDate('class_date', today())])
+            ->with(['program', 'level', 'studentAssignments', 'studentResults', 'classSessions' => fn ($query) => $query->where(fn ($query) => $query->whereDate('class_date', today())->orWhereNull('ended_at'))->orderBy('class_date')])
             ->whereHas('currentTeacherAssignment', fn ($query) => $query->where('personnel_id', $personnel->id))
             ->orderBy('start_date')
             ->orderBy('name')
@@ -45,15 +46,11 @@ class TeacherModuleController extends Controller
     public function start(Request $request, AcademicModule $module): RedirectResponse
     {
         $personnel = $this->authorizedTeacher($request, $module);
-        if (today()->lt($module->start_date) || today()->gt($module->end_date)) {
-            throw ValidationException::withMessages(['class' => 'El módulo no se encuentra vigente en la fecha actual.']);
-        }
-
-        $schemeId = ProgramGradingScheme::query()->where('program_id', $module->program_id)->where('is_active', true)->value('id');
-        $session = ClassSession::firstOrCreate(
-            ['academic_module_id' => $module->id, 'class_date' => today()->toDateString()],
-            ['company_id' => $module->company_id, 'program_grading_scheme_id' => $schemeId, 'personnel_id' => $personnel->id, 'started_by' => $request->user()->id, 'started_at' => now()],
-        );
+        $data = $request->validate(['class_date' => ['sometimes', 'required', 'date_format:Y-m-d']], [
+            'class_date.required' => 'Selecciona la fecha de la clase.',
+            'class_date.date_format' => 'Selecciona una fecha válida para la clase.',
+        ]);
+        $session = $this->sessions->start($module, $personnel, $request->user(), $data['class_date'] ?? today()->toDateString());
 
         return redirect()->route('teacher.modules.attendance.edit', [$module, $session])->with('success', 'Clase iniciada. Ya puede realizar el registro diario.');
     }
@@ -194,10 +191,11 @@ class TeacherModuleController extends Controller
     {
         $scheme = $session->gradingScheme()->with(['components' => fn ($query) => $query->where('frequency', GradingFrequency::Daily->value)->with('skills')])->first();
 
-        return $scheme ?? ProgramGradingScheme::query()
-            ->with(['components' => fn ($query) => $query->where('frequency', GradingFrequency::Daily->value)->with('skills')])
-            ->where('program_id', $module->program_id)
-            ->where('is_active', true)
-            ->first();
+        $scheme ??= $module->configuredGradingScheme();
+        if ($scheme) {
+            $scheme->setRelation('components', $scheme->components->where('frequency', GradingFrequency::Daily)->values());
+        }
+
+        return $scheme;
     }
 }

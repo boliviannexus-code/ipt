@@ -32,7 +32,7 @@ final class ModuleCompletionService
             ?? $module->classSessions->whereNotNull('program_grading_scheme_id')->sortByDesc('class_date')->first()?->program_grading_scheme_id;
         $scheme = $schemeId
             ? ProgramGradingScheme::query()->with('components.skills')->find($schemeId)
-            : ProgramGradingScheme::query()->with('components.skills')->where('program_id', $module->program_id)->where('is_active', true)->first();
+            : $module->configuredGradingScheme();
 
         return ['scheme' => $scheme, ...$this->tracking->summarize($module, $scheme)];
     }

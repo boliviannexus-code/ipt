@@ -19,6 +19,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Support\SiatIdentityDocumentTypes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -26,7 +27,13 @@ class HolderStepTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_company_user_can_open_and_save_holder_step(): void
+    public static function enrollmentAmounts(): array
+    {
+        return ['paid plan' => [250], 'free plan' => [0]];
+    }
+
+    #[DataProvider('enrollmentAmounts')]
+    public function test_company_user_can_open_and_save_holder_step(int $monthlyCost): void
     {
         [$company, $user] = $this->context();
 
@@ -90,7 +97,7 @@ class HolderStepTest extends TestCase
         $plan = Plan::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
             'name' => 'Plan Inicial',
-            'monthly_cost' => 250,
+            'monthly_cost' => $monthlyCost,
         ]);
         $program = Program::withoutGlobalScope('company')->create([
             'company_id' => $company->id,
@@ -232,13 +239,14 @@ class HolderStepTest extends TestCase
         $this->assertSame('CAP10001', $contract->account_number);
         $this->assertSame($application->campus_id, $contract->campus_id);
         $this->assertSame($initialLevel->id, $contract->current_program_level_id);
-        $this->assertSame('pre_enrolled', $contract->status);
-        $this->assertSame('250.00', $contract->monthly_amount);
+        $this->assertSame($monthlyCost === 0 ? 'enrolled' : 'pre_enrolled', $contract->status);
+        $this->assertSame(number_format($monthlyCost, 2, '.', ''), $contract->monthly_amount);
+        $this->assertSame($monthlyCost === 0, $contract->enrolled_at !== null);
         $this->assertDatabaseHas('account_charges', [
             'enrollment_contract_id' => $contract->id,
-            'amount' => 250,
+            'amount' => $monthlyCost,
             'paid_amount' => 0,
-            'status' => 'pending',
+            'status' => $monthlyCost === 0 ? 'paid' : 'pending',
         ]);
 
         $this->actingAs($user)

@@ -25,7 +25,7 @@ class PersonnelIdentityDocumentTest extends TestCase
         $user->givePermissionTo(['personnel.view', 'personnel.manage']);
         $area = Area::create(['company_id' => $company->id, 'name' => 'Administración', 'is_active' => true]);
         $position = Position::create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Auxiliar', 'is_active' => true]);
-        $campus = Campus::create(['company_id' => $company->id, 'name' => 'Sede Central', 'code' => 'CEN', 'address' => 'Av. Principal 123']);
+        $campus = Campus::create(['company_id' => $company->id, 'name' => 'Sede Central', 'code' => '1', 'address' => 'Av. Principal 123']);
 
         $this->actingAs($user)->post(route('personnel.store'), [
             'position_id' => $position->id,
@@ -44,7 +44,10 @@ class PersonnelIdentityDocumentTest extends TestCase
             'campus_id' => $campus->id,
         ]);
 
-        $this->actingAs($user)->get(route('personnel.index'))->assertOk()->assertSee('Sede Central')->assertSee('CEN');
+        $this->actingAs($user)->get(route('personnel.index'))->assertOk()->assertSee('data-datatable')->assertSee(route('datatables.personnel'));
+        $this->actingAs($user)->getJson(route('datatables.personnel'))->assertOk()
+            ->assertJsonPath('recordsTotal', 1)->assertJsonPath('data.0.full_name', 'Ana Flores');
+        $this->assertStringContainsString('Sede Central', $this->getJson(route('datatables.personnel'))->json('data.0.campus_label'));
 
         $personnel = Personnel::query()->where('identity_document', '7456123')->firstOrFail();
         $this->actingAs($user)
@@ -52,7 +55,37 @@ class PersonnelIdentityDocumentTest extends TestCase
             ->assertRedirect(route('personnel.index'));
 
         $this->assertTrue($personnel->refresh()->is_sales_enabled);
-        $this->actingAs($user)->get(route('personnel.index'))->assertOk()->assertSee('Habilitado para ventas');
+        $this->assertStringContainsString('Habilitado para ventas', $this->actingAs($user)->getJson(route('datatables.personnel'))->json('data.0.sales'));
+    }
+
+    public function test_personnel_datatable_search_pagination_company_scope_and_permissions(): void
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create(['company_id' => $company->id]);
+        Permission::findOrCreate('personnel.view');
+        $user->givePermissionTo('personnel.view');
+        $area = Area::create(['company_id' => $company->id, 'name' => 'Administración']);
+        $position = Position::create(['company_id' => $company->id, 'area_id' => $area->id, 'name' => 'Auxiliar']);
+        foreach (['Ana', 'Zoe'] as $name) {
+            Personnel::create(['company_id' => $company->id, 'position_id' => $position->id,
+                'first_name' => $name, 'paternal_surname' => 'Flores', 'identity_document' => $name]);
+        }
+        $foreignCompany = Company::factory()->create();
+        Personnel::withoutGlobalScope('company')->create(['company_id' => $foreignCompany->id,
+            'position_id' => $position->id, 'first_name' => 'Ajena', 'paternal_surname' => 'Flores', 'identity_document' => 'otra']);
+        $parameters = ['draw' => 1, 'start' => 0, 'length' => 1,
+            'columns' => [['data' => 'full_name', 'name' => 'full_name', 'searchable' => 'true', 'orderable' => 'true']],
+            'order' => [['column' => 0, 'dir' => 'desc']]];
+        $response = $this->actingAs($user)->getJson(route('datatables.personnel', $parameters));
+        $response->assertOk()->assertJsonPath('recordsTotal', 2)->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.full_name', 'Zoe Flores');
+        $this->assertStringNotContainsString('Editar', $response->json('data.0.actions'));
+        $this->assertStringNotContainsString('<form', $response->json('data.0.sales'));
+        $parameters['search'] = ['value' => 'Ana Flores', 'regex' => 'false'];
+        $this->getJson(route('datatables.personnel', $parameters))->assertOk()
+            ->assertJsonPath('recordsFiltered', 1)->assertJsonPath('data.0.full_name', 'Ana Flores');
+        $user->revokePermissionTo('personnel.view');
+        $this->getJson(route('datatables.personnel'))->assertForbidden();
     }
 
     public function test_existing_identity_document_is_found_and_cannot_be_registered_twice_in_company(): void

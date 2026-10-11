@@ -8,6 +8,7 @@ use App\Contracts\DatabaseBackupManager;
 use App\Exceptions\DatabaseRestoreException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeleteDatabaseBackupRequest;
+use App\Http\Requests\DeleteDatabaseBackupsRequest;
 use App\Http\Requests\RestoreDatabaseBackupRequest;
 use App\Http\Requests\UploadDatabaseBackupRequest;
 use Illuminate\Http\RedirectResponse;
@@ -85,6 +86,27 @@ final class DatabaseBackupController extends Controller
 
             return back()->with('error', 'No se pudo restaurar el archivo subido. Verifica que sea un respaldo PostgreSQL válido.');
         }
+    }
+
+    public function destroySelected(DeleteDatabaseBackupsRequest $request): RedirectResponse
+    {
+        $deleted = 0;
+        $selected = $request->validated('backups');
+
+        foreach ($selected as $backup) {
+            try {
+                $this->backups->delete($backup);
+                $deleted++;
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        if ($deleted !== count($selected)) {
+            return redirect()->route('backups.index')->with('error', "Se eliminaron {$deleted} de ".count($selected).' respaldos. No se pudieron eliminar los restantes.');
+        }
+
+        return redirect()->route('backups.index')->with('success', "Se eliminaron {$deleted} respaldos correctamente.");
     }
 
     public function destroy(DeleteDatabaseBackupRequest $request, string $backup): RedirectResponse

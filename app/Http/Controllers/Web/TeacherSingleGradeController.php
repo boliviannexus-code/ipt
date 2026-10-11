@@ -83,7 +83,7 @@ final class TeacherSingleGradeController extends Controller
 
         return ProgramGradingScheme::query()
             ->with(['components' => fn ($query) => $query->where('frequency', GradingFrequency::Single->value)->with('skills')])
-            ->when($schemeId, fn ($query) => $query->whereKey($schemeId), fn ($query) => $query->where('program_id', $module->program_id)->where('is_active', true))
+            ->whereKey($schemeId ?? $module->configuredGradingScheme()?->id ?? 0)
             ->first();
     }
 
