@@ -137,6 +137,7 @@ class PlacementExamTest extends TestCase
         $this->postJson(route('placement-exams.store', $student), $payload)->assertUnprocessable()->assertJsonValidationErrors('target_program_level_id');
         $levels->last()->update(['is_active' => true]);
         $teacher->position->update(['is_academic' => false]);
+        $teacher->position->area->update(['name' => 'Administración']);
         $this->postJson(route('placement-exams.store', $student), $payload)->assertUnprocessable()->assertJsonValidationErrors('teacher_id');
         $this->assertDatabaseCount('placement_exams', 0);
     }

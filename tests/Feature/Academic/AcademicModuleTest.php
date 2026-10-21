@@ -130,6 +130,27 @@ class AcademicModuleTest extends TestCase
         $this->assertDatabaseCount('academic_module_teacher_assignments', 0);
     }
 
+    public function test_all_active_academic_area_personnel_are_assignable_even_when_the_position_flag_is_false(): void
+    {
+        [$user, $program, $level] = $this->context();
+        $module = AcademicModule::create([
+            'company_id' => $program->company_id, 'program_id' => $program->id, 'program_level_id' => $level->id,
+            'name' => 'Módulo Beginner', 'modality' => 'virtual', 'starts_at' => '18:00', 'ends_at' => '20:00',
+            'start_date' => today(), 'end_date' => today()->addMonth(),
+        ]);
+        $area = Area::create(['company_id' => $program->company_id, 'name' => 'Académica', 'is_active' => true]);
+        $position = Position::create(['company_id' => $program->company_id, 'area_id' => $area->id, 'name' => 'Docente Beginner', 'is_academic' => false, 'is_active' => true]);
+        $teacher = Personnel::create(['company_id' => $program->company_id, 'position_id' => $position->id,
+            'first_name' => 'Docente', 'paternal_surname' => 'Beginner', 'identity_document' => 'BEGINNER',
+            'phone' => '70000001', 'email' => 'beginner@example.com', 'is_active' => true]);
+        $this->actingAs($user)->get(route('academic.modules.teacher.edit', $module), ['X-Requested-With' => 'XMLHttpRequest'])
+            ->assertOk()->assertSee('Docente Beginner')->assertSee('data-tom-select');
+        $this->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $teacher->id])->assertOk()->assertJsonPath('success', true);
+        $this->assertDatabaseHas('academic_module_teacher_assignments', ['academic_module_id' => $module->id, 'personnel_id' => $teacher->id, 'unassigned_at' => null]);
+        $teacher->update(['is_active' => false]);
+        $this->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $teacher->id])->assertUnprocessable();
+    }
+
     private function context(): array
     {
         $company = Company::factory()->create();

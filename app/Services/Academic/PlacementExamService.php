@@ -18,8 +18,7 @@ class PlacementExamService
 {
     public function teachers(int $companyId): Collection
     {
-        return Personnel::query()->where('company_id', $companyId)->where('is_active', true)
-            ->whereHas('position', fn ($query) => $query->where('is_active', true)->where('is_academic', true))
+        return Personnel::query()->availableForTeaching($companyId)
             ->orderBy('first_name')->orderBy('paternal_surname')->get();
     }
 
@@ -77,7 +76,7 @@ class PlacementExamService
             }
             $teacher = $this->teachers((int) $student->company_id)->firstWhere('id', (int) $data['teacher_id']);
             if (! $teacher) {
-                throw ValidationException::withMessages(['teacher_id' => 'Seleccione personal activo con un cargo académico activo de la empresa.']);
+                throw ValidationException::withMessages(['teacher_id' => 'Seleccione personal activo con cargo académico o del área Académica de la empresa.']);
             }
             $preview = $this->preview($student, $contract, $target);
             $exam = PlacementExam::create([

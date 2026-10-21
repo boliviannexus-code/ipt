@@ -21,9 +21,7 @@ class AcademicModuleTeacherController extends Controller
         $module->load(['program', 'level', 'teacherAssignments.personnel.position']);
         $personnel = Personnel::query()
             ->with('position')
-            ->where('company_id', $module->company_id)
-            ->where('is_active', true)
-            ->whereHas('position', fn ($query) => $query->where('is_active', true)->where('is_academic', true))
+            ->availableForTeaching((int) $module->company_id)
             ->orderBy('first_name')
             ->orderBy('paternal_surname')
             ->get();
@@ -39,13 +37,11 @@ class AcademicModuleTeacherController extends Controller
 
         $teacher = Personnel::query()
             ->whereKey($data['personnel_id'])
-            ->where('company_id', $module->company_id)
-            ->where('is_active', true)
-            ->whereHas('position', fn ($query) => $query->where('is_active', true)->where('is_academic', true))
+            ->availableForTeaching((int) $module->company_id)
             ->first();
 
         if (! $teacher) {
-            throw ValidationException::withMessages(['personnel_id' => 'Seleccione personal activo con un cargo académico.']);
+            throw ValidationException::withMessages(['personnel_id' => 'Seleccione personal activo con cargo académico o perteneciente al área Académica.']);
         }
 
         DB::transaction(function () use ($module, $teacher): void {

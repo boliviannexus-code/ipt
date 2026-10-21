@@ -51,6 +51,16 @@ class Personnel extends Model
         return Str::of($value)->squish()->lower()->title()->toString();
     }
 
+    public function scopeAvailableForTeaching(Builder $query, int $companyId): Builder
+    {
+        return $query->where('company_id', $companyId)->where('is_active', true)
+            ->whereHas('position', fn ($position) => $position->where('company_id', $companyId)->where('is_active', true)
+                ->where(fn ($eligibility) => $eligibility->where('is_academic', true)
+                    ->orWhereHas('area', fn ($area) => $area->where('company_id', $companyId)->where('is_active', true)
+                        ->whereRaw("LOWER(TRANSLATE(TRIM(name), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')) IN (?, ?, ?, ?)",
+                            ['academico', 'academica', 'area academica', 'area academico']))));
+    }
+
     public function scopeAssignmentFilters(Builder $query, array $filters): Builder
     {
         return $query->when($filters['area_id'] ?? null, fn ($query, $areaId) => $query->whereHas('position', fn ($position) => $position->where('area_id', $areaId)))

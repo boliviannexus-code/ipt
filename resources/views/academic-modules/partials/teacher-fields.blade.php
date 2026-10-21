@@ -14,7 +14,7 @@
         @endforeach
     </select>
     @error('personnel_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
-    @if($personnel->isEmpty())<div class="form-text text-danger">No existe personal activo con un cargo marcado como académico.</div>@endif
+    @if($personnel->isEmpty())<div class="form-text text-danger">No existe personal activo con cargo académico o perteneciente al área Académica.</div>@endif
 </div>
 @if($module->teacherAssignments->isNotEmpty())
     <div class="table-responsive">
