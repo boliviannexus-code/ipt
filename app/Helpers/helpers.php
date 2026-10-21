@@ -42,6 +42,8 @@ if (! function_exists('permission_module_label')) {
             'personnel' => 'Personal',
             'rectorate' => 'Inscripciones',
             'accounts' => 'Cobros',
+            'additional-services' => 'Servicios adicionales',
+            'additional-charges' => 'Cargos por estudiante',
             'academic-control' => 'Control académico',
             'academic-modules' => 'Módulos académicos',
             'students' => 'Estudiantes',

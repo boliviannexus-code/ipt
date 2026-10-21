@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Web;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PersonnelFilterRequest;
 use App\Models\AcademicModule;
 use App\Models\Area;
 use App\Models\Campus;
@@ -33,27 +34,27 @@ class AdminDataTableController extends Controller
         private readonly PurchaseSaleInvoicePdfService $invoicePdf,
     ) {}
 
-    public function personnel(): JsonResponse
+    public function personnel(PersonnelFilterRequest $request): JsonResponse
     {
         abort_unless(auth()->user()?->can('personnel.view'), 403);
 
-        return DataTables::eloquent(Personnel::query()->select('personnel.*')->with(['position.area', 'campus', 'user']))
+        return DataTables::eloquent(Personnel::query()->assignmentFilters($request->validated())->select('personnel.*')->with(['position.area', 'campus', 'user']))
             ->addColumn('full_name', fn (Personnel $person): string => $person->full_name)
             ->addColumn('position_label', fn (Personnel $person): string => '<span class="d-block">'.e($person->position?->area?->name ?? '-').'</span><small class="text-body-secondary">'.e($person->position?->name ?? '-').'</small>')
             ->addColumn('campus_label', fn (Personnel $person): string => $person->campus
-                ? '<span class="d-block">'.e($person->campus->name).'</span><small class="text-body-secondary">'.e($person->campus->code).'</small>'
+                ? e($person->campus->short ?: '—')
                 : '<span class="text-body-secondary">Sin asignar</span>')
-            ->addColumn('contact', fn (Personnel $person): string => e($person->email).'<small class="d-block text-body-secondary">'.e($person->phone).'</small>')
+            ->addColumn('contact', fn (Personnel $person): string => e($person->phone ?: '—'))
             ->addColumn('user_label', fn (Personnel $person): string => $person->user
-                ? '<span class="badge text-bg-success">'.e($person->user->email).'</span>'
+                ? '<span class="badge text-bg-success table-email" title="'.e($person->user->email).'">'.e($person->user->email).'</span>'
                 : '<span class="badge text-bg-secondary">Sin usuario</span>')
             ->addColumn('sales', fn (Personnel $person): string => view('personnel.partials.datatable-sales', compact('person'))->render())
             ->addColumn('actions', fn (Personnel $person): string => view('personnel.partials.datatable-actions', compact('person'))->render())
             ->filterColumn('full_name', fn ($query, string $keyword) => $query->whereRaw("concat_ws(' ', personnel.first_name, personnel.paternal_surname, personnel.maternal_surname) ilike ?", ["%{$keyword}%"]))
             ->orderColumn('full_name', fn ($query, string $direction) => $query->orderBy('personnel.first_name', $direction)->orderBy('personnel.paternal_surname', $direction)->orderBy('personnel.maternal_surname', $direction))
             ->filterColumn('position_label', fn ($query, string $keyword) => $query->whereHas('position', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhereHas('area', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%"))))
-            ->filterColumn('campus_label', fn ($query, string $keyword) => $query->whereHas('campus', fn ($query) => $query->where(fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhere('code', 'ilike', "%{$keyword}%"))))
-            ->filterColumn('contact', fn ($query, string $keyword) => $query->where(fn ($query) => $query->where('personnel.email', 'ilike', "%{$keyword}%")->orWhere('personnel.phone', 'ilike', "%{$keyword}%")))
+            ->filterColumn('campus_label', fn ($query, string $keyword) => $query->whereHas('campus', fn ($query) => $query->where(fn ($query) => $query->where('short', 'ilike', "%{$keyword}%"))))
+            ->filterColumn('contact', fn ($query, string $keyword) => $query->where('personnel.phone', 'ilike', "%{$keyword}%"))
             ->filterColumn('user_label', fn ($query, string $keyword) => $query->whereHas('user', fn ($query) => $query->where('email', 'ilike', "%{$keyword}%")))
             ->rawColumns(['position_label', 'campus_label', 'contact', 'user_label', 'sales', 'actions'])
             ->toJson();
@@ -165,6 +166,7 @@ class AdminDataTableController extends Controller
         $query = User::query()->withTrashed()->with(['company', 'personnel', 'roles'])->select('users.*');
 
         return DataTables::eloquent($query)
+            ->editColumn('email', fn (User $user): string => '<span class="table-email" title="'.e($user->email).'">'.e($user->email).'</span>')
             ->addColumn('display_name', fn (User $user): string => e($user->personnel?->full_name ?? $user->name))
             ->addColumn('company_name', fn (User $user): string => e($user->company?->name ?? 'Sin empresa'))
             ->addColumn('roles_list', fn (User $user): string => $user->roles->isEmpty()
@@ -180,7 +182,7 @@ class AdminDataTableController extends Controller
                 });
             })
             ->filterColumn('company_name', fn ($query, string $keyword) => $query->whereHas('company', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")))
-            ->rawColumns(['roles_list', 'status', 'actions'])
+            ->rawColumns(['email', 'roles_list', 'status', 'actions'])
             ->toJson();
     }
 
@@ -216,9 +218,10 @@ class AdminDataTableController extends Controller
             ->select('rectorate_applications.*');
 
         return DataTables::eloquent($query)
+            ->setRowClass(fn (RectorateApplication $application): string => $application->contract?->status === 'inactive' ? 'student-attendance-inactive' : '')
             ->addColumn('enrollment', fn (RectorateApplication $application): string => '<span class="fw-semibold d-block">'.e($application->account_number ?: 'Pendiente').'</span><small class="text-body-secondary">'.e($application->campus?->name ?? 'Sin sede').'</small>')
             ->addColumn('holder', fn (RectorateApplication $application): string => '<span class="fw-semibold d-block">'.e(trim("{$application->first_name} {$application->paternal_surname} {$application->maternal_surname}")).'</span><small class="text-body-secondary">Inscripción #'.$application->id.'</small>')
-            ->addColumn('contact', fn (RectorateApplication $application): string => '<span class="d-block">'.e($application->email ?: '—').'</span><small class="text-body-secondary">'.e($application->phone ?: '—').'</small>')
+            ->addColumn('contact', fn (RectorateApplication $application): string => '<span class="table-email" title="'.e($application->email ?: '—').'">'.e($application->email ?: '—').'</span><small class="text-body-secondary">'.e($application->phone ?: '—').'</small>')
             ->addColumn('program_plan', fn (RectorateApplication $application): string => '<span class="d-block">'.e($application->program?->title ?? 'Pendiente').'</span>'.($application->plan ? '<small class="text-body-secondary">'.e($application->plan->name).'</small>' : ''))
             ->addColumn('progress', fn (RectorateApplication $application): string => $this->enrollmentProgress($application))
             ->editColumn('created_at', fn (RectorateApplication $application): string => $application->created_at?->format('d/m/Y H:i') ?? '-')
@@ -685,6 +688,12 @@ class AdminDataTableController extends Controller
 
     private function enrollmentProgress(RectorateApplication $application): string
     {
+        if (in_array($application->contract?->status, ['suspended', 'abandoned', 'withdrawn', 'finished'], true)) {
+            return '<span class="badge text-bg-secondary">'.e($application->contract->statusLabel()).'</span>';
+        }
+        if ($application->contract?->status === 'inactive') {
+            return '<span class="badge bg-orange-lt text-orange">INACTIVO · Asistencia irregular</span>';
+        }
         if ($application->contract?->status === 'cancelled') {
             return '<span class="badge text-bg-secondary"><i class="ti ti-ban me-1"></i>Inhabilitada</span>';
         }

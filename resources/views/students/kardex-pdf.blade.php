@@ -23,6 +23,11 @@
 @else
     <p style="font-size:9px;color:#666666;">No existen datos de titular vinculados a este estudiante.</p>
 @endif
+@foreach($student->contracts->where('status', 'enrolled') as $contract)
+    <p style="font-size:9px;"><b>{{ $contract->program->title }}</b> · Nivel actual: {{ $contract->currentProgramLevel?->name ?? $contract->program->levels->first()?->name ?? 'Sin nivel' }}@if($student->currentModuleAssignment === null) · Pendiente de asignación a un módulo
+    @endif</p>
+@endforeach
+@include('students.partials.placement-exam-kardex', ['forPdf' => true])
 <h3 style="color:#183153;">Trayectoria académica</h3>
 <table border="1" cellpadding="4" cellspacing="0" width="100%" style="font-size:7.5px;">
     <thead><tr style="background-color:#183153;color:#ffffff;font-weight:bold;"><th width="24%">Programa / Nivel</th><th width="19%">Módulo</th><th width="17%">Periodo</th><th width="20%">Docente</th><th width="10%">Nota final</th><th width="10%">Resultado</th></tr></thead>
@@ -38,6 +43,6 @@
 <h3 style="color:#183153;">Inscripciones y planes</h3>
 <table border="1" cellpadding="4" cellspacing="0" width="100%" style="font-size:8px;">
     <thead><tr style="background-color:#e9eef5;font-weight:bold;"><th width="32%">Programa</th><th width="25%">Plan</th><th width="18%">Matrícula</th><th width="25%">Estado / Fecha</th></tr></thead>
-    <tbody>@forelse($student->contracts->sortByDesc('confirmed_at') as $contract)<tr><td width="32%">{{ $contract->program->title }}</td><td width="25%">{{ $contract->plan->name }}</td><td width="18%">{{ $contract->account_number }}</td><td width="25%">{{ strtoupper(str_replace('_', ' ', $contract->status)) }}<br>{{ $contract->confirmed_at->format('d/m/Y') }}</td></tr>@empty<tr><td colspan="4" align="center">No existen matrículas registradas.</td></tr>@endforelse</tbody>
+    <tbody>@forelse($student->contracts->sortByDesc('confirmed_at') as $contract)<tr><td width="32%">{{ $contract->program->title }}</td><td width="25%">{{ $contract->plan->name }}</td><td width="18%">{{ $contract->account_number }}</td><td width="25%">{{ $contract->statusLabel() }}<br>{{ $contract->confirmed_at->format('d/m/Y') }}</td></tr>@empty<tr><td colspan="4" align="center">No existen matrículas registradas.</td></tr>@endforelse</tbody>
 </table>
 <p style="font-size:7px;color:#666666;">Documento generado por {{ config('app.name') }}.</p>

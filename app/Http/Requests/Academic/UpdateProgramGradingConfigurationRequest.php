@@ -7,8 +7,10 @@ namespace App\Http\Requests\Academic;
 use App\Enums\GradingFrequency;
 use App\Enums\GradingScoringMethod;
 use App\Enums\GradingSkillMode;
+use App\Services\Academic\AttendanceGradingPolicy;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 
 final class UpdateProgramGradingConfigurationRequest extends FormRequest
@@ -37,7 +39,19 @@ final class UpdateProgramGradingConfigurationRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
             $components = collect($this->input('components', []));
+            try {
+                AttendanceGradingPolicy::validate($components->all());
+            } catch (ValidationException $exception) {
+                foreach ($exception->errors() as $key => $messages) {
+                    foreach ($messages as $message) {
+                        $validator->errors()->add($key, $message);
+                    }
+                }
+            }
             $names = $components->pluck('name')->map(fn ($name): string => mb_strtolower(trim((string) $name)));
             if ($names->duplicates()->isNotEmpty()) {
                 $validator->errors()->add('components', 'Los títulos de las ponderaciones no pueden repetirse.');

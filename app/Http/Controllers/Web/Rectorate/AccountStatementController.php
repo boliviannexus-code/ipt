@@ -27,7 +27,8 @@ class AccountStatementController extends Controller
                 ->withErrors(['cash_register' => 'Debes abrir una caja para acceder a las cuentas por cobrar.']);
         }
 
-        $search = trim((string) $request->query('buscar'));
+        $data = $request->validate(['buscar' => ['nullable', 'string', 'max:100']]);
+        $search = trim($data['buscar'] ?? '');
         $contracts = EnrollmentContract::query()
             ->with(['student.campus', 'program', 'plan', 'application.campus'])
             ->withSum(['charges as total_charged' => fn ($query) => $query->where('status', '!=', 'cancelled')], 'amount')

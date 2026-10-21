@@ -10,6 +10,7 @@ use App\Models\EnrollmentContract;
 use App\Models\ProgramGradingScheme;
 use App\Models\ProgramLevel;
 use App\Models\User;
+use App\Services\Enrollment\EnrollmentCompletionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -34,7 +35,13 @@ final class ModuleCompletionService
             ? ProgramGradingScheme::query()->with('components.skills')->find($schemeId)
             : $module->configuredGradingScheme();
 
-        return ['scheme' => $scheme, ...$this->tracking->summarize($module, $scheme)];
+        $summary = $this->tracking->summarize($module, $scheme);
+        if ($module->closed_at === null) {
+            $activeIds = $module->studentAssignments->whereNull('released_at')->pluck('student_id');
+            $summary['students'] = $summary['students']->filter(fn ($row) => $activeIds->contains($row['student']->id))->values();
+        }
+
+        return ['scheme' => $scheme, ...$summary];
     }
 
     public function complete(User $user, AcademicModule $module): void
@@ -91,7 +98,7 @@ final class ModuleCompletionService
                     $contract = EnrollmentContract::query()
                         ->where('student_id', $row['student']->id)
                         ->where('program_id', $module->program_id)
-                        ->where('status', 'enrolled')
+                        ->whereIn('status', ['enrolled', 'inactive'])
                         ->lockForUpdate()
                         ->latest('id')
                         ->first();
@@ -107,6 +114,8 @@ final class ModuleCompletionService
                         ->value('id');
                     if ($nextLevelId !== null) {
                         $contract->update(['current_program_level_id' => $nextLevelId]);
+                    } else {
+                        app(EnrollmentCompletionService::class)->evaluate($contract);
                     }
                 }
             }

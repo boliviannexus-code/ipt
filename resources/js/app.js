@@ -248,6 +248,80 @@ function confirmAction(form) {
     });
 }
 
+function initLiveSearch(scope = document) {
+    scope.querySelectorAll('form[data-live-search]').forEach((form) => {
+        if (form.dataset.liveSearchInitialized) return;
+        const results = document.querySelector(form.dataset.liveSearch);
+        const input = form.querySelector('input[type="search"]');
+        const status = form.querySelector('[data-live-search-status]');
+        if (!results || !input) return;
+        form.dataset.liveSearchInitialized = '1';
+        let timer;
+        let controller;
+        let revision = 0;
+        const cancel = () => {
+            window.clearTimeout(timer);
+            controller?.abort();
+            revision += 1;
+            results.removeAttribute('aria-busy');
+        };
+        const searchUrl = () => {
+            const url = new URL(form.action, window.location.href);
+            new FormData(form).forEach((value, key) => url.searchParams.set(key, value));
+            url.searchParams.delete('page');
+            return url;
+        };
+        const load = async (url) => {
+            cancel();
+            const currentRevision = revision;
+            controller = new AbortController();
+            results.setAttribute('aria-busy', 'true');
+            if (status) status.textContent = 'Buscando…';
+            try {
+                const response = await fetch(url, {
+                    signal: controller.signal,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' },
+                });
+                if (currentRevision !== revision) return;
+                if (response.redirected) {
+                    window.location.assign(response.url);
+                    return;
+                }
+                if (!response.ok) throw new Error('Search failed');
+                const html = await response.text();
+                if (currentRevision !== revision) return;
+                const documentResult = new DOMParser().parseFromString(html, 'text/html');
+                const nextResults = documentResult.querySelector(form.dataset.liveSearch);
+                if (!nextResults) throw new Error('Missing results');
+                results.innerHTML = nextResults.innerHTML;
+                window.history.replaceState(window.history.state, '', url);
+                if (status) status.textContent = 'Resultados actualizados';
+            } catch (error) {
+                if (error.name !== 'AbortError' && currentRevision === revision && status) {
+                    status.textContent = 'No se pudo buscar. Intente nuevamente.';
+                }
+            } finally {
+                if (currentRevision === revision) results.removeAttribute('aria-busy');
+            }
+        };
+        input.addEventListener('input', () => {
+            cancel();
+            if (status) status.textContent = 'Buscando…';
+            timer = window.setTimeout(() => load(searchUrl()), 250);
+        });
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            load(searchUrl());
+        });
+        results.addEventListener('click', (event) => {
+            const link = event.target.closest('a[href]');
+            if (!link || !link.closest('nav') || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            load(new URL(link.href));
+        });
+    });
+}
+
 function initAdminDataTables(scope = document) {
     scope.querySelectorAll('[data-datatable]').forEach((table) => {
         if (table.dataset.datatableInitialized === '1') {
@@ -272,6 +346,7 @@ function initAdminDataTables(scope = document) {
                 },
             },
             columns,
+            autoWidth: table.dataset.autoWidth !== 'false',
             processing: true,
             serverSide: true,
             responsive: true,
@@ -304,6 +379,11 @@ function initAdminDataTables(scope = document) {
             };
 
             filtersForm.addEventListener('change', reloadTable);
+            filtersForm.addEventListener('personnel-filters:clear', () => {
+                dataTable.search('');
+                dataTable.columns().search('');
+                reloadTable();
+            });
             filtersForm.addEventListener('reset', () => {
                 window.setTimeout(() => {
                     filtersForm.querySelectorAll('select[data-tom-select]').forEach((select) => {
@@ -324,6 +404,61 @@ function initAdminDataTables(scope = document) {
             }
         });
         table.dataset.datatableInitialized = '1';
+    });
+}
+
+function initPersonnelFilters(scope = document) {
+    scope.querySelectorAll('[data-personnel-filters]').forEach((form) => {
+        if (form.dataset.filtersInitialized) return;
+        form.dataset.filtersInitialized = '1';
+        const area = form.querySelector('[name="area_id"]');
+        const position = form.querySelector('[name="position_id"]');
+        const positions = Array.from(position.options).filter((option) => option.value).map((option) => ({
+            value: option.value, text: option.textContent, areaId: option.dataset.areaId,
+        }));
+        if (!area.value && position.value) {
+            area.value = positions.find((option) => option.value === position.value)?.areaId ?? '';
+        }
+        const syncLinks = () => {
+            document.querySelectorAll('[data-personnel-export]').forEach((link) => {
+                const url = new URL(link.href);
+                for (const field of [area, position]) {
+                    if (field.value) url.searchParams.set(field.name, field.value);
+                    else url.searchParams.delete(field.name);
+                }
+                link.href = url.href;
+            });
+            const url = new URL(window.location.href);
+            for (const field of [area, position]) {
+                if (field.value) url.searchParams.set(field.name, field.value);
+                else url.searchParams.delete(field.name);
+            }
+            url.searchParams.delete('page');
+            window.history.replaceState(window.history.state, '', url);
+        };
+        const rebuildPositions = (selected = '') => {
+            const options = [new Option(area.value ? 'Todos los cargos' : 'Seleccione un área', '')];
+            if (area.value) {
+                positions.filter((item) => item.areaId === area.value).forEach((item) => {
+                    options.push(new Option(item.text, item.value, false, item.value === selected));
+                });
+            }
+            position.replaceChildren(...options);
+            position.disabled = !area.value;
+            syncLinks();
+        };
+        area.addEventListener('change', () => rebuildPositions());
+        position.addEventListener('change', syncLinks);
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            form.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        form.querySelector('[data-clear-personnel-filters]').addEventListener('click', () => {
+            area.value = '';
+            rebuildPositions();
+            form.dispatchEvent(new Event('personnel-filters:clear'));
+        });
+        rebuildPositions(position.value);
     });
 }
 
@@ -1872,12 +2007,39 @@ function initAccountPaymentForms(scope = document) {
     });
 }
 
+function initStudentStatusForms(scope = document) {
+    scope.querySelectorAll('[data-student-status-form]').forEach((form) => {
+        if (form.dataset.statusInitialized) return;
+        form.dataset.statusInitialized = '1';
+        const select = form.querySelector('[data-status-select]');
+        const field = form.querySelector('[data-reactivation-field]');
+        const date = field.querySelector('input');
+        const registered = form.querySelector('[name="registered_on"]');
+        const refresh = () => {
+            const suspended = select.value === 'suspended';
+            field.classList.toggle('d-none', !suspended);
+            date.disabled = !suspended;
+            date.required = suspended;
+            if (registered.value) {
+                const nextDay = new Date(`${registered.value}T12:00:00Z`);
+                nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+                date.min = nextDay.toISOString().slice(0, 10);
+            }
+        };
+        select.addEventListener('change', refresh);
+        registered.addEventListener('change', refresh);
+        refresh();
+    });
+}
+
 function initializeUi(scope = document) {
     disableBusinessFormAutocomplete(scope);
     initTomSelects(scope);
     initProductSiatSelectors(scope);
     initInvoiceIssueForms(scope);
+    initPersonnelFilters(scope);
     initAdminDataTables(scope);
+    initLiveSearch(scope);
     initCharacterCounters(scope);
     initPermissionMatrices(scope);
     initLoginForm(scope);
@@ -1890,6 +2052,7 @@ function initializeUi(scope = document) {
     initAcademicModuleForms(scope);
     initUserPersonnelSelect(scope);
     initAccountPaymentForms(scope);
+    initStudentStatusForms(scope);
 }
 
 showInitialAlerts();

@@ -61,7 +61,7 @@ class AccountPaymentServiceTest extends TestCase
         $this->assertDatabaseMissing('contract_plan_histories', ['plan_id' => $negativePlan->id]);
     }
 
-    public function test_partial_payment_keeps_pre_enrollment_and_full_initial_payment_enrolls_student(): void
+    public function test_first_partial_payment_activates_enrollment_and_later_payments_preserve_activation_student(): void
     {
         [$user, $contract] = $this->contract();
         CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
@@ -77,7 +77,7 @@ class AccountPaymentServiceTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.contracts.account.show', $contract))
             ->assertOk()
-            ->assertSee('Cobro de mensualidad')
+            ->assertSee('Estado de cuenta y cobros')
             ->assertSee('Estudiante')
             ->assertSee('Titular')
             ->assertSee('María Pérez')
@@ -95,12 +95,15 @@ class AccountPaymentServiceTest extends TestCase
 
         $firstPayment = $service->record($user, $contract, '100.00', ['payment_method_code' => 1]);
         $this->assertSame('100.00', $firstPayment->amount);
-        $this->assertSame('pre_enrolled', $contract->refresh()->status);
+        $this->assertSame('enrolled', $contract->refresh()->status);
+        $activatedAt = $contract->enrolled_at;
+        $this->assertTrue($activatedAt->equalTo($firstPayment->paid_at));
         $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'paid_amount' => 100, 'status' => 'partial']);
 
         $service->record($user, $contract, '150.00', ['payment_method_code' => 1]);
         $this->assertSame('enrolled', $contract->refresh()->status);
         $this->assertNotNull($contract->enrolled_at);
+        $this->assertTrue($activatedAt->equalTo($contract->enrolled_at));
         $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'paid_amount' => 250, 'status' => 'paid']);
         $this->assertDatabaseCount('account_payments', 2);
         $this->assertDatabaseCount('payment_allocations', 2);
@@ -112,15 +115,15 @@ class AccountPaymentServiceTest extends TestCase
             ->assertOk()
             ->assertSee('Total cobrado')
             ->assertSee('Movimientos de la caja activa')
-            ->assertSee('PAGO-000001')
+            ->assertSee('PAGO-'.str_pad((string) $firstPayment->id, 6, '0', STR_PAD_LEFT))
             ->assertSee('Ana Pérez')
             ->assertSee('Bs 250.00');
 
         $this->actingAs($user)
             ->get(route('rectorate.contracts.account.show', $contract))
             ->assertOk()
-            ->assertSee('Cobro de mensualidad')
-            ->assertSee('Inscrito')
+            ->assertSee('Estado de cuenta y cobros')
+            ->assertSee('ACTIVO')
             ->assertSee('Historial de pagos');
     }
 
@@ -273,6 +276,29 @@ class AccountPaymentServiceTest extends TestCase
         $this->assertSame('0.00', $future->refresh()->paid_amount);
         $this->assertDatabaseCount('account_credit_applications', 0);
         $this->assertDatabaseCount('account_payments', 1);
+    }
+
+    public function test_existing_partial_payments_are_backfilled_without_activating_unpaid_or_cancelled_contracts(): void
+    {
+        [$user, $paid] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $payment = app(AccountPaymentService::class)->record($user, $paid, '1.00', ['payment_method_code' => 1]);
+        $paid->refresh()->update(['status' => 'pre_enrolled', 'enrolled_at' => null]);
+        [, $unpaid] = $this->contract();
+        [$otherUser, $cancelled] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $otherUser->company_id, 'user_id' => $otherUser->id]);
+        app(AccountPaymentService::class)->record($otherUser, $cancelled, '1.00', ['payment_method_code' => 1]);
+        $cancelled->update(['status' => 'cancelled']);
+
+        $migration = require database_path('migrations/2026_10_21_010000_activate_enrollments_with_existing_payments.php');
+        $migration->up();
+        $migration->up();
+
+        $this->assertSame('enrolled', $paid->refresh()->status);
+        $this->assertTrue($paid->enrolled_at->equalTo($payment->paid_at));
+        $this->assertSame('pre_enrolled', $unpaid->refresh()->status);
+        $this->assertNull($unpaid->enrolled_at);
+        $this->assertSame('cancelled', $cancelled->refresh()->status);
     }
 
     private function futureCharge(EnrollmentContract $contract): AccountCharge

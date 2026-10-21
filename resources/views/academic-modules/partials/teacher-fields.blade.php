@@ -7,7 +7,7 @@
 </div>
 <div class="mb-3">
     <label class="form-label required" for="module-teacher">Docente</label>
-    <select class="form-select @error('personnel_id') is-invalid @enderror" id="module-teacher" name="personnel_id" required>
+    <select class="form-select @error('personnel_id') is-invalid @enderror" id="module-teacher" name="personnel_id" data-tom-select data-placeholder="Buscar docente por nombre o cargo" required>
         <option value="">Seleccionar personal</option>
         @foreach($personnel as $person)
             <option value="{{ $person->id }}" @selected((int) old('personnel_id', $module->currentTeacherAssignment?->personnel_id) === $person->id)>{{ $person->full_name }} · {{ $person->position->name }}</option>

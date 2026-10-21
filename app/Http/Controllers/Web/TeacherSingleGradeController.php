@@ -23,7 +23,7 @@ final class TeacherSingleGradeController extends Controller
     public function edit(Request $request, AcademicModule $module): View
     {
         $this->authorizeTeacher($request, $module);
-        $module->load(['program', 'level', 'studentAssignments.student', 'singleGrades.skill.component']);
+        $module->load(['program', 'level', 'studentAssignments' => fn ($query) => $query->whereNull('released_at')->with('student'), 'singleGrades.skill.component']);
         $scheme = $this->schemeFor($module);
         $components = $scheme?->components ?? collect();
         $gradesBySkill = $module->singleGrades
@@ -45,7 +45,7 @@ final class TeacherSingleGradeController extends Controller
             throw ValidationException::withMessages(['grades' => 'El programa no tiene ponderaciones únicas configuradas.']);
         }
 
-        $studentIds = $module->studentAssignments()->pluck('student_id')->map(fn ($id): int => (int) $id)->sort()->values();
+        $studentIds = $module->studentAssignments()->whereNull('released_at')->pluck('student_id')->map(fn ($id): int => (int) $id)->sort()->values();
         $submitted = collect($request->validated('grades'));
         $submittedSkillIds = $submitted->keys()->map(fn ($id): int => (int) $id)->sort()->values();
         if ($submittedSkillIds->all() !== $skills->keys()->map(fn ($id): int => (int) $id)->sort()->values()->all()) {

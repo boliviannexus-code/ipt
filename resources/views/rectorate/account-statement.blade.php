@@ -1,7 +1,7 @@
 @extends('layouts.admin')
 
-@section('title', 'Cobro de mensualidad')
-@section('page-title', 'Cobro de mensualidad')
+@section('title', 'Estado de cuenta y cobros')
+@section('page-title', 'Estado de cuenta y cobros')
 @section('page-subtitle', 'Matrícula ' . $contract->account_number . ' · ' . $contract->program->title)
 
 @section('content')
@@ -24,7 +24,7 @@
             <i class="ti ti-arrow-left me-1" aria-hidden="true"></i>Volver a cuentas por cobrar
         </a>
         <span class="badge fs-6 {{ $contract->status === 'enrolled' ? 'text-bg-success' : 'text-bg-warning' }}">
-            {{ $contract->status === 'enrolled' ? 'Inscrito' : 'Preinscrito' }}
+            {{ $contract->statusLabel() }}
         </span>
     </div>
 
@@ -64,7 +64,7 @@
     </div>
 
     <div class="row g-3 mb-3">
-        @foreach (['Total recibido' => $received, 'Aplicado a cuotas' => $allocated, 'Saldo a favor disponible' => $credit] as $label => $value)
+        @foreach (['Total recibido' => $received, 'Aplicado a cargos' => $allocated, 'Saldo a favor disponible' => $credit] as $label => $value)
             <div class="col-md-4">
                 <div class="card h-100">
                     <div class="card-body">
@@ -78,14 +78,14 @@
 
     <div class="row g-3 mb-3">
         <div class="col-12 col-xxl-7">
-            <x-ui.table-card title="Detalle de mensualidades">
+            <x-ui.table-card title="Detalle de cargos">
                 <table class="table table-hover align-middle mb-0">
                     <thead><tr><th>Periodo</th><th>Concepto</th><th>Vencimiento</th><th class="text-end">Importe</th><th class="text-end">Pagado</th><th>Estado</th></tr></thead>
                     <tbody>
                         @foreach ($contract->charges as $charge)
                             <tr>
-                                <td>{{ $charge->period->format('m/Y') }}</td>
-                                <td>{{ $charge->concept ?? 'Mensualidad' }}</td>
+                                <td>{{ $charge->period?->format('m/Y') ?? 'Adicional' }}</td>
+                                <td>{{ $charge->concept ?? 'Mensualidad' }}@if($charge->detail)<small class="d-block text-secondary text-break">{{ $charge->detail }}</small>@endif</td>
                                 <td>{{ $charge->due_date->format('d/m/Y') }}</td>
                                 <td class="text-end">Bs {{ number_format((float) $charge->amount, 2, ',', '.') }}</td>
                                 <td class="text-end">Bs {{ number_format((float) $charge->paid_amount, 2, ',', '.') }}</td>

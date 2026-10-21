@@ -15,6 +15,7 @@ final class ProgramGradingConfigurationService
     public function update(ProgramGradingScheme $scheme, array $data): ProgramGradingScheme
     {
         $this->ensureEditable($scheme);
+        AttendanceGradingPolicy::validate($data['components']);
 
         return DB::transaction(function () use ($scheme, $data): ProgramGradingScheme {
             $scheme->update(['passing_score' => $data['passing_score']]);
@@ -92,6 +93,8 @@ final class ProgramGradingConfigurationService
                 ])->all());
             }
 
+            AttendanceGradingPolicy::ensureDraft($draft);
+
             return $draft->load('components.skills');
         });
     }
@@ -117,6 +120,11 @@ final class ProgramGradingConfigurationService
 
     private function validateForFinalization(ProgramGradingScheme $scheme): void
     {
+        AttendanceGradingPolicy::validate($scheme->components->map(fn ($component): array => [
+            'name' => $component->name, 'weight' => $component->weight,
+            'frequency' => $component->frequency->value, 'skill_mode' => $component->skill_mode->value,
+            'scoring_method' => $component->scoring_method->value, 'skills' => $component->skills->toArray(),
+        ])->all());
         if ($scheme->components->isEmpty()) {
             throw ValidationException::withMessages(['components' => 'Agrega al menos una ponderación antes de finalizar.']);
         }

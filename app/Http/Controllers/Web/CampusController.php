@@ -79,13 +79,20 @@ class CampusController extends Controller
 
     private function validated(Request $request, int $companyId, ?Campus $campus = null): array
     {
-        $request->merge(['code' => trim((string) $request->input('code'))]);
+        $request->merge([
+            'code' => trim((string) $request->input('code')),
+            'short' => strtoupper(trim((string) $request->input('short'))),
+        ]);
 
         return $request->validate([
             'name' => ['required', 'string', 'max:150', Rule::unique('campuses')->where('company_id', $companyId)->ignore($campus)],
             'code' => ['required', 'string', 'size:1', 'regex:/^[0-9]$/', Rule::unique('campuses')->where('company_id', $companyId)->ignore($campus)],
+            'short' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'address' => ['required', 'string', 'max:255'],
         ], [
+            'short.required' => 'Ingrese la abreviatura de la sede.',
+            'short.size' => 'La abreviatura debe tener exactamente 3 letras.',
+            'short.regex' => 'La abreviatura debe contener solo letras de la A a la Z.',
             'name.unique' => 'Ya existe una sede con este nombre en la empresa activa.',
             'code.size' => 'El código de la sede debe tener exactamente un dígito.',
             'code.regex' => 'El código de la sede debe ser numérico, entre 0 y 9.',

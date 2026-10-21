@@ -15,11 +15,11 @@ class StudentController extends Controller
         $students = Student::query()
             ->with([
                 'campus',
-                'contracts' => fn ($query) => $query->with(['currentProgramLevel', 'program.levels'])->where('status', 'enrolled'),
+                'contracts' => fn ($query) => $query->with(['currentProgramLevel', 'program.levels'])->whereIn('status', ['enrolled', 'inactive', 'suspended', 'abandoned', 'withdrawn', 'finished']),
                 'currentModuleAssignment.module',
             ])
             ->where('is_active', true)
-            ->whereHas('contracts', fn ($query) => $query->where('status', 'enrolled'))
+            ->whereHas('contracts', fn ($query) => $query->whereIn('status', ['enrolled', 'inactive', 'suspended', 'abandoned', 'withdrawn', 'finished']))
             ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
                 $query->where('identity_document', 'ilike', "%{$search}%")
                     ->orWhere('account_number', 'ilike', "%{$search}%")

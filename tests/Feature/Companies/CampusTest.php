@@ -27,16 +27,19 @@ class CampusTest extends TestCase
         $this->actingAs($user)->postJson(route('campuses.store'), [
             'name' => 'Sede Central',
             'code' => '1',
+            'short' => ' lpz ',
             'address' => 'Av. Principal 123',
         ])->assertOk()->assertJsonPath('success', true);
 
         $campus = Campus::query()->sole();
         $this->assertSame('1', $campus->code);
+        $this->assertSame('LPZ', $campus->short);
         $this->assertSame($company->id, $campus->company_id);
 
         $this->actingAs($user)->putJson(route('campuses.update', $campus), [
             'name' => 'Sede Centro',
             'code' => '2',
+            'short' => 'SCZ',
             'address' => 'Calle Central 456',
         ])->assertOk()->assertJsonPath('success', true);
 
@@ -44,10 +47,24 @@ class CampusTest extends TestCase
             ->assertOk()->assertSee('data-datatable', false)->assertSee(route('datatables.campuses'), false);
         $this->actingAs($user)->getJson(route('datatables.campuses', [
             'draw' => 1, 'start' => 0, 'length' => 10,
-        ]))->assertOk()->assertJsonFragment(['name' => 'Sede Centro', 'address' => 'Calle Central 456']);
+        ]))->assertOk()->assertJsonFragment(['name' => 'Sede Centro', 'short' => 'SCZ', 'address' => 'Calle Central 456']);
 
         $this->actingAs($user)->deleteJson(route('campuses.destroy', $campus))->assertOk();
         $this->assertDatabaseMissing('campuses', ['id' => $campus->id]);
+    }
+
+    public function test_short_must_have_exactly_three_letters(): void
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create(['company_id' => $company->id]);
+        Permission::findOrCreate('campuses.manage');
+        $user->givePermissionTo('campuses.manage');
+
+        foreach (['', 'LP', 'LPZZ', 'L12'] as $short) {
+            $this->actingAs($user)->postJson(route('campuses.store'), [
+                'name' => 'Central', 'code' => '1', 'short' => $short, 'address' => 'Dirección',
+            ])->assertUnprocessable()->assertJsonValidationErrors('short');
+        }
     }
 
     public function test_campuses_are_isolated_by_company_and_code_is_unique_per_company(): void

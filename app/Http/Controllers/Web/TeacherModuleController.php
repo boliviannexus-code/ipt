@@ -7,10 +7,13 @@ use App\Enums\GradingScoringMethod;
 use App\Http\Controllers\Controller;
 use App\Models\AcademicModule;
 use App\Models\ClassSession;
+use App\Models\EnrollmentContract;
 use App\Models\Personnel;
 use App\Models\ProgramGradingScheme;
+use App\Services\Academic\AttendanceGradingPolicy;
 use App\Services\Academic\ClassSessionService;
 use App\Services\Academic\DailyGradeService;
+use App\Services\Academic\StudentAttendanceRegularityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,7 +23,7 @@ use Illuminate\View\View;
 
 class TeacherModuleController extends Controller
 {
-    public function __construct(private readonly DailyGradeService $dailyGrades, private readonly ClassSessionService $sessions) {}
+    public function __construct(private readonly DailyGradeService $dailyGrades, private readonly ClassSessionService $sessions, private readonly StudentAttendanceRegularityService $regularity) {}
 
     public function index(Request $request): View
     {
@@ -34,7 +37,7 @@ class TeacherModuleController extends Controller
         }
 
         $modules = AcademicModule::query()
-            ->with(['program', 'level', 'studentAssignments', 'studentResults', 'classSessions' => fn ($query) => $query->where(fn ($query) => $query->whereDate('class_date', today())->orWhereNull('ended_at'))->orderBy('class_date')])
+            ->with(['program', 'level', 'studentAssignments' => fn ($query) => $query->whereNull('released_at'), 'studentResults', 'classSessions' => fn ($query) => $query->where(fn ($query) => $query->whereDate('class_date', today())->orWhereNull('ended_at'))->orderBy('class_date')])
             ->whereHas('currentTeacherAssignment', fn ($query) => $query->where('personnel_id', $personnel->id))
             ->orderBy('start_date')
             ->orderBy('name')
@@ -62,19 +65,24 @@ class TeacherModuleController extends Controller
         if ($session->ended_at !== null) {
             throw ValidationException::withMessages(['class' => 'Esta clase ya fue finalizada y no puede modificarse.']);
         }
-        $module->load(['program', 'level', 'studentAssignments.student']);
+        $module->load(['program', 'level', 'studentAssignments' => fn ($query) => $query->whereNull('released_at')->with('student')]);
         $session->load('gradingSkills.grades');
         $session->load('academicObservations');
         $scheme = $this->sessionScheme($session, $module);
         $dailyComponents = $scheme?->components ?? collect();
         $dailySkills = $dailyComponents->flatMap(fn ($component) => $component->skills->each(fn ($skill) => $skill->setRelation('component', $component)));
-        $selectedSkillIds = $session->gradingSkills->pluck('program_grading_skill_id')->map(fn ($id): int => (int) $id);
+        $attendanceSkills = AttendanceGradingPolicy::skills($scheme);
+        $dailyComponents = $dailyComponents->reject(fn ($component) => mb_strtolower(trim($component->name)) === 'attendance')->values();
+        $selectedSkillIds = $session->gradingSkills->pluck('program_grading_skill_id')->merge($attendanceSkills->pluck('id'))->unique()->map(fn ($id): int => (int) $id);
         $dailyGradesBySkill = $session->gradingSkills->mapWithKeys(fn ($selection): array => [
             $selection->program_grading_skill_id => $selection->grades->pluck('score', 'student_id'),
         ]);
         $observationsByStudent = $session->academicObservations->pluck('observation', 'student_id');
+        $inactiveStudentIds = EnrollmentContract::query()->where('program_id', $module->program_id)
+            ->where('status', 'inactive')->whereIn('student_id', $module->studentAssignments->pluck('student_id'))->pluck('student_id');
+        $absenceCounts = $this->regularity->absenceCounts($module);
 
-        return view('teacher.modules.attendance', compact('module', 'session', 'dailyComponents', 'dailySkills', 'selectedSkillIds', 'dailyGradesBySkill', 'observationsByStudent'));
+        return view('teacher.modules.attendance', compact('module', 'session', 'dailyComponents', 'dailySkills', 'selectedSkillIds', 'dailyGradesBySkill', 'observationsByStudent', 'attendanceSkills', 'inactiveStudentIds', 'absenceCounts'));
     }
 
     public function updateAttendance(Request $request, AcademicModule $module, ClassSession $session): RedirectResponse
@@ -91,7 +99,7 @@ class TeacherModuleController extends Controller
             'observations' => ['nullable', 'array'],
             'observations.*' => ['nullable', 'string', 'max:1000'],
         ]);
-        $studentIds = $module->studentAssignments()->pluck('student_id')->map(fn ($id) => (int) $id);
+        $studentIds = $module->studentAssignments()->whereNull('released_at')->pluck('student_id')->map(fn ($id) => (int) $id);
         $observationStudentIds = collect(array_keys($request->input('observations', [])))->map(fn ($id): int => (int) $id);
         if ($observationStudentIds->diff($studentIds)->isNotEmpty()) {
             throw ValidationException::withMessages(['observations' => 'Una de las observaciones no pertenece a un estudiante del módulo.']);
@@ -99,6 +107,7 @@ class TeacherModuleController extends Controller
 
         $selectedSkillIds = collect($request->input('selected_skills', []))->map(fn ($id): int => (int) $id)->unique()->values();
         $scheme = $this->sessionScheme($session, $module);
+        $selectedSkillIds = $selectedSkillIds->merge(AttendanceGradingPolicy::skills($scheme)->pluck('id'))->unique()->values();
         $allowedSkills = $scheme?->components->flatMap(fn ($component) => $component->skills->each(fn ($skill) => $skill->setRelation('component', $component)))->keyBy('id') ?? collect();
         if ($selectedSkillIds->diff($allowedSkills->keys()->map(fn ($id): int => (int) $id))->isNotEmpty()) {
             throw ValidationException::withMessages(['selected_skills' => 'Una de las habilidades seleccionadas no pertenece a la configuración diaria de este módulo.']);
@@ -123,10 +132,16 @@ class TeacherModuleController extends Controller
             )->all();
         }
 
-        DB::transaction(function () use ($grades, $request, $selectedSkillIds, $session, $studentIds): void {
+        DB::transaction(function () use ($grades, $request, $selectedSkillIds, $session, $studentIds, $module): void {
+            AcademicModule::query()->whereKey($module->id)->lockForUpdate()->firstOrFail();
+            $session = ClassSession::query()->lockForUpdate()->findOrFail($session->id);
+            if ($session->ended_at !== null) {
+                throw ValidationException::withMessages(['class' => 'Esta clase ya fue finalizada.']);
+            }
             $this->dailyGrades->save($session, $request->user(), $selectedSkillIds->all(), $grades);
             $this->dailyGrades->saveObservations($session, $request->user(), $studentIds->all(), $request->input('observations', []));
             $session->update(['ended_at' => now(), 'finalized_by' => $request->user()->id]);
+            $this->regularity->evaluate($module);
         });
 
         return redirect()->route('teacher.modules.index')->with('success', 'Clase finalizada y registro académico guardado correctamente.');
@@ -148,7 +163,7 @@ class TeacherModuleController extends Controller
             'observation' => ['nullable', 'string', 'max:1000'],
         ]);
         $studentId = (int) $data['student_id'];
-        abort_unless($module->studentAssignments()->where('student_id', $studentId)->exists(), 404);
+        abort_unless($module->studentAssignments()->whereNull('released_at')->where('student_id', $studentId)->exists(), 404);
 
         if ($data['type'] === 'observation') {
             $this->dailyGrades->saveObservation($session, $request->user(), $studentId, $data['observation'] ?? null);

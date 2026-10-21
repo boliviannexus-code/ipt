@@ -2629,3 +2629,45 @@ body {
         transition: none;
     }
 }
+
+/* Keep email addresses compact across administrative listings. */
+.table-email {
+    display: block;
+    width: 120px;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    text-align: start;
+}
+
+.table > :not(caption) > * > .table-email-column {
+    box-sizing: border-box;
+    width: 120px !important;
+    min-width: 120px;
+    max-width: 120px;
+    padding-inline: 8px;
+}
+
+.table-email-column .table-email {
+    width: 100%;
+    max-width: 104px;
+}
+
+/* Attendance warning remains visible over table hover and striped styles. */
+.table > tbody > tr.student-attendance-inactive > td,
+.table > tbody > tr.student-attendance-inactive:hover > td {
+    --tblr-table-bg: #fff0db;
+    --tblr-table-accent-bg: #fff0db;
+    --tblr-table-bg-type: #fff0db;
+    --tblr-table-bg-state: #fff0db;
+    --tblr-table-hover-bg: #ffe6c2;
+    --bs-table-bg: #fff0db;
+    --bs-table-accent-bg: #fff0db;
+    --bs-table-bg-type: #fff0db;
+    --bs-table-bg-state: #fff0db;
+    --bs-table-hover-bg: #ffe6c2;
+    background-color: #fff0db;
+}

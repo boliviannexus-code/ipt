@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -48,6 +49,12 @@ class Personnel extends Model
     private function normalizeName(string $value): string
     {
         return Str::of($value)->squish()->lower()->title()->toString();
+    }
+
+    public function scopeAssignmentFilters(Builder $query, array $filters): Builder
+    {
+        return $query->when($filters['area_id'] ?? null, fn ($query, $areaId) => $query->whereHas('position', fn ($position) => $position->where('area_id', $areaId)))
+            ->when($filters['position_id'] ?? null, fn ($query, $positionId) => $query->where('position_id', $positionId));
     }
 
     public function company(): BelongsTo

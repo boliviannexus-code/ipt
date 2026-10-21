@@ -12,7 +12,7 @@ class Campus extends Model
 {
     use BelongsToCompany, HasFactory;
 
-    protected $fillable = ['company_id', 'name', 'code', 'address'];
+    protected $fillable = ['company_id', 'name', 'short', 'code', 'address'];
 
     public function company(): BelongsTo
     {

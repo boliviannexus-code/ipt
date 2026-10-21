@@ -3,21 +3,49 @@
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PersonnelFilterRequest;
+use App\Models\Area;
 use App\Models\Campus;
 use App\Models\Personnel;
 use App\Models\Position;
+use App\Services\Reports\PersonnelExportService;
 use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class PersonnelController extends Controller
 {
-    public function index(): View
+    public function index(PersonnelFilterRequest $request): View
     {
-        return view('personnel.index');
+        return view('personnel.index', [
+            'filters' => $request->validated(),
+            'areas' => Area::query()->orderBy('name')->get(),
+            'positions' => Position::query()->orderBy('name')->get(),
+        ]);
+    }
+
+    public function export(PersonnelFilterRequest $request, string $format, PersonnelExportService $export): Response
+    {
+        $personnel = Personnel::query()->assignmentFilters($request->validated())->with(['position.area', 'campus', 'user'])
+            ->orderBy('first_name')->orderBy('paternal_surname')->orderBy('maternal_surname')->get();
+        $filename = 'listado-personal-'.now()->format('Ymd-His').'.'.$format;
+
+        if ($format === 'csv') {
+            return response()->streamDownload(
+                static fn () => print $export->csv($personnel),
+                $filename,
+                ['Content-Type' => 'text/csv; charset=UTF-8']
+            );
+        }
+
+        return response($export->pdf($personnel), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
     }
 
     public function create(Request $request): View

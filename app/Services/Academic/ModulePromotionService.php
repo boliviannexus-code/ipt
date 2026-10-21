@@ -90,7 +90,7 @@ final class ModulePromotionService
                     'assigned_by' => $user->id,
                     'assigned_at' => now(),
                 ]);
-                $lastCharge = $contract->charges()->lockForUpdate()->latest('period')->first();
+                $lastCharge = $contract->charges()->where('charge_type', 'monthly')->lockForUpdate()->latest('period')->first();
                 $period = $lastCharge ? CarbonImmutable::parse($lastCharge->period)->startOfMonth()->addMonth() : today()->startOfMonth();
                 $this->contracts->generateMonthlyCharge($contract, $period, 'Mensualidad - '.$newModule->name);
             }

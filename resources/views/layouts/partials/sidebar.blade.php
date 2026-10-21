@@ -1,7 +1,7 @@
 @php
     $organizationOpen = request()->routeIs('companies.*', 'campuses.*');
     $adminOpen = request()->routeIs('users.*', 'personnel.*', 'areas.*', 'positions.*', 'roles.*', 'permissions.*', 'audits.*', 'backups.*');
-    $cashRegistersOpen = request()->routeIs('cash-registers.*', 'rectorate.collectible-accounts.*', 'rectorate.contracts.*');
+    $cashRegistersOpen = request()->routeIs('additional-services.*', 'additional-charges.*', 'cash-registers.*', 'rectorate.collectible-accounts.*', 'rectorate.contracts.*');
     $invoicePrintSettingsOpen = request()->routeIs('billing.invoice-print-settings.*');
     $billingOpen = request()->routeIs('billing.*') && ! $invoicePrintSettingsOpen;
     $apiTokenOpen = request()->routeIs('sin-api-token.*');
@@ -13,7 +13,7 @@
     $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen || $siatWsdlServicesOpen;
     $parametersOpen = request()->routeIs('parameters.*') || $invoicePrintSettingsOpen;
     $rectorateOpen = request()->routeIs('rectorate.index', 'rectorate.new*', 'rectorate.applications.*');
-    $academicOpen = request()->routeIs('academic.*', 'students.*');
+    $academicOpen = request()->routeIs('placement-exams.*', 'academic.*', 'students.*');
     $studentsOpen = request()->routeIs('students.*');
     $teacherOpen = request()->routeIs('teacher.*');
     $reportsOpen = request()->routeIs('reports.*');
@@ -21,7 +21,7 @@
     $canOrganization = auth()->user()?->can('companies.view')
         || (\App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('campuses.view'));
     $canCashRegisters = \App\Support\CompanyContext::id(auth()->user()) !== null
-        && (auth()->user()?->can('cash-registers.view') || auth()->user()?->can('accounts.collect'));
+        && (auth()->user()?->can('cash-registers.view') || auth()->user()?->can('accounts.collect') || auth()->user()?->can('additional-services.view') || auth()->user()?->can('additional-charges.view'));
     $canBilling = auth()->user()?->company_id !== null
         && (
             auth()->user()?->can('invoices.view')
@@ -166,6 +166,12 @@
                                     </li>
                                 @endif
                                 @if ($canStudents)
+                                    <li class="nav-item {{ request()->routeIs('placement-exams.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('placement-exams.index') }}">
+                                            <span class="nav-link-icon"><i class="ti ti-school" aria-hidden="true"></i></span>
+                                            <span class="nav-link-title">Examen de nivel</span>
+                                        </a>
+                                    </li>
                                     <li class="nav-item {{ $studentsOpen ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('students.index') }}">
                                             <span class="nav-link-icon"><i class="ti ti-users-group"></i></span>
@@ -421,6 +427,12 @@
                                         </a>
                                     </li>
                                 @endcan
+                                @can('additional-services.view')
+                                    <li class="nav-item {{ request()->routeIs('additional-services.*') ? 'active' : '' }}"><a class="nav-link" href="{{ route('additional-services.index') }}"><span class="nav-link-icon"><i class="ti ti-settings" aria-hidden="true"></i></span><span class="nav-link-title">Servicios adicionales</span></a></li>
+                                @endcan
+                                @can('additional-charges.view')
+                                    <li class="nav-item {{ request()->routeIs('additional-charges.*') ? 'active' : '' }}"><a class="nav-link" href="{{ route('additional-charges.index') }}"><span class="nav-link-icon"><i class="ti ti-receipt" aria-hidden="true"></i></span><span class="nav-link-title">Cargos por estudiante</span></a></li>
+                                @endcan
                                 @can('accounts.collect')
                                     <li class="nav-item {{ request()->routeIs('rectorate.collectible-accounts.*', 'rectorate.contracts.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('rectorate.collectible-accounts.index') }}">
@@ -583,6 +595,15 @@
                         </div>
                     </li>
                 @endif
+
+                @role('super_admin')
+                    <li class="nav-item {{ request()->routeIs('super-admin.*') ? 'active' : '' }}">
+                        <a class="nav-link" href="{{ route('super-admin.contracts.index') }}">
+                            <span class="nav-link-icon"><i class="ti ti-shield-lock" aria-hidden="true"></i></span>
+                            <span class="nav-link-title">Super admin · Contratos</span>
+                        </a>
+                    </li>
+                @endrole
 
             </ul>
         </div>

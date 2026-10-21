@@ -153,10 +153,13 @@ class AccountPaymentService
 
     private function updateEnrollment(EnrollmentContract $contract): void
     {
-        $initialCharge = $contract->charges()->oldest('period')->first();
-        if ($contract->status === 'pre_enrolled' && $initialCharge?->status === 'paid') {
-            $contract->update(['status' => 'enrolled', 'enrolled_at' => now()]);
+        if ($contract->status === 'pre_enrolled') {
+            $firstPaymentAt = $contract->payments()->where('amount', '>', 0)->orderBy('paid_at')->orderBy('id')->value('paid_at');
+            if ($firstPaymentAt !== null) {
+                $contract->update(['status' => 'enrolled', 'enrolled_at' => $firstPaymentAt]);
+            }
         }
+        app(EnrollmentCompletionService::class)->evaluate($contract);
     }
 
     private function toCents(string|int|float $amount): int

@@ -7,10 +7,12 @@ use App\Models\AcademicModuleStudentAssignment;
 use App\Models\AcademicModuleTeacherAssignment;
 use App\Models\AccountCharge;
 use App\Models\Area;
+use App\Models\CashRegister;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\EnrollmentContract;
 use App\Models\Personnel;
+use App\Models\PlacementExam;
 use App\Models\Plan;
 use App\Models\Position;
 use App\Models\Program;
@@ -20,7 +22,11 @@ use App\Models\RectorateApplication;
 use App\Models\Student;
 use App\Models\StudentSingleGrade;
 use App\Models\User;
+use App\Services\Academic\ModuleCompletionService;
+use App\Services\Enrollment\AccountPaymentService;
+use App\Services\Enrollment\EnrollmentCompletionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -153,6 +159,89 @@ class ModuleCompletionTest extends TestCase
             ->assertSee('disabled', false);
 
         $this->actingAs($user)->get(route('teacher.modules.results.edit', $module))->assertStatus(409);
+    }
+
+    public function test_passing_the_last_module_with_all_payments_sets_finished_and_preserves_completion_date(): void
+    {
+        [$user, $module, $student, $contract] = $this->context();
+        ProgramLevel::where('program_id', $module->program_id)->where('position', 2)->delete();
+        $this->finalGrade($module, $student, $user, 90);
+        app(ModuleCompletionService::class)->complete($user, $module);
+        $this->assertSame('finished', $contract->refresh()->status);
+        $this->assertSame('FINALIZADO', $contract->statusLabel());
+        $this->assertNotNull($contract->completed_at);
+        $completedAt = $contract->completed_at;
+        app(EnrollmentCompletionService::class)->evaluate($contract);
+        $this->assertTrue($completedAt->equalTo($contract->refresh()->completed_at));
+        Permission::findOrCreate('students.view');
+        $user->givePermissionTo('students.view');
+        $this->actingAs($user)->get(route('students.index'))->assertOk()->assertSee('FINALIZADO')->assertSee('Lucía');
+        $this->get(route('students.kardex.show', $student))->assertOk()->assertSee('FINALIZADO');
+    }
+
+    public function test_last_module_with_pending_balance_finishes_only_after_final_payment(): void
+    {
+        [$user, $module, $student, $contract] = $this->context();
+        ProgramLevel::where('program_id', $module->program_id)->where('position', 2)->delete();
+        $contract->charges()->update(['paid_amount' => 300, 'status' => 'partial']);
+        $this->finalGrade($module, $student, $user, 90);
+        app(ModuleCompletionService::class)->complete($user, $module);
+        $this->assertSame('enrolled', $contract->refresh()->status);
+        $this->assertNull($contract->completed_at);
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        app(AccountPaymentService::class)->record($user, $contract, '20.00', ['payment_method_code' => 1]);
+        $this->assertSame('finished', $contract->refresh()->status);
+    }
+
+    public function test_failing_last_module_does_not_finish_the_program(): void
+    {
+        [$user, $module, $student, $contract] = $this->context();
+        ProgramLevel::where('program_id', $module->program_id)->where('position', 2)->delete();
+        $this->finalGrade($module, $student, $user, 20);
+        app(ModuleCompletionService::class)->complete($user, $module);
+        $this->assertSame('enrolled', $contract->refresh()->status);
+        $this->assertNull($contract->completed_at);
+    }
+
+    public function test_last_module_requires_preceding_levels_approved_or_recognized(): void
+    {
+        [$user, $module, $student, $contract] = $this->context();
+        $last = ProgramLevel::where('program_id', $module->program_id)->where('position', 2)->sole();
+        $module->update(['program_level_id' => $last->id]);
+        $contract->update(['current_program_level_id' => $last->id]);
+        $this->finalGrade($module, $student, $user, 90);
+        app(ModuleCompletionService::class)->complete($user, $module);
+        $this->assertSame('enrolled', $contract->refresh()->status);
+        $first = ProgramLevel::where('program_id', $module->program_id)->where('position', 1)->sole();
+        $exam = PlacementExam::create([
+            'company_id' => $contract->company_id, 'student_id' => $student->id,
+            'enrollment_contract_id' => $contract->id, 'program_id' => $contract->program_id,
+            'previous_program_level_id' => $first->id, 'target_program_level_id' => $last->id,
+            'previous_level_name' => $first->name, 'target_level_name' => $last->name,
+            'score' => 80, 'teacher_id' => $user->personnel_id, 'observation' => 'Reconocimiento previo',
+            'recorded_by' => $user->id, 'examined_at' => now(), 'submission_token' => (string) Str::uuid(),
+        ]);
+        $exam->levels()->create(['student_id' => $student->id, 'program_id' => $contract->program_id,
+            'program_level_id' => $first->id, 'level_name' => $first->name, 'position' => 1]);
+        app(EnrollmentCompletionService::class)->evaluate($contract);
+        $this->assertSame('finished', $contract->refresh()->status);
+    }
+
+    private function finalGrade(AcademicModule $module, Student $student, User $user, float $score): void
+    {
+        $scheme = $module->level->gradingScheme;
+        if (! $scheme) {
+            $scheme = ProgramGradingScheme::where('company_id', $module->company_id)->firstOrFail();
+            $module->level->update(['program_grading_scheme_id' => $scheme->id]);
+        }
+        $scheme->update(['status' => 'finalized', 'is_active' => true, 'passing_score' => 51, 'finalized_at' => now()]);
+        $skill = $scheme->components()->create([
+            'company_id' => $module->company_id, 'name' => 'Examen final', 'weight' => 100,
+            'frequency' => 'single', 'skill_mode' => 'single_skill', 'scoring_method' => 'percentage', 'position' => 1,
+        ])->skills()->create(['company_id' => $module->company_id, 'name' => 'Examen', 'weight' => 100, 'position' => 1]);
+        StudentSingleGrade::create(['company_id' => $module->company_id, 'academic_module_id' => $module->id,
+            'program_grading_skill_id' => $skill->id, 'student_id' => $student->id, 'score' => $score,
+            'graded_by' => $user->id, 'graded_at' => now()]);
     }
 
     private function context(): array

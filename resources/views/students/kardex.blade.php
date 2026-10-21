@@ -42,6 +42,13 @@
         </div>
     </div>
 
+    @if($student->currentModuleAssignment === null)
+        @foreach($student->contracts->where('status', 'enrolled') as $contract)
+            <div class="alert alert-info">{{ $contract->program->title }} · Nivel actual: {{ $contract->currentProgramLevel?->name ?? $contract->program->levels->first()?->name ?? 'Sin nivel' }} · Pendiente de asignación a un módulo.</div>
+        @endforeach
+    @endif
+    @include('students.partials.placement-exam-kardex')
+
     <x-ui.table-card title="Trayectoria académica">
         <table class="table table-hover align-middle mb-0 kardex-table">
             <thead><tr><th>Programa / Nivel</th><th>Módulo</th><th>Modalidad y periodo</th><th>Docente</th><th class="text-center">Nota final</th><th>Resultado</th><th class="text-end">Acciones</th></tr></thead>
@@ -67,7 +74,7 @@
     <div class="mt-3">
         <x-ui.table-card title="Inscripciones y planes">
             <table class="table table-hover align-middle mb-0"><thead><tr><th>Programa</th><th>Plan</th><th>Matrícula</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>
-                @forelse($student->contracts->sortByDesc('confirmed_at') as $contract)<tr><td>{{ $contract->program->title }}</td><td>{{ $contract->plan->name }}</td><td>{{ $contract->account_number }}</td><td><span class="badge {{ $contract->status === 'enrolled' ? 'text-bg-success' : ($contract->status === 'cancelled' ? 'text-bg-danger' : 'text-bg-warning') }}">{{ ['enrolled'=>'Inscrito','pre_enrolled'=>'Preinscrito','cancelled'=>'Cancelado'][$contract->status] ?? $contract->status }}</span></td><td>{{ $contract->confirmed_at->format('d/m/Y') }}</td></tr>@empty<x-ui.empty-row colspan="5" message="No existen matrículas para este estudiante." />@endforelse
+                @forelse($student->contracts->sortByDesc('confirmed_at') as $contract)<tr><td>{{ $contract->program->title }}</td><td>{{ $contract->plan->name }}</td><td>{{ $contract->account_number }}</td><td><span class="badge {{ $contract->status === 'enrolled' ? 'text-bg-success' : ($contract->status === 'cancelled' ? 'text-bg-danger' : 'text-bg-warning') }}">{{ $contract->statusLabel() }}</span></td><td>{{ $contract->confirmed_at->format('d/m/Y') }}</td></tr>@empty<x-ui.empty-row colspan="5" message="No existen matrículas para este estudiante." />@endforelse
             </tbody></table>
         </x-ui.table-card>
     </div>

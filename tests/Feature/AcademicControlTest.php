@@ -14,10 +14,13 @@ use App\Models\Program;
 use App\Models\ProgramGradingScheme;
 use App\Models\ProgramLevel;
 use App\Models\User;
+use App\Services\Academic\AttendanceGradingPolicy;
 use App\Services\Academic\ModuleCompletionService;
+use App\Services\Academic\ProgramGradingConfigurationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -58,7 +61,7 @@ final class AcademicControlTest extends TestCase
         $this->actingAs($user)->put(route('academic.weightings.update', $scheme), $this->validPayload())->assertRedirect();
 
         $scheme->refresh()->load('components.skills');
-        $this->assertSame(['Participación diaria', 'Evaluación final'], $scheme->components->pluck('name')->all());
+        $this->assertSame(['Participación diaria', 'Evaluación final', 'Attendance'], $scheme->components->pluck('name')->all());
         $this->assertSame('daily', $scheme->components[0]->frequency->value);
         $this->assertSame('single_skill', $scheme->components[0]->skill_mode->value);
         $this->assertSame('simple', $scheme->components[0]->scoring_method->value);
@@ -69,7 +72,7 @@ final class AcademicControlTest extends TestCase
         $payload = $this->validPayload();
         $payload['components'] = array_reverse($payload['components']);
         $this->actingAs($user)->put(route('academic.weightings.update', $scheme), $payload)->assertRedirect();
-        $this->assertSame(['Evaluación final', 'Participación diaria'], $scheme->refresh()->components->pluck('name')->all());
+        $this->assertSame(['Attendance', 'Evaluación final', 'Participación diaria'], $scheme->refresh()->components->pluck('name')->all());
     }
 
     public function test_duplicate_titles_and_skill_names_are_rejected(): void
@@ -339,6 +342,76 @@ final class AcademicControlTest extends TestCase
         $this->assertSame('Ponderación X', $scheme->fresh()->name);
     }
 
+    public function test_new_weighting_includes_fixed_daily_simple_attendance_at_ten_percent(): void
+    {
+        [$user] = $this->context(['academic-control.view', 'academic-control.manage']);
+        $this->actingAs($user)->post(route('academic.weightings.store'), ['name' => 'Nueva con asistencia'])->assertSessionHasNoErrors();
+        $scheme = ProgramGradingScheme::where('name', 'Nueva con asistencia')->sole();
+        $attendance = $scheme->components()->with('skills')->sole();
+        $this->assertSame('Attendance', $attendance->name);
+        $this->assertSame('10.00', $attendance->weight);
+        $this->assertSame('daily', $attendance->frequency->value);
+        $this->assertSame('simple', $attendance->scoring_method->value);
+        $this->assertSame('single_skill', $attendance->skill_mode->value);
+        $this->assertSame('Attendance', $attendance->skills->sole()->name);
+        $this->assertSame('100.00', $attendance->skills->sole()->weight);
+        $this->get(route('academic.weightings.show', $scheme))->assertOk()->assertSee('Cambiar porcentaje')->assertSee('Attendance es obligatorio');
+    }
+
+    public function test_attendance_cannot_be_removed_renamed_or_reconfigured_but_its_weight_can_change(): void
+    {
+        [$user, , $scheme] = $this->context(['academic-control.manage']);
+        $payload = $this->validPayload();
+        $this->actingAs($user)->put(route('academic.weightings.update', $scheme), $payload)->assertSessionHasNoErrors();
+        $without = $payload;
+        array_pop($without['components']);
+        $this->putJson(route('academic.weightings.update', $scheme), $without)->assertUnprocessable()->assertJsonValidationErrors('components');
+        foreach (['name' => 'Asistencia', 'frequency' => 'single', 'scoring_method' => 'percentage', 'skill_mode' => 'multiple_skills'] as $key => $value) {
+            $invalid = $payload;
+            $invalid['components'][2][$key] = $value;
+            $this->putJson(route('academic.weightings.update', $scheme), $invalid)->assertUnprocessable();
+        }
+        $invalid = $payload;
+        $invalid['components'][2]['skills'][0]['name'] = 'Otro';
+        $this->putJson(route('academic.weightings.update', $scheme), $invalid)->assertUnprocessable();
+        $payload['components'][2]['weight'] = 20;
+        $payload['components'][0]['weight'] = 30;
+        $this->put(route('academic.weightings.update', $scheme), $payload)->assertSessionHasNoErrors();
+        $this->post(route('academic.weightings.finalize', $scheme))->assertSessionHasNoErrors();
+        $this->assertSame('20.00', $scheme->components()->where('name', 'Attendance')->sole()->weight);
+    }
+
+    public function test_draft_backfill_and_legacy_copy_leave_finalized_versions_unchanged(): void
+    {
+        [$user, , $legacy] = $this->context(['academic-control.manage']);
+        $legacy->update(['status' => 'finalized', 'is_active' => true]);
+        $legacy->components()->create(['company_id' => $legacy->company_id, 'name' => 'Examen', 'weight' => 100,
+            'frequency' => 'single', 'skill_mode' => 'single_skill', 'scoring_method' => 'percentage', 'position' => 1])
+            ->skills()->create(['company_id' => $legacy->company_id, 'name' => 'Examen', 'weight' => 100, 'position' => 1]);
+        $draft = ProgramGradingScheme::create(['company_id' => $legacy->company_id, 'name' => 'Borrador antiguo']);
+        $migration = require database_path('migrations/2026_10_21_020000_add_attendance_to_draft_grading_schemes.php');
+        $migration->up();
+        $migration->up();
+        $this->assertSame(0, $legacy->components()->where('name', 'Attendance')->count());
+        $this->assertSame(1, $draft->components()->where('name', 'Attendance')->count());
+        $this->actingAs($user)->post(route('academic.weightings.store'), ['name' => 'Nueva versión', 'source_scheme_id' => $legacy->id])->assertSessionHasNoErrors();
+        $copy = ProgramGradingScheme::where('name', 'Nueva versión')->sole();
+        $this->assertSame('10.00', $copy->components()->where('name', 'Attendance')->sole()->weight);
+        $this->assertSame(110.0, (float) $copy->components()->sum('weight'));
+        $this->post(route('academic.weightings.finalize', $copy))->assertSessionHasErrors('components');
+        $this->assertSame('100.00', $legacy->components()->sole()->weight);
+    }
+
+    public function test_finalization_and_service_calls_cannot_bypass_attendance_requirement(): void
+    {
+        [$user, , $scheme] = $this->context(['academic-control.manage']);
+        $this->actingAs($user)->post(route('academic.weightings.finalize', $scheme))->assertSessionHasErrors('components');
+        $payload = $this->validPayload();
+        array_pop($payload['components']);
+        $this->expectException(ValidationException::class);
+        app(ProgramGradingConfigurationService::class)->update($scheme, $payload);
+    }
+
     private function context(array $permissions = []): array
     {
         $company = Company::factory()->create();
@@ -357,10 +430,11 @@ final class AcademicControlTest extends TestCase
     {
         return ['passing_score' => 51, 'components' => [
             ['name' => 'Participación diaria', 'weight' => 40, 'frequency' => 'daily', 'skill_mode' => 'single_skill', 'scoring_method' => 'simple', 'skills' => [['name' => 'Participación', 'weight' => 100]]],
-            ['name' => 'Evaluación final', 'weight' => 60, 'frequency' => 'single', 'skill_mode' => 'multiple_skills', 'scoring_method' => 'percentage', 'skills' => [
+            ['name' => 'Evaluación final', 'weight' => 50, 'frequency' => 'single', 'skill_mode' => 'multiple_skills', 'scoring_method' => 'percentage', 'skills' => [
                 ['name' => 'Expresión oral', 'weight' => 45],
                 ['name' => 'Comprensión', 'weight' => 55],
             ]],
+            AttendanceGradingPolicy::component(),
         ]];
     }
 }

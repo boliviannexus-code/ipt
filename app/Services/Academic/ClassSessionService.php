@@ -5,6 +5,7 @@ namespace App\Services\Academic;
 use App\Models\AcademicModule;
 use App\Models\ClassSession;
 use App\Models\Personnel;
+use App\Models\ProgramGradingScheme;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -28,7 +29,7 @@ final class ClassSessionService
                 ?? $module->classSessions()->whereNotNull('program_grading_scheme_id')->latest('class_date')->value('program_grading_scheme_id')
                 ?? $module->configuredGradingScheme()?->id;
 
-            return ClassSession::create([
+            $session = ClassSession::create([
                 'academic_module_id' => $module->id,
                 'class_date' => $classDate,
                 'company_id' => $module->company_id,
@@ -37,6 +38,15 @@ final class ClassSessionService
                 'started_by' => $user->id,
                 'started_at' => now(),
             ]);
+            $scheme = $schemeId ? ProgramGradingScheme::query()->with('components.skills')->find($schemeId) : null;
+            foreach (AttendanceGradingPolicy::skills($scheme) as $skill) {
+                $session->gradingSkills()->create([
+                    'company_id' => $session->company_id, 'program_grading_skill_id' => $skill->id,
+                    'selected_by' => $user->id, 'selected_at' => now(),
+                ]);
+            }
+
+            return $session;
         });
     }
 }

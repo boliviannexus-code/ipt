@@ -338,6 +338,48 @@ class TeacherClassAttendanceTest extends TestCase
             ->assertSee('Tu cuenta no está vinculada a un docente');
     }
 
+    public function test_attendance_is_automatically_included_and_not_offered_as_an_optional_skill(): void
+    {
+        [$user, $module, $student] = $this->context();
+        $otherSkill = $this->dailySkill($module);
+        $scheme = $module->level->gradingScheme;
+        $component = $scheme->components()->create([
+            'company_id' => $module->company_id, 'name' => 'Attendance', 'weight' => 10,
+            'frequency' => 'daily', 'skill_mode' => 'single_skill', 'scoring_method' => 'simple', 'position' => 2,
+        ]);
+        $attendance = $component->skills()->create(['company_id' => $module->company_id, 'name' => 'Attendance', 'weight' => 100, 'position' => 1]);
+        $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module))->assertSessionHasNoErrors();
+        $session = $module->classSessions()->sole();
+        $this->assertDatabaseHas('class_session_grading_skills', ['class_session_id' => $session->id, 'program_grading_skill_id' => $attendance->id]);
+        $this->get(route('teacher.modules.attendance.edit', [$module, $session]))->assertOk()
+            ->assertSee('data-required-daily-skill', false)
+            ->assertDontSee('data-daily-skill="'.$attendance->id.'"', false)
+            ->assertSee('data-daily-skill="'.$otherSkill->id.'"', false);
+        $this->put(route('teacher.modules.attendance.update', [$module, $session]), [
+            'selected_skills' => [], 'grades' => [$attendance->id => [$student->id => 1]],
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('student_daily_grades', ['student_id' => $student->id, 'score' => 100]);
+        $this->assertDatabaseHas('class_session_grading_skills', ['class_session_id' => $session->id, 'program_grading_skill_id' => $attendance->id]);
+        $this->assertNotNull($session->refresh()->ended_at);
+    }
+
+    public function test_attendance_cannot_be_omitted_when_finishing_a_class(): void
+    {
+        [$user, $module, $student] = $this->context();
+        $skill = $this->dailySkill($module, 'simple');
+        $skill->component->update(['name' => 'Attendance']);
+        $skill->update(['name' => 'Attendance']);
+        $this->actingAs($user)->post(route('teacher.modules.sessions.start', $module));
+        $session = $module->classSessions()->sole();
+        $this->putJson(route('teacher.modules.attendance.update', [$module, $session]), ['selected_skills' => []])
+            ->assertUnprocessable()->assertJsonValidationErrors('grades.'.$skill->id);
+        $this->assertNull($session->refresh()->ended_at);
+        $this->put(route('teacher.modules.attendance.update', [$module, $session]), [
+            'selected_skills' => [], 'grades' => [$skill->id => [$student->id => 0]],
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('student_daily_grades', ['student_id' => $student->id, 'score' => 0]);
+    }
+
     private function context(): array
     {
         $company = Company::factory()->create();

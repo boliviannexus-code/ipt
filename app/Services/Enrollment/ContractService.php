@@ -85,7 +85,7 @@ class ContractService
         $period = $period->copy()->startOfMonth();
 
         return AccountCharge::withoutGlobalScope('company')->firstOrCreate(
-            ['enrollment_contract_id' => $contract->id, 'period' => $period->toDateString()],
+            ['enrollment_contract_id' => $contract->id, 'period' => $period->toDateString(), 'charge_type' => 'monthly'],
             [
                 'company_id' => $contract->company_id,
                 'plan_id' => $contract->plan_id,

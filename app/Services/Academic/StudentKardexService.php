@@ -15,8 +15,13 @@ class StudentKardexService
         $student->loadMissing([
             'company',
             'campus',
-            'contracts.program',
+            'contracts.program.levels',
             'contracts.plan',
+            'contracts.currentProgramLevel',
+            'currentModuleAssignment',
+            'placementExams.levels',
+            'placementExams.program',
+            'placementExams.teacher',
             'applications.customer',
             'moduleAssignments.module.program',
             'moduleAssignments.module.level.gradingScheme.components.skills',
@@ -70,7 +75,9 @@ class StudentKardexService
             ->values();
         $holder = $student->applications->sortByDesc('id')->first();
 
-        return compact('student', 'academicRows', 'holder');
+        $placementExams = $student->placementExams->sortByDesc('examined_at')->values();
+
+        return compact('student', 'academicRows', 'holder', 'placementExams');
     }
 
     public function dailyDetails(Student $student, AcademicModule $module): array
