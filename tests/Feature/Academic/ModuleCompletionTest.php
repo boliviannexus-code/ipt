@@ -51,6 +51,8 @@ class ModuleCompletionTest extends TestCase
 
         $this->assertDatabaseHas('academic_module_student_results', ['academic_module_id' => $module->id, 'student_id' => $student->id, 'program_grading_scheme_id' => $scheme->id, 'status' => 'approved', 'final_score' => 82.50, 'passing_score' => 70]);
         $this->assertNotNull($module->refresh()->closed_at);
+        $this->get(route('teacher.modules.index'))->assertOk()->assertViewHas('modules', fn ($modules) => ! $modules->contains('id', $module->id));
+        $this->get(route('teacher.modules.history'))->assertOk()->assertViewHas('modules', fn ($modules) => $modules->contains('id', $module->id));
         $this->assertSame($user->id, $module->closed_by);
         $this->assertNotNull($student->moduleAssignments()->where('academic_module_id', $module->id)->firstOrFail()->released_at);
         $this->assertSame(2, $contract->refresh()->currentProgramLevel->position);
@@ -225,6 +227,49 @@ class ModuleCompletionTest extends TestCase
             'program_level_id' => $first->id, 'level_name' => $first->name, 'position' => 1]);
         app(EnrollmentCompletionService::class)->evaluate($contract);
         $this->assertSame('finished', $contract->refresh()->status);
+    }
+
+    public function test_virtual_module_promotion_uses_a_unique_name_when_the_level_and_date_already_exist(): void
+    {
+        [$user, $module, $student, $contract] = $this->context();
+        $this->actingAs($user);
+        $this->finalGrade($module, $student, $user, 90);
+        app(ModuleCompletionService::class)->complete($user, $module);
+        $targetLevel = $contract->refresh()->currentProgramLevel;
+        $startDate = today()->toDateString();
+        $baseName = 'Módulo '.$targetLevel->name;
+        $datedName = $baseName.' - '.today()->format('d-m-Y');
+        foreach ([$baseName, $datedName] as $name) {
+            $existing = $module->replicate();
+            $existing->fill(['program_level_id' => $targetLevel->id, 'name' => $name, 'closed_at' => null, 'closed_by' => null]);
+            $existing->save();
+        }
+
+        $this->post(route('academic.promotions.store', $module), [
+            'start_date' => $startDate, 'end_date' => today()->addMonth()->toDateString(),
+            'student_ids' => [$student->id],
+        ])->assertRedirect(route('academic.modules.index'));
+
+        $promoted = AcademicModule::where('name', $datedName.' (2)')->sole();
+        $this->assertSame('virtual', $promoted->modality);
+        $this->assertDatabaseHas('academic_module_student_assignments', [
+            'academic_module_id' => $promoted->id, 'student_id' => $student->id, 'released_at' => null,
+        ]);
+        $this->assertSame(2, $contract->charges()->count());
+    }
+
+    public function test_modules_with_saved_results_without_a_closure_date_are_listed_in_history(): void
+    {
+        [$user, $module, $student] = $this->context();
+        $this->actingAs($user);
+        $this->finalGrade($module, $student, $user, 90);
+        app(ModuleCompletionService::class)->complete($user, $module);
+        $module->update(['closed_at' => null, 'closed_by' => null]);
+
+        $this->get(route('teacher.modules.index'))->assertOk()
+            ->assertViewHas('modules', fn ($modules) => ! $modules->contains('id', $module->id));
+        $this->get(route('teacher.modules.history'))->assertOk()
+            ->assertViewHas('modules', fn ($modules) => $modules->contains('id', $module->id));
     }
 
     private function finalGrade(AcademicModule $module, Student $student, User $user, float $score): void

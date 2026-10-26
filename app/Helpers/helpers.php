@@ -45,6 +45,7 @@ if (! function_exists('permission_module_label')) {
             'additional-services' => 'Servicios adicionales',
             'additional-charges' => 'Cargos por estudiante',
             'academic-control' => 'Control académico',
+            'academic-personal-data' => 'Datos de titular y estudiante',
             'academic-modules' => 'Módulos académicos',
             'students' => 'Estudiantes',
             'enrollment-reports' => 'Matrículas',

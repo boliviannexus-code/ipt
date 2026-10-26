@@ -43,16 +43,25 @@ final class ModulePromotionService
         return DB::transaction(function () use ($dates, $source, $studentIds, $user): AcademicModule {
             $source = AcademicModule::query()->with(['level', 'currentTeacherAssignment'])->lockForUpdate()->findOrFail($source->id);
             $context = $this->context($source);
-            $targetLevel = $context['targetLevel'];
+            $targetLevel = ProgramLevel::query()->lockForUpdate()->findOrFail($context['targetLevel']->id);
             $selectedIds = collect($studentIds)->map(fn ($id): int => (int) $id)->unique()->values();
             $eligibleIds = $context['students']->where('eligible', true)->pluck('student.id');
             if ($selectedIds->isEmpty() || $selectedIds->diff($eligibleIds)->isNotEmpty()) {
                 throw ValidationException::withMessages(['student_ids' => 'Uno o más estudiantes ya no están disponibles o no pertenecen al nivel destino.']);
             }
 
+            $existingNames = AcademicModule::query()
+                ->where('program_id', $source->program_id)
+                ->where('program_level_id', $targetLevel->id)
+                ->pluck('name');
             $moduleName = 'Módulo '.$targetLevel->name;
-            if (AcademicModule::query()->where('program_id', $source->program_id)->where('program_level_id', $targetLevel->id)->where('name', $moduleName)->exists()) {
-                $moduleName .= ' - '.CarbonImmutable::parse($dates['start_date'])->format('d-m-Y');
+            if ($existingNames->contains($moduleName)) {
+                $datedName = $moduleName.' - '.CarbonImmutable::parse($dates['start_date'])->format('d-m-Y');
+                $moduleName = $datedName;
+                $suffix = 2;
+                while ($existingNames->contains($moduleName)) {
+                    $moduleName = $datedName.' ('.$suffix++.')';
+                }
             }
             $newModule = AcademicModule::query()->create([
                 'company_id' => $source->company_id,

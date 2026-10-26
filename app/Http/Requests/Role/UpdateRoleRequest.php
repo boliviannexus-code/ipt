@@ -9,7 +9,15 @@ class UpdateRoleRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->can('roles.edit') ?? false;
+        return ($this->user()?->can('roles.edit') ?? false)
+            && (! $this->hasAny(['permissions', 'permissions_submitted']) || ($this->user()?->can('roles.assign-permissions') ?? false));
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->boolean('permissions_submitted') && ! $this->has('permissions')) {
+            $this->merge(['permissions' => []]);
+        }
     }
 
     public function rules(): array

@@ -21,6 +21,7 @@ use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\PurchaseSaleInvoicePdfService;
 use App\Services\Siat\SiatCatalogRegistry;
 use App\Support\CompanyContext;
+use App\Support\PermissionCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use OwenIt\Auditing\Models\Audit;
@@ -66,12 +67,12 @@ class AdminDataTableController extends Controller
 
         return DataTables::eloquent(Area::query()->select('areas.*')->withCount('positions'))
             ->editColumn('is_active', fn (Area $area): string => $this->activeBadge($area->is_active, 'Activa', 'Inactiva'))
-            ->addColumn('actions', fn (Area $area): string => $this->crudActions(
+            ->addColumn('actions', fn (Area $area): string => auth()->user()?->can('areas.manage') ? $this->crudActions(
                 editUrl: route('areas.edit', $area),
                 deleteUrl: route('areas.destroy', $area),
                 label: $area->name,
                 modalTitle: 'Editar área',
-            ))
+            ) : '')
             ->rawColumns(['is_active', 'actions'])
             ->toJson();
     }
@@ -141,6 +142,11 @@ class AdminDataTableController extends Controller
 
         return DataTables::eloquent(Permission::query()->select('permissions.*'))
             ->editColumn('name', fn (Permission $permission): string => permission_label($permission->name))
+            ->filterColumn('name', function ($query, string $keyword): void {
+                $matchingNames = array_values(array_filter(PermissionCatalog::NAMES, fn (string $name): bool => mb_stripos(permission_label($name).' '.PermissionCatalog::menuLabel($name), $keyword) !== false
+                ));
+                $query->where(fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhereIn('name', $matchingNames));
+            })
             ->editColumn('created_at', fn (Permission $permission): string => $permission->created_at?->format('Y-m-d') ?? '-')
             ->addColumn('actions', fn (Permission $permission): string => $this->permissionActions($permission))
             ->rawColumns(['actions'])
@@ -618,7 +624,7 @@ class AdminDataTableController extends Controller
             $edit = route('permissions.edit', $permission);
             $html .= '<a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar permiso">Editar</a>';
         }
-        if (auth()->user()?->can('permissions.delete')) {
+        if (auth()->user()?->can('permissions.delete') && ! in_array($permission->name, PermissionCatalog::NAMES, true)) {
             $html .= $this->deleteForm(route('permissions.destroy', $permission), '¿Eliminar permiso?');
         }
 

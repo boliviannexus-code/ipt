@@ -4,6 +4,7 @@
     $totalPermissions = $permissionGroups->flatten()->count();
 @endphp
 
+<input type="hidden" name="permissions_submitted" value="1">
 <section class="permission-matrix" data-permission-matrix aria-labelledby="{{ $permissionMatrixId }}-title">
     <div class="permission-matrix-heading">
         <div>
@@ -47,7 +48,7 @@
                 class="form-control"
                 id="{{ $permissionMatrixId }}-search"
                 type="search"
-                placeholder="Buscar modulo o accion..."
+                placeholder="Buscar opción del menú, módulo o acción..."
                 autocomplete="off"
                 data-permission-search
             >
@@ -67,6 +68,10 @@
         No encontramos permisos con esa busqueda.
     </p>
 
+    @if(in_array($role->name ?? null, ['admin', 'super_admin'], true))
+        <p class="text-secondary">Este rol debe conservar «Roles: Ver», «Roles: Editar» y «Roles: Asignar permisos» para mantener la administración de accesos.</p>
+    @endif
+
     <div class="permission-module-list">
         @foreach ($permissionGroups as $module => $permissions)
             @php
@@ -77,7 +82,7 @@
             <article
                 class="permission-module"
                 data-permission-module
-                data-search-text="{{ str(permission_module_label($module).' '.$module)->lower() }}"
+                data-search-text="{{ str(permission_module_label($module).' '.$module.' '.\App\Support\PermissionCatalog::menuLabel($module))->lower() }}"
             >
                 <div class="permission-module-header">
                     <button
@@ -91,6 +96,7 @@
                         <span class="permission-module-icon"><i class="ti ti-folder-shield" aria-hidden="true"></i></span>
                         <span class="permission-module-name">
                             <strong>{{ permission_module_label($module) }}</strong>
+                            <small>{{ \App\Support\PermissionCatalog::menuLabel($module) }}</small>
                             <small><span data-module-selected-count>{{ $moduleSelected }}</span> de {{ $permissions->count() }} activos</small>
                         </span>
                         <i class="ti ti-chevron-down permission-module-chevron" aria-hidden="true"></i>
@@ -108,7 +114,7 @@
                                 class="permission-option"
                                 for="{{ $permissionMatrixId }}-permission-{{ $permission->id }}"
                                 data-permission-option
-                                data-search-text="{{ str(permission_label($permission->name).' '.$permission->name)->lower() }}"
+                                data-search-text="{{ str(permission_label($permission->name).' '.$permission->name.' '.\App\Support\PermissionCatalog::menuLabel($permission->name))->lower() }}"
                             >
                                 <input
                                     class="form-check-input"

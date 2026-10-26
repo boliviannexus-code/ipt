@@ -115,6 +115,7 @@ class TeacherClassAttendanceTest extends TestCase
         $this->actingAs($otherUser)->post(route('teacher.modules.sessions.start', $module))->assertForbidden();
         $this->actingAs($otherUser)->get(route('teacher.modules.single-grades.edit', $module))->assertForbidden();
         $this->actingAs($otherUser)->get(route('teacher.tracking.show', $module))->assertForbidden();
+        $this->actingAs($otherUser)->get(route('teacher.tracking.pdf', $module))->assertForbidden();
         $this->assertDatabaseCount('class_sessions', 0);
     }
 
@@ -306,12 +307,27 @@ class TeacherClassAttendanceTest extends TestCase
         $this->actingAs($user)->get(route('teacher.tracking.index'))
             ->assertOk()->assertSee($module->name)->assertSee('Ver centralizador de notas');
         $this->actingAs($user)->get(route('teacher.tracking.show', $module))
-            ->assertOk()->assertSee('Centralizador de notas')->assertSee('Listening')->assertSee('80,00');
+            ->assertOk()->assertSee('Centralizador de notas')->assertSee('Listening')->assertSee('80,00')
+            ->assertSee(route('teacher.tracking.pdf', $module))->assertSee('Imprimir PDF');
+        $pdf = $this->get(route('teacher.tracking.pdf', $module))
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'inline; filename="centralizador-notas-'.$module->id.'.pdf"');
+        $this->assertStringStartsWith('%PDF-', $pdf->getContent());
 
         $this->actingAs($user)->put(route('teacher.modules.attendance.update', [$module, $session]), [
             'observations' => [$student->id => ''],
         ])->assertSessionHasErrors('class');
         $this->assertDatabaseHas('student_academic_observations', ['class_session_id' => $session->id, 'student_id' => $student->id]);
+    }
+
+    public function test_tracking_pdf_handles_a_module_without_grading_configuration_or_students(): void
+    {
+        [$user, $module] = $this->context();
+        $module->studentAssignments()->delete();
+
+        $response = $this->actingAs($user)->get(route('teacher.tracking.pdf', $module))
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', $response->getContent());
     }
 
     public function test_user_without_a_teacher_profile_sees_a_clear_message(): void
@@ -378,6 +394,58 @@ class TeacherClassAttendanceTest extends TestCase
             'selected_skills' => [], 'grades' => [$skill->id => [$student->id => 0]],
         ])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('student_daily_grades', ['student_id' => $student->id, 'score' => 0]);
+    }
+
+    public function test_closed_modules_move_to_history_and_preserve_the_student_count(): void
+    {
+        [$user, $module] = $this->context();
+        $module->update(['name' => 'Curso cerrado de prueba', 'end_date' => today(), 'closed_at' => now(), 'closed_by' => $user->id]);
+        $module->studentAssignments()->update(['released_at' => now()]);
+        $activeModule = $module->replicate();
+        $activeModule->fill(['name' => 'Curso activo de prueba', 'closed_at' => null, 'closed_by' => null]);
+        $activeModule->save();
+        $activeModule->teacherAssignments()->create(['company_id' => $user->company_id, 'personnel_id' => $user->personnel_id, 'assigned_at' => now()]);
+
+        $this->actingAs($user)->get(route('teacher.modules.index'))->assertOk()
+            ->assertSee('Curso activo de prueba')->assertDontSee('Curso cerrado de prueba');
+        $this->get(route('teacher.modules.history'))->assertOk()
+            ->assertSee('Curso cerrado de prueba')->assertDontSee('Curso activo de prueba')
+            ->assertDontSee('Iniciar clase')->assertDontSee('Fecha de la clase')
+            ->assertViewHas('modules', fn ($modules) => $modules->total() === 1 && $modules->first()->student_assignments_count === 1);
+    }
+
+    public function test_history_only_lists_modules_assigned_to_the_authenticated_teacher(): void
+    {
+        [$user, $module] = $this->context();
+        $module->update(['closed_at' => now()]);
+        $other = $module->replicate();
+        $other->name = 'Curso de otro docente';
+        $other->save();
+        $this->actingAs($user)->get(route('teacher.modules.history'))->assertOk()
+            ->assertSee($module->name)->assertDontSee('Curso de otro docente');
+        $user->revokePermissionTo('teaching.view');
+        $this->get(route('teacher.modules.history'))->assertForbidden();
+    }
+
+    public function test_view_only_teacher_can_consult_modules_and_history_without_write_actions(): void
+    {
+        [$user, $module] = $this->context();
+        $user->revokePermissionTo('teaching.manage');
+        $this->actingAs($user)->get(route('teacher.modules.index'))->assertOk()
+            ->assertSee($module->name)->assertSee('Centralizador')
+            ->assertDontSee('Iniciar clase')->assertDontSee('Ponderaciones únicas')->assertDontSee('Finalizar curso');
+        $module->update(['closed_at' => now()]);
+        $this->get(route('teacher.modules.history'))->assertOk()->assertSee($module->name)
+            ->assertSee('Centralizador')->assertDontSee('Ver resultados');
+    }
+
+    public function test_history_without_a_teacher_profile_shows_an_empty_list(): void
+    {
+        [$user] = $this->context();
+        $user->update(['personnel_id' => null]);
+        $user->unsetRelation('personnel');
+        $this->actingAs($user)->get(route('teacher.modules.history'))->assertOk()
+            ->assertSee('Tu cuenta no está vinculada a un docente')->assertViewHas('modules', fn ($modules) => $modules->total() === 0);
     }
 
     private function context(): array

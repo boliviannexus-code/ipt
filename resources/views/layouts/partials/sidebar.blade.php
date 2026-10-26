@@ -22,24 +22,25 @@
         || (\App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('campuses.view'));
     $canCashRegisters = \App\Support\CompanyContext::id(auth()->user()) !== null
         && (auth()->user()?->can('cash-registers.view') || auth()->user()?->can('accounts.collect') || auth()->user()?->can('additional-services.view') || auth()->user()?->can('additional-charges.view'));
-    $canBilling = auth()->user()?->company_id !== null
+    $canBilling = \App\Support\CompanyContext::id(auth()->user()) !== null
         && (
             auth()->user()?->can('invoices.view')
             || auth()->user()?->can('invoices.issue')
             || auth()->user()?->can('cafc-ranges.view')
             || auth()->user()?->can('manual-cafc.view')
+            || auth()->user()?->can('invoice-tests.run')
         );
     $canContingencies = \App\Support\CompanyContext::canOperate(auth()->user())
         && auth()->user()?->can('contingencies.view');
-    $canApiToken = auth()->user()?->company_id !== null
+    $canApiToken = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('sin-api-tokens.view');
-    $canSiatCommunication = auth()->user()?->company_id !== null
+    $canSiatCommunication = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('siat-communication.view');
-    $canSiatCuis = auth()->user()?->company_id !== null
+    $canSiatCuis = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('siat-cuis.view');
-    $canSiatCatalogs = auth()->user()?->company_id !== null
+    $canSiatCatalogs = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('siat-catalogs.view');
-    $canSiatBranches = auth()->user()?->company_id !== null
+    $canSiatBranches = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('siat-branches.view');
     $canSiat = $canApiToken || $canSiatCommunication || $canSiatCuis || $canSiatCatalogs || $canSiatBranches;
     $canParameters = \App\Support\CompanyContext::id(auth()->user()) !== null
@@ -61,7 +62,8 @@
         && auth()->user()?->can('academic-control.view');
     $canStudents = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('students.view');
-    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents;
+    $canPersonalData = \App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('academic-personal-data.edit');
+    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents || $canPersonalData;
     $canTeacher = auth()->user()?->personnel_id !== null
         && auth()->user()?->can('teaching.view');
     $canReports = \App\Support\CompanyContext::id(auth()->user()) !== null
@@ -95,12 +97,15 @@
 
         <div class="navbar-collapse" id="sidebar-menu">
             <ul class="navbar-nav pt-lg-3">
+                @can('dashboard.view')
                 <li class="nav-item {{ request()->routeIs('dashboard') ? 'active' : '' }}">
                     <a class="nav-link" href="{{ route('dashboard') }}">
                         <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-dashboard"></i></span>
                         <span class="nav-link-title">Dashboard</span>
                     </a>
                 </li>
+
+                @endcan
 
                 @if ($canRectorate)
                     <li class="nav-item app-menu-section {{ $rectorateOpen ? 'active' : '' }}">
@@ -165,6 +170,11 @@
                                         </a>
                                     </li>
                                 @endif
+                                @if ($canPersonalData)
+                                    <li class="nav-item {{ request()->routeIs('academic.personal-data.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('academic.personal-data.index') }}"><span class="nav-link-icon"><i class="ti ti-user-edit" aria-hidden="true"></i></span><span class="nav-link-title">Datos de titular y estudiante</span></a>
+                                    </li>
+                                @endif
                                 @if ($canStudents)
                                     <li class="nav-item {{ request()->routeIs('placement-exams.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('placement-exams.index') }}">
@@ -210,10 +220,16 @@
                         </button>
                         <div class="collapse {{ $teacherOpen ? 'show' : '' }}" id="menu-teacher">
                             <ul class="nav app-submenu">
-                                <li class="nav-item {{ request()->routeIs('teacher.modules.*') ? 'active' : '' }}">
+                                <li class="nav-item {{ request()->routeIs('teacher.modules.*') && !request()->routeIs('teacher.modules.history') ? 'active' : '' }}">
                                     <a class="nav-link" href="{{ route('teacher.modules.index') }}">
                                         <span class="nav-link-icon"><i class="ti ti-books"></i></span>
                                         <span class="nav-link-title">Mis módulos</span>
+                                    </a>
+                                </li>
+                                <li class="nav-item {{ request()->routeIs('teacher.modules.history') ? 'active' : '' }}">
+                                    <a class="nav-link" href="{{ route('teacher.modules.history') }}">
+                                        <span class="nav-link-icon"><i class="ti ti-history" aria-hidden="true"></i></span>
+                                        <span class="nav-link-title">Historial mis módulos</span>
                                     </a>
                                 </li>
                                 <li class="nav-item {{ request()->routeIs('teacher.tracking.*') ? 'active' : '' }}">
@@ -484,6 +500,8 @@
                                             <span class="nav-link-title">Emitir factura</span>
                                         </a>
                                     </li>
+
+                                @endcan
                                     @can('invoice-tests.run')
                                         <li class="nav-item {{ request()->routeIs('billing.invoice-tests.*') ? 'active' : '' }}">
                                             <a class="nav-link" href="{{ route('billing.invoice-tests.index') }}">
@@ -492,7 +510,6 @@
                                             </a>
                                         </li>
                                     @endcan
-                                @endcan
                                 @can('cafc-ranges.view')
                                     <li class="nav-item {{ request()->routeIs('billing.cafc-contingencies.*') ? 'active' : '' }}">
                                         <a class="nav-link" href="{{ route('billing.cafc-contingencies.index') }}">

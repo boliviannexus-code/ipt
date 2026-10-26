@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Repositories\PermissionRepository;
+use App\Support\PermissionCatalog;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -55,6 +56,10 @@ class PermissionService
     public function update(Permission $permission, array $data): Permission
     {
         $data['guard_name'] = $data['guard_name'] ?? $permission->guard_name;
+        if (in_array($permission->name, PermissionCatalog::NAMES, true)
+            && (($data['name'] ?? $permission->name) !== $permission->name || $data['guard_name'] !== $permission->guard_name)) {
+            throw ValidationException::withMessages(['name' => 'Los permisos del sistema conservan su nombre y guard. Configura su acceso desde Roles.']);
+        }
 
         $permission = $this->permissions->update($permission, $data);
         $this->forgetCache();
@@ -66,9 +71,9 @@ class PermissionService
 
     public function delete(Permission $permission): bool
     {
-        if (in_array($permission->name, self::CRITICAL_PERMISSIONS, true)) {
+        if (in_array($permission->name, self::CRITICAL_PERMISSIONS, true) || in_array($permission->name, PermissionCatalog::NAMES, true)) {
             throw ValidationException::withMessages([
-                'permission' => 'No puedes eliminar un permiso critico del sistema.',
+                'permission' => 'No puedes eliminar un permiso del sistema. Configura su acceso desde Roles.',
             ]);
         }
 

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Support\PermissionCatalog;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -13,123 +14,11 @@ class RolePermissionSeeder extends Seeder
     {
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
-        $permissions = [
-            'dashboard.view',
-            'users.view',
-            'users.create',
-            'users.edit',
-            'users.delete',
-            'users.restore',
-            'users.change-password',
-            'users.assign-roles',
-            'areas.view',
-            'areas.manage',
-            'positions.view',
-            'positions.manage',
-            'personnel.view',
-            'personnel.manage',
-            'rectorate.create',
-            'rectorate.delete',
-            'accounts.collect',
-            'additional-services.view',
-            'additional-services.manage',
-            'additional-charges.view',
-            'additional-charges.manage',
-            'academic-control.view',
-            'academic-control.manage',
-            'academic-modules.view',
-            'academic-modules.manage',
-            'students.view',
-            'students.manage',
-            'enrollment-reports.view',
-            'teaching.view',
-            'teaching.manage',
-            'roles.view',
-            'roles.create',
-            'roles.edit',
-            'roles.delete',
-            'roles.assign-permissions',
-            'permissions.view',
-            'permissions.create',
-            'permissions.edit',
-            'permissions.delete',
-            'companies.view',
-            'companies.create',
-            'companies.update',
-            'companies.delete',
-            'campuses.view',
-            'campuses.manage',
-            'audits.view',
-            'backups.view',
-            'backups.create',
-            'backups.download',
-            'backups.restore',
-            'backups.delete',
-            'cash-registers.view',
-            'cash-registers.open',
-            'cash-registers.close',
-            'invoices.view',
-            'invoices.issue',
-            'invoice-tests.run',
-            'invoices.cancel',
-            'cafc-ranges.view',
-            'cafc-ranges.manage',
-            'manual-cafc.view',
-            'manual-cafc.use',
-            'manual-cafc.transcribe',
-            'contingencies.view',
-            'contingencies.communication.check',
-            'contingencies.events.view',
-            'contingencies.events.retry',
-            'contingencies.packages.build',
-            'contingencies.packages.send',
-            'contingencies.packages.validate',
-            'contingencies.artifacts.download',
-            'contingencies.technical.view',
-            'contingencies.audit.view',
-            'product-categories.view',
-            'product-categories.create',
-            'product-categories.edit',
-            'product-categories.delete',
-            'plans.view',
-            'plans.create',
-            'plans.edit',
-            'commercial-origins.view',
-            'commercial-origins.create',
-            'commercial-origins.edit',
-            'commercial-origins.delete',
-            'programs.view',
-            'programs.create',
-            'programs.edit',
-            'customers.view',
-            'customers.create',
-            'customers.edit',
-            'customers.delete',
-            'products.view',
-            'products.create',
-            'products.edit',
-            'products.delete',
-            'sin-authorizations.view',
-            'sin-authorizations.manage',
-            'sin-api-tokens.view',
-            'sin-api-tokens.manage',
-            'siat-communication.view',
-            'siat-communication.verify',
-            'siat-cuis.view',
-            'siat-cuis.request',
-            'siat-catalogs.view',
-            'siat-catalogs.sync',
-            'siat-branches.view',
-            'siat-branches.manage',
-        ];
+        $permissions = PermissionCatalog::NAMES;
 
         foreach ($permissions as $permission) {
             Permission::findOrCreate($permission);
         }
-
-        Permission::query()
-            ->whereNotIn('name', $permissions)
-            ->delete();
 
         Role::findOrCreate('super_admin')->syncPermissions($permissions);
         Role::findOrCreate('admin')->syncPermissions($permissions);

@@ -14,6 +14,7 @@ use App\Services\Academic\AttendanceGradingPolicy;
 use App\Services\Academic\ClassSessionService;
 use App\Services\Academic\DailyGradeService;
 use App\Services\Academic\StudentAttendanceRegularityService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -37,13 +38,34 @@ class TeacherModuleController extends Controller
         }
 
         $modules = AcademicModule::query()
-            ->with(['program', 'level', 'studentAssignments' => fn ($query) => $query->whereNull('released_at'), 'studentResults', 'classSessions' => fn ($query) => $query->where(fn ($query) => $query->whereDate('class_date', today())->orWhereNull('ended_at'))->orderBy('class_date')])
+            ->with(['program', 'level', 'classSessions' => fn ($query) => $query->where(fn ($query) => $query->whereDate('class_date', today())->orWhereNull('ended_at'))->orderBy('class_date')])
+            ->withCount(['studentAssignments' => fn ($query) => $query->whereNull('released_at')])
+            ->whereNull('closed_at')->whereDoesntHave('studentResults')
             ->whereHas('currentTeacherAssignment', fn ($query) => $query->where('personnel_id', $personnel->id))
+            ->orderBy('starts_at')
             ->orderBy('start_date')
             ->orderBy('name')
             ->get();
 
         return view('teacher.modules.index', compact('modules'));
+    }
+
+    public function history(Request $request): View
+    {
+        $personnel = $request->user()->personnel;
+        $modules = AcademicModule::query()
+            ->with(['program', 'level'])
+            ->withCount(['studentAssignments', 'classSessions'])
+            ->where(fn (Builder $query) => $query->whereNotNull('closed_at')->orWhereHas('studentResults'))
+            ->whereHas('currentTeacherAssignment', fn (Builder $query) => $query->where('personnel_id', $personnel?->id))
+            ->when(! $personnel instanceof Personnel, fn (Builder $query) => $query->whereRaw('1 = 0'))
+            ->orderByRaw('COALESCE(closed_at, end_date) DESC')->orderByDesc('id')
+            ->paginate(15);
+
+        return view('teacher.modules.history', [
+            'modules' => $modules,
+            'teacherUnavailableMessage' => $personnel instanceof Personnel ? null : 'Tu cuenta no está vinculada a un docente de la empresa activa. Solicita a un administrador que revise tu asignación de personal.',
+        ]);
     }
 
     public function start(Request $request, AcademicModule $module): RedirectResponse

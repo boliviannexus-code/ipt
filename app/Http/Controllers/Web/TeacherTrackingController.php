@@ -8,8 +8,10 @@ use App\Http\Controllers\Controller;
 use App\Models\AcademicModule;
 use App\Models\Personnel;
 use App\Models\ProgramGradingScheme;
+use App\Services\Academic\TeacherTrackingPdfService;
 use App\Services\Academic\TeacherTrackingService;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\View\View;
 
 final class TeacherTrackingController extends Controller
@@ -36,6 +38,19 @@ final class TeacherTrackingController extends Controller
 
     public function show(Request $request, AcademicModule $module): View
     {
+        return view('teacher.tracking.show', $this->reportData($request, $module));
+    }
+
+    public function print(Request $request, AcademicModule $module, TeacherTrackingPdfService $pdf): Response
+    {
+        return response($pdf->render($this->reportData($request, $module)), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="centralizador-notas-'.$module->id.'.pdf"',
+        ]);
+    }
+
+    private function reportData(Request $request, AcademicModule $module): array
+    {
         $this->authorizeTeacher($request, $module);
         $module->load([
             'program',
@@ -55,7 +70,7 @@ final class TeacherTrackingController extends Controller
             : $module->configuredGradingScheme();
         $summary = $this->tracking->summarize($module, $scheme);
 
-        return view('teacher.tracking.show', [...compact('module', 'scheme'), ...$summary]);
+        return [...compact('module', 'scheme'), ...$summary];
     }
 
     private function authorizeTeacher(Request $request, AcademicModule $module): void

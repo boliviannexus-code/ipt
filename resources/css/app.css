@@ -2671,3 +2671,91 @@ body {
     --bs-table-hover-bg: #ffe6c2;
     background-color: #fff0db;
 }
+
+/* Teacher workspace: one course per row, with a consistent class registration rail. */
+.teacher-course {
+    padding: 1rem 1.25rem;
+}
+.teacher-course + .teacher-course {
+    border-top: 1px solid var(--tblr-border-color);
+}
+.teacher-course-overview {
+    display: grid;
+    grid-template-columns: minmax(14rem, 1fr) 8.5rem 13rem 5rem;
+    align-items: center;
+    gap: 1rem;
+}
+.teacher-course-title {
+    min-width: 0;
+}
+.teacher-course-title h3 {
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+.teacher-course-meta {
+    display: flex;
+    flex-direction: column;
+    gap: .125rem;
+}
+.teacher-course-time {
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+}
+.teacher-course-status:not(:empty) {
+    margin-top: .75rem;
+}
+.teacher-course-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-top: .75rem;
+}
+.teacher-course-start {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+.teacher-course-start input[type="date"] {
+    width: 9.5rem;
+    min-width: 0;
+}
+@media (max-width: 1199.98px) {
+    .teacher-course-overview {
+        grid-template-columns: minmax(12rem, 1fr) 8rem 12rem;
+    }
+    .teacher-course-meta:last-child {
+        flex-direction: row;
+        align-items: baseline;
+        gap: .5rem;
+    }
+}
+@media (max-width: 767.98px) {
+    .teacher-course {
+        padding: 1rem;
+    }
+    .teacher-course-overview {
+        grid-template-columns: 1fr 1fr;
+        gap: .75rem;
+    }
+    .teacher-course-title {
+        grid-column: 1 / -1;
+    }
+    .teacher-course-actions > div,
+    .teacher-course-start {
+        width: 100%;
+    }
+    .teacher-course-start input[type="date"] {
+        flex: 1;
+    }
+    .teacher-course-start label {
+        width: 100%;
+    }
+    .teacher-course-actions .btn,
+    .teacher-course-status .btn,
+    .teacher-course-start input {
+        min-height: 44px;
+    }
+}

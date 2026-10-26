@@ -31,7 +31,7 @@
             @endforelse
             </tbody>
         </table>
-        <x-slot:footer><div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{{ route('teacher.modules.index') }}">Volver</a>@unless($isClosed)<button class="btn btn-primary" type="submit" @disabled($module->studentAssignments->isEmpty() || !$scheme)><i class="ti ti-lock-check me-1"></i>Cerrar curso</button>@endunless</div></x-slot:footer>
+        <x-slot:footer><div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{{ route($module->closed_at || $resultsByStudent->isNotEmpty() ? 'teacher.modules.history' : 'teacher.modules.index') }}">Volver</a>@unless($isClosed)<button class="btn btn-primary" type="submit" @disabled($module->studentAssignments->isEmpty() || !$scheme)><i class="ti ti-lock-check me-1"></i>Cerrar curso</button>@endunless</div></x-slot:footer>
     </x-ui.table-card>
 </form>
 @error('results')<div class="alert alert-danger mt-3">{{ $message }}</div>@enderror
