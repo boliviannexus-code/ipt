@@ -448,6 +448,98 @@ class TeacherClassAttendanceTest extends TestCase
             ->assertSee('Tu cuenta no está vinculada a un docente')->assertViewHas('modules', fn ($modules) => $modules->total() === 0);
     }
 
+    public function test_all_modules_manager_can_record_daily_grades_without_a_teacher_profile(): void
+    {
+        [$teacher, $module, $student] = $this->context();
+        $skill = $this->dailySkill($module);
+        $manager = $this->moduleManager($teacher);
+        $this->actingAs($manager)->get(route('all-modules.modules.index'))->assertOk()
+            ->assertSee('Gestión de todos los módulos')->assertSee($module->name)
+            ->assertSee(route('all-modules.modules.sessions.start', $module));
+        $this->post(route('all-modules.modules.sessions.start', $module))->assertRedirect();
+        $session = $module->classSessions()->sole();
+        $this->assertSame($teacher->personnel_id, $session->personnel_id);
+        $this->assertSame($manager->id, $session->started_by);
+        $this->get(route('all-modules.modules.attendance.edit', [$module, $session]))->assertOk()
+            ->assertSee(route('all-modules.modules.daily-record.autosave', [$module, $session]));
+        $this->patchJson(route('all-modules.modules.daily-record.autosave', [$module, $session]), [
+            'type' => 'grade', 'student_id' => $student->id, 'skill_id' => $skill->id, 'score' => 75,
+        ])->assertOk()->assertJsonPath('score', 75);
+        $this->put(route('all-modules.modules.attendance.update', [$module, $session]), [
+            'selected_skills' => [$skill->id], 'grades' => [$skill->id => [$student->id => 75]],
+            'observations' => [$student->id => 'Registro por coordinación'],
+        ])->assertSessionHasNoErrors()->assertRedirect(route('all-modules.modules.index'));
+        $this->assertDatabaseHas('student_daily_grades', ['student_id' => $student->id, 'graded_by' => $manager->id, 'score' => 75]);
+        $this->get(route('all-modules.tracking.show', $module))->assertOk()->assertSee('75,00')
+            ->assertSee(route('all-modules.tracking.pdf', $module));
+        $pdf = $this->get(route('all-modules.tracking.pdf', $module))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', $pdf->getContent());
+    }
+
+    public function test_all_modules_manager_can_save_single_grades_and_preview_results(): void
+    {
+        [$teacher, $module, $student] = $this->context();
+        $skill = $this->singleSkill($module);
+        $module->update(['end_date' => today()]);
+        $manager = $this->moduleManager($teacher);
+        $this->actingAs($manager)->get(route('all-modules.modules.single-grades.edit', $module))->assertOk()
+            ->assertSee(route('all-modules.modules.single-grades.update', $module));
+        $this->put(route('all-modules.modules.single-grades.update', $module), [
+            'grades' => [$skill->id => [$student->id => 87]],
+        ])->assertSessionHasNoErrors()->assertRedirect(route('all-modules.modules.single-grades.edit', $module));
+        $this->assertDatabaseHas('student_single_grades', ['academic_module_id' => $module->id, 'student_id' => $student->id, 'score' => 87, 'graded_by' => $manager->id]);
+        $this->get(route('all-modules.modules.results.edit', $module))->assertOk()->assertSee('87,00');
+        $this->put(route('all-modules.modules.results.update', $module))->assertSessionHasErrors('results');
+        $this->assertNull($module->fresh()->closed_at);
+    }
+
+    public function test_teacher_permissions_do_not_grant_all_modules_access(): void
+    {
+        [$teacher, $module] = $this->context();
+        $this->actingAs($teacher)->get(route('all-modules.modules.index'))->assertForbidden();
+        $this->get(route('all-modules.tracking.show', $module))->assertForbidden();
+        $this->put(route('all-modules.modules.single-grades.update', $module), ['grades' => [1 => [1 => 80]]])->assertForbidden();
+        $this->post(route('all-modules.modules.sessions.start', $module))->assertForbidden();
+        $manager = $this->moduleManager($teacher);
+        $manager->givePermissionTo(['teaching.view', 'teaching.manage']);
+        $this->actingAs($manager)->get(route('teacher.tracking.show', $module))->assertForbidden();
+        $this->post(route('teacher.modules.sessions.start', $module))->assertForbidden();
+    }
+
+    public function test_all_modules_access_is_limited_to_the_active_company(): void
+    {
+        [$teacher, $module] = $this->context();
+        $manager = $this->moduleManager($teacher);
+        $manager->update(['company_id' => Company::factory()->create()->id]);
+        $this->actingAs($manager)->get(route('all-modules.modules.index'))->assertOk()->assertDontSee($module->name);
+        $this->get(route('all-modules.modules.history'))->assertOk()->assertViewHas('modules', fn ($modules) => $modules->total() === 0);
+        $this->get(route('all-modules.tracking.show', $module))->assertNotFound();
+        $this->get(route('all-modules.tracking.pdf', $module))->assertNotFound();
+        $this->get(route('all-modules.modules.single-grades.edit', $module))->assertNotFound();
+        $this->post(route('all-modules.modules.sessions.start', $module))->assertNotFound();
+        $this->put(route('all-modules.modules.results.update', $module))->assertNotFound();
+    }
+
+    public function test_starting_an_unassigned_module_requires_an_assigned_teacher(): void
+    {
+        [$teacher, $module] = $this->context();
+        $module->teacherAssignments()->update(['unassigned_at' => now()]);
+        $manager = $this->moduleManager($teacher);
+        $this->actingAs($manager)->get(route('all-modules.modules.index'))->assertOk()->assertSee('Sin docente asignado');
+        $this->post(route('all-modules.modules.sessions.start', $module))->assertSessionHasErrors('class_date');
+        $this->assertDatabaseCount('class_sessions', 0);
+        $this->get(route('all-modules.tracking.show', $module))->assertOk();
+    }
+
+    private function moduleManager(User $teacher): User
+    {
+        Permission::findOrCreate('all-modules.manage', 'web');
+        $manager = User::factory()->create(['company_id' => $teacher->company_id, 'personnel_id' => null]);
+        $manager->givePermissionTo('all-modules.manage');
+
+        return $manager;
+    }
+
     private function context(): array
     {
         $company = Company::factory()->create();

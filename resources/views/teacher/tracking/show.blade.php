@@ -4,8 +4,8 @@
 @section('page-subtitle', $module->name.' · '.$module->program->title)
 @section('content')
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <a class="btn btn-outline-secondary" href="{{ route('teacher.tracking.index') }}"><i class="ti ti-arrow-left me-1"></i>Volver a seguimiento</a>
-    <a class="btn btn-outline-primary" href="{{ route('teacher.tracking.pdf', $module) }}" target="_blank" rel="noopener"><i class="ti ti-printer me-1"></i>Imprimir PDF</a>
+    <a class="btn btn-outline-secondary" href="{{ module_workspace_route('teacher.tracking.index') }}"><i class="ti ti-arrow-left me-1"></i>Volver a seguimiento</a>
+    <a class="btn btn-outline-primary" href="{{ module_workspace_route('teacher.tracking.pdf', $module) }}" target="_blank" rel="noopener"><i class="ti ti-printer me-1"></i>Imprimir PDF</a>
     <div class="d-flex gap-2"><span class="badge bg-primary-lt text-primary">{{ $module->classSessions->count() }} clases</span>@if($scheme)<span class="badge bg-azure-lt text-azure">Configuración v{{ $scheme->version }}</span>@endif</div>
 </div>
 @if(!$scheme || $skills->isEmpty())

@@ -13,6 +13,7 @@ use App\Models\ProgramGradingScheme;
 use App\Services\Academic\AttendanceGradingPolicy;
 use App\Services\Academic\ClassSessionService;
 use App\Services\Academic\DailyGradeService;
+use App\Services\Academic\ModuleAccessService;
 use App\Services\Academic\StudentAttendanceRegularityService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -24,10 +25,13 @@ use Illuminate\View\View;
 
 class TeacherModuleController extends Controller
 {
-    public function __construct(private readonly DailyGradeService $dailyGrades, private readonly ClassSessionService $sessions, private readonly StudentAttendanceRegularityService $regularity) {}
+    public function __construct(private readonly DailyGradeService $dailyGrades, private readonly ClassSessionService $sessions, private readonly StudentAttendanceRegularityService $regularity, private readonly ModuleAccessService $moduleAccess) {}
 
     public function index(Request $request): View
     {
+        if ($request->routeIs('all-modules.*')) {
+            return $this->allModules($request);
+        }
         $personnel = $request->user()->personnel;
 
         if (! $personnel instanceof Personnel) {
@@ -54,30 +58,50 @@ class TeacherModuleController extends Controller
     {
         $personnel = $request->user()->personnel;
         $modules = AcademicModule::query()
-            ->with(['program', 'level'])
+            ->with(['program', 'level', 'currentTeacherAssignment.personnel'])
             ->withCount(['studentAssignments', 'classSessions'])
             ->where(fn (Builder $query) => $query->whereNotNull('closed_at')->orWhereHas('studentResults'))
-            ->whereHas('currentTeacherAssignment', fn (Builder $query) => $query->where('personnel_id', $personnel?->id))
-            ->when(! $personnel instanceof Personnel, fn (Builder $query) => $query->whereRaw('1 = 0'))
+            ->when(! $request->routeIs('all-modules.*'), fn (Builder $query) => $query
+                ->whereHas('currentTeacherAssignment', fn (Builder $query) => $query->where('personnel_id', $personnel?->id))
+                ->when(! $personnel instanceof Personnel, fn (Builder $query) => $query->whereRaw('1 = 0')))
             ->orderByRaw('COALESCE(closed_at, end_date) DESC')->orderByDesc('id')
             ->paginate(15);
 
         return view('teacher.modules.history', [
             'modules' => $modules,
-            'teacherUnavailableMessage' => $personnel instanceof Personnel ? null : 'Tu cuenta no está vinculada a un docente de la empresa activa. Solicita a un administrador que revise tu asignación de personal.',
+            'teacherUnavailableMessage' => $request->routeIs('all-modules.*') || $personnel instanceof Personnel ? null : 'Tu cuenta no está vinculada a un docente de la empresa activa. Solicita a un administrador que revise tu asignación de personal.',
         ]);
+    }
+
+    private function allModules(Request $request): View
+    {
+        $filters = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
+        $search = trim((string) ($filters['q'] ?? ''));
+        $modules = AcademicModule::query()
+            ->with(['program', 'level', 'currentTeacherAssignment.personnel', 'classSessions' => fn ($query) => $query->where(fn ($query) => $query->whereDate('class_date', today())->orWhereNull('ended_at'))->orderBy('class_date')])
+            ->withCount(['studentAssignments' => fn ($query) => $query->whereNull('released_at')])
+            ->whereNull('closed_at')->whereDoesntHave('studentResults')
+            ->when($search !== '', fn (Builder $query) => $query->where(fn (Builder $query) => $query
+                ->where('name', 'ilike', "%{$search}%")
+                ->orWhereHas('program', fn (Builder $query) => $query->where('title', 'ilike', "%{$search}%"))))
+            ->orderBy('starts_at')->orderBy('name')->paginate(15)->withQueryString();
+
+        return view('teacher.modules.index', compact('modules', 'search'));
     }
 
     public function start(Request $request, AcademicModule $module): RedirectResponse
     {
         $personnel = $this->authorizedTeacher($request, $module);
+        if (! $personnel instanceof Personnel) {
+            throw ValidationException::withMessages(['class_date' => 'Asigna un docente al módulo antes de iniciar una clase.']);
+        }
         $data = $request->validate(['class_date' => ['sometimes', 'required', 'date_format:Y-m-d']], [
             'class_date.required' => 'Selecciona la fecha de la clase.',
             'class_date.date_format' => 'Selecciona una fecha válida para la clase.',
         ]);
         $session = $this->sessions->start($module, $personnel, $request->user(), $data['class_date'] ?? today()->toDateString());
 
-        return redirect()->route('teacher.modules.attendance.edit', [$module, $session])->with('success', 'Clase iniciada. Ya puede realizar el registro diario.');
+        return redirect()->route(module_workspace_route_name('teacher.modules.attendance.edit'), [$module, $session])->with('success', 'Clase iniciada. Ya puede realizar el registro diario.');
     }
 
     public function editAttendance(Request $request, AcademicModule $module, ClassSession $session): View
@@ -166,7 +190,7 @@ class TeacherModuleController extends Controller
             $this->regularity->evaluate($module);
         });
 
-        return redirect()->route('teacher.modules.index')->with('success', 'Clase finalizada y registro académico guardado correctamente.');
+        return redirect()->route(module_workspace_route_name('teacher.modules.index'))->with('success', 'Clase finalizada y registro académico guardado correctamente.');
     }
 
     public function autosaveDailyRecord(Request $request, AcademicModule $module, ClassSession $session): JsonResponse
@@ -208,20 +232,9 @@ class TeacherModuleController extends Controller
         return response()->json(['score' => $score]);
     }
 
-    private function personnel(Request $request): Personnel
+    private function authorizedTeacher(Request $request, AcademicModule $module): ?Personnel
     {
-        $personnel = $request->user()->personnel;
-        abort_unless($personnel instanceof Personnel, 403, 'Tu cuenta no está vinculada a un docente de la empresa activa.');
-
-        return $personnel;
-    }
-
-    private function authorizedTeacher(Request $request, AcademicModule $module): Personnel
-    {
-        $personnel = $this->personnel($request);
-        abort_unless($module->currentTeacherAssignment()->where('personnel_id', $personnel->id)->exists(), 403);
-
-        return $personnel;
+        return $this->moduleAccess->teacher($request, $module);
     }
 
     private function sessionScheme(ClassSession $session, AcademicModule $module): ?ProgramGradingScheme

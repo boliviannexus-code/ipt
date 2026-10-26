@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Academic\UpdateSingleGradesRequest;
 use App\Models\AcademicModule;
 use App\Models\ProgramGradingScheme;
+use App\Services\Academic\ModuleAccessService;
 use App\Services\Academic\SingleGradeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ use Illuminate\View\View;
 
 final class TeacherSingleGradeController extends Controller
 {
-    public function __construct(private readonly SingleGradeService $singleGrades) {}
+    public function __construct(private readonly SingleGradeService $singleGrades, private readonly ModuleAccessService $moduleAccess) {}
 
     public function edit(Request $request, AcademicModule $module): View
     {
@@ -73,7 +74,7 @@ final class TeacherSingleGradeController extends Controller
 
         $this->singleGrades->save($module, $request->user(), $grades);
 
-        return redirect()->route('teacher.modules.single-grades.edit', $module)->with('success', 'Ponderaciones únicas guardadas correctamente.');
+        return redirect()->route(module_workspace_route_name('teacher.modules.single-grades.edit'), $module)->with('success', 'Ponderaciones únicas guardadas correctamente.');
     }
 
     private function schemeFor(AcademicModule $module): ?ProgramGradingScheme
@@ -89,7 +90,6 @@ final class TeacherSingleGradeController extends Controller
 
     private function authorizeTeacher(Request $request, AcademicModule $module): void
     {
-        abort_unless($request->user()->personnel_id !== null, 403, 'Tu cuenta no está vinculada a un docente.');
-        abort_unless($module->currentTeacherAssignment()->where('personnel_id', $request->user()->personnel_id)->exists(), 403);
+        $this->moduleAccess->authorize($request, $module);
     }
 }

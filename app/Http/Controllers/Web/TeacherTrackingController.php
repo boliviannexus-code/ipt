@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AcademicModule;
 use App\Models\Personnel;
 use App\Models\ProgramGradingScheme;
+use App\Services\Academic\ModuleAccessService;
 use App\Services\Academic\TeacherTrackingPdfService;
 use App\Services\Academic\TeacherTrackingService;
 use Illuminate\Http\Request;
@@ -16,23 +17,22 @@ use Illuminate\View\View;
 
 final class TeacherTrackingController extends Controller
 {
-    public function __construct(private readonly TeacherTrackingService $tracking) {}
+    public function __construct(private readonly TeacherTrackingService $tracking, private readonly ModuleAccessService $moduleAccess) {}
 
     public function index(Request $request): View
     {
         $personnel = $request->user()->personnel;
-        $modules = $personnel instanceof Personnel
-            ? AcademicModule::query()
-                ->with(['program', 'level'])
-                ->withCount(['studentAssignments', 'classSessions'])
-                ->whereHas('currentTeacherAssignment', fn ($query) => $query->where('personnel_id', $personnel->id))
-                ->orderByDesc('start_date')
-                ->get()
-            : collect();
+        $modules = AcademicModule::query()
+            ->with(['program', 'level'])
+            ->withCount(['studentAssignments', 'classSessions'])
+            ->when(! $request->routeIs('all-modules.*'), fn ($query) => $query
+                ->whereHas('currentTeacherAssignment', fn ($query) => $query->where('personnel_id', $personnel?->id))
+                ->when(! $personnel instanceof Personnel, fn ($query) => $query->whereRaw('1 = 0')))
+            ->orderByDesc('start_date')->get();
 
         return view('teacher.tracking.index', [
             'modules' => $modules,
-            'teacherUnavailableMessage' => $personnel instanceof Personnel ? null : 'Tu cuenta no está vinculada a un docente de la empresa activa.',
+            'teacherUnavailableMessage' => $request->routeIs('all-modules.*') || $personnel instanceof Personnel ? null : 'Tu cuenta no está vinculada a un docente de la empresa activa.',
         ]);
     }
 
@@ -75,7 +75,6 @@ final class TeacherTrackingController extends Controller
 
     private function authorizeTeacher(Request $request, AcademicModule $module): void
     {
-        abort_unless($request->user()->personnel_id !== null, 403, 'Tu cuenta no está vinculada a un docente.');
-        abort_unless($module->currentTeacherAssignment()->where('personnel_id', $request->user()->personnel_id)->exists(), 403);
+        $this->moduleAccess->authorize($request, $module);
     }
 }

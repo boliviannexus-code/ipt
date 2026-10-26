@@ -13,7 +13,7 @@
     $siatOpen = $apiTokenOpen || $siatCommunicationOpen || $siatCuisOpen || $siatCatalogsOpen || $siatBranchesOpen || $siatWsdlServicesOpen;
     $parametersOpen = request()->routeIs('parameters.*') || $invoicePrintSettingsOpen;
     $rectorateOpen = request()->routeIs('rectorate.index', 'rectorate.new*', 'rectorate.applications.*');
-    $academicOpen = request()->routeIs('placement-exams.*', 'academic.*', 'students.*');
+    $academicOpen = request()->routeIs('all-modules.*', 'placement-exams.*', 'academic.*', 'students.*');
     $studentsOpen = request()->routeIs('students.*');
     $teacherOpen = request()->routeIs('teacher.*');
     $reportsOpen = request()->routeIs('reports.*');
@@ -63,7 +63,8 @@
     $canStudents = \App\Support\CompanyContext::id(auth()->user()) !== null
         && auth()->user()?->can('students.view');
     $canPersonalData = \App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('academic-personal-data.edit');
-    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents || $canPersonalData;
+    $canAllModules = \App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('all-modules.manage');
+    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents || $canPersonalData || $canAllModules;
     $canTeacher = auth()->user()?->personnel_id !== null
         && auth()->user()?->can('teaching.view');
     $canReports = \App\Support\CompanyContext::id(auth()->user()) !== null
@@ -168,6 +169,11 @@
                                             <span class="nav-link-icon"><i class="ti ti-arrow-big-up-lines"></i></span>
                                             <span class="nav-link-title">Promover módulo</span>
                                         </a>
+                                    </li>
+                                @endif
+                                @if ($canAllModules)
+                                    <li class="nav-item {{ request()->routeIs('all-modules.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('all-modules.modules.index') }}"><span class="nav-link-icon"><i class="ti ti-school" aria-hidden="true"></i></span><span class="nav-link-title">Gestión de todos los módulos</span></a>
                                     </li>
                                 @endif
                                 @if ($canPersonalData)

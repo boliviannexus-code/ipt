@@ -5,7 +5,7 @@
 @section('content')
 @php($isClosed = $module->closed_at !== null)
 @php($scheme = $grading['scheme'] ?? null)
-<form method="POST" action="{{ route('teacher.modules.results.update', $module) }}" data-confirm-action data-confirm-title="¿Cerrar este curso?" data-confirm-text="Los resultados se calcularán con las ponderaciones registradas y el cierre no podrá modificarse." data-confirm-button="Sí, cerrar curso">
+<form method="POST" action="{{ module_workspace_route('teacher.modules.results.update', $module) }}" data-confirm-action data-confirm-title="¿Cerrar este curso?" data-confirm-text="Los resultados se calcularán con las ponderaciones registradas y el cierre no podrá modificarse." data-confirm-button="Sí, cerrar curso">
     @csrf @method('PUT')
     <x-ui.table-card title="{{ $isClosed ? 'Cierre académico registrado' : 'Vista previa del cierre académico' }}">
         <x-slot:actions><div class="d-flex gap-2 align-items-center"><span class="badge text-bg-azure">{{ $module->program->title }} · {{ $module->level->name }}</span>@if($scheme)<span class="badge text-bg-secondary">Nota mínima: {{ number_format((float) $scheme->passing_score, 2, ',', '.') }}</span>@endif</div></x-slot:actions>
@@ -31,7 +31,7 @@
             @endforelse
             </tbody>
         </table>
-        <x-slot:footer><div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{{ route($module->closed_at || $resultsByStudent->isNotEmpty() ? 'teacher.modules.history' : 'teacher.modules.index') }}">Volver</a>@unless($isClosed)<button class="btn btn-primary" type="submit" @disabled($module->studentAssignments->isEmpty() || !$scheme)><i class="ti ti-lock-check me-1"></i>Cerrar curso</button>@endunless</div></x-slot:footer>
+        <x-slot:footer><div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{{ module_workspace_route($module->closed_at || $resultsByStudent->isNotEmpty() ? 'teacher.modules.history' : 'teacher.modules.index') }}">Volver</a>@unless($isClosed)<button class="btn btn-primary" type="submit" @disabled($module->studentAssignments->isEmpty() || !$scheme)><i class="ti ti-lock-check me-1"></i>Cerrar curso</button>@endunless</div></x-slot:footer>
     </x-ui.table-card>
 </form>
 @error('results')<div class="alert alert-danger mt-3">{{ $message }}</div>@enderror

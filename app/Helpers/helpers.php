@@ -49,6 +49,7 @@ if (! function_exists('permission_module_label')) {
             'academic-modules' => 'Módulos académicos',
             'students' => 'Estudiantes',
             'enrollment-reports' => 'Matrículas',
+            'all-modules' => 'Gestión de todos los módulos',
             'teaching' => 'Mis módulos',
             'audits' => 'Auditoría',
             'cash-registers' => 'Cajas',
@@ -182,5 +183,28 @@ if (! function_exists('authentication_context_label')) {
             'api' => 'API',
             default => str($context)->replace(['-', '_'], ' ')->headline()->toString(),
         };
+    }
+}
+
+if (! function_exists('module_workspace_route_name')) {
+    function module_workspace_route_name(string $name): string
+    {
+        return request()->routeIs('all-modules.*') && str_starts_with($name, 'teacher.')
+            ? 'all-modules.'.substr($name, strlen('teacher.'))
+            : $name;
+    }
+}
+
+if (! function_exists('module_workspace_route')) {
+    function module_workspace_route(string $name, mixed $parameters = [], bool $absolute = true): string
+    {
+        return route(module_workspace_route_name($name), $parameters, $absolute);
+    }
+}
+
+if (! function_exists('module_workspace_can_manage')) {
+    function module_workspace_can_manage(): bool
+    {
+        return auth()->user()?->can(request()->routeIs('all-modules.*') ? 'all-modules.manage' : 'teaching.manage') ?? false;
     }
 }

@@ -34,6 +34,7 @@ Los permisos se asignan en **Administración → Roles → Configurar acceso**. 
 | Examen de nivel | `placement-exams.index` | `students.view` |
 | Estudiantes | `students.index` | `students.view` |
 | Matrículas | `reports.enrollments.index` | `enrollment-reports.view` |
+| Gestión de todos los módulos | `all-modules.modules.index` | `all-modules.manage` |
 | Historial mis módulos | `teacher.modules.history` | `teaching.view` |
 | Mis módulos | `teacher.modules.index` | `teaching.view` |
 | Seguimiento | `teacher.tracking.index` | `teaching.view` |
@@ -94,3 +95,12 @@ Ejecutar `php artisan migrate --force` para completar el catálogo sin resembrar
 Resultado final de las pruebas focalizadas: **79 aprobadas, 1392 aserciones**, incluyendo Accesos, Roles, Académico y filtros de Personal. Plantillas Blade compiladas correctamente y revisión de diferencias sin errores de formato.
 
 La ejecución de la suite completa realizada durante la revisión no quedó en verde: registró 3 fallos y 67 errores, principalmente permisos del filesystem de pruebas, una referencia a `users.change-password` que no existe y expectativas de pruebas de usuarios/personal. Esos resultados no deben confundirse con la validación focalizada de accesos; requieren una revisión aparte.
+
+
+## Gestión de todos los módulos
+
+Menú separado en Académico, protegido por `all-modules.manage` (Gestión de todos los módulos → Administrar). Incluye los cursos abiertos y su historial, notas diarias y únicas, observaciones, centralizadores, PDF y cierre de cursos. No requiere perfil docente del operador. El alcance se limita a la empresa activa; no modifica la asignación de docentes ni amplía el acceso de «Mis módulos».
+
+Las nuevas clases conservan el docente asignado al módulo y registran al operador en `started_by`; las notas y cierres también identifican al usuario que realizó la acción. Para iniciar clases se requiere un docente asignado. Se mantienen las validaciones de fechas, matrícula y cierre existentes.
+
+Registrar el permiso mediante `php artisan migrate --force`. Se habilita inicialmente para los roles admin y super_admin; los demás roles lo reciben solo si se asigna desde Roles.

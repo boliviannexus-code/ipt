@@ -150,6 +150,21 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::get('tracking/modules/{module}/pdf', [TeacherTrackingController::class, 'print'])->whereNumber('module')->middleware('permission:teaching.view')->name('tracking.pdf');
         Route::get('tracking/modules/{module}', [TeacherTrackingController::class, 'show'])->whereNumber('module')->middleware('permission:teaching.view')->name('tracking.show');
     });
+    Route::prefix('academic/all-modules')->name('all-modules.')->middleware(['company_user', 'permission:all-modules.manage'])->group(function (): void {
+        Route::get('modules/history', [TeacherModuleController::class, 'history'])->name('modules.history');
+        Route::get('modules', [TeacherModuleController::class, 'index'])->name('modules.index');
+        Route::post('modules/{module}/sessions', [TeacherModuleController::class, 'start'])->whereNumber('module')->name('modules.sessions.start');
+        Route::get('modules/{module}/sessions/{session}/attendance', [TeacherModuleController::class, 'editAttendance'])->whereNumber(['module', 'session'])->name('modules.attendance.edit');
+        Route::put('modules/{module}/sessions/{session}/attendance', [TeacherModuleController::class, 'updateAttendance'])->whereNumber(['module', 'session'])->name('modules.attendance.update');
+        Route::patch('modules/{module}/sessions/{session}/daily-record', [TeacherModuleController::class, 'autosaveDailyRecord'])->whereNumber(['module', 'session'])->name('modules.daily-record.autosave');
+        Route::get('modules/{module}/single-grades', [TeacherSingleGradeController::class, 'edit'])->whereNumber('module')->name('modules.single-grades.edit');
+        Route::put('modules/{module}/single-grades', [TeacherSingleGradeController::class, 'update'])->whereNumber('module')->name('modules.single-grades.update');
+        Route::get('modules/{module}/results', [TeacherModuleResultController::class, 'edit'])->whereNumber('module')->name('modules.results.edit');
+        Route::put('modules/{module}/results', [TeacherModuleResultController::class, 'update'])->whereNumber('module')->name('modules.results.update');
+        Route::get('tracking', [TeacherTrackingController::class, 'index'])->name('tracking.index');
+        Route::get('tracking/modules/{module}/pdf', [TeacherTrackingController::class, 'print'])->whereNumber('module')->name('tracking.pdf');
+        Route::get('tracking/modules/{module}', [TeacherTrackingController::class, 'show'])->whereNumber('module')->name('tracking.show');
+    });
     Route::post('notifications/read-all', [NotificationController::class, 'readAll'])
         ->name('notifications.read-all');
     Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])

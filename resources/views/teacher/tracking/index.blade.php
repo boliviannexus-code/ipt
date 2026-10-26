@@ -1,8 +1,9 @@
 @extends('layouts.admin')
 @section('title', 'Seguimiento académico')
 @section('page-title', 'Seguimiento')
-@section('page-subtitle', 'Centralizadores de los módulos asignados')
+@section('page-subtitle', request()->routeIs('all-modules.*') ? 'Centralizadores de todos los módulos de la empresa activa' : 'Centralizadores de los módulos asignados')
 @section('content')
+@if(request()->routeIs('all-modules.*'))<a class="btn btn-outline-secondary mb-3" href="{{ module_workspace_route('teacher.modules.index') }}">Volver a todos los módulos</a>@endif
 @if($teacherUnavailableMessage)
     <div class="alert alert-warning d-flex align-items-start gap-2" role="alert"><i class="ti ti-user-exclamation fs-2" aria-hidden="true"></i><div><strong>No tienes un perfil docente vinculado.</strong><div>{{ $teacherUnavailableMessage }}</div></div></div>
 @endif
@@ -15,7 +16,7 @@
                     <div class="d-flex justify-content-between align-items-start gap-3 mb-3"><div><h3 class="card-title mb-1">{{ $module->name }}</h3><div class="text-secondary">{{ $module->program->title }} · {{ $module->level->name }}</div></div><span class="badge {{ $moduleStatus === 'Activo' ? 'text-bg-green' : 'text-bg-secondary' }}">{{ $moduleStatus }}</span></div>
                     <div class="d-flex gap-4"><div><span class="text-secondary small d-block">Estudiantes</span><strong>{{ $module->student_assignments_count }}</strong></div><div><span class="text-secondary small d-block">Clases registradas</span><strong>{{ $module->class_sessions_count }}</strong></div></div>
                 </div>
-                <div class="card-footer"><a class="btn btn-primary w-100" href="{{ route('teacher.tracking.show', $module) }}"><i class="ti ti-table me-1"></i>Ver centralizador de notas</a></div>
+                <div class="card-footer"><a class="btn btn-primary w-100" href="{{ module_workspace_route('teacher.tracking.show', $module) }}"><i class="ti ti-table me-1"></i>Ver centralizador de notas</a></div>
             </div>
         </div>
     @empty

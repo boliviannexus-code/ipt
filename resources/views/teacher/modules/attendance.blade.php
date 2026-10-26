@@ -3,7 +3,7 @@
 @section('page-title', 'Registro diario')
 @section('page-subtitle', $module->name.' · '.$session->class_date->format('d/m/Y'))
 @section('content')
-<form method="POST" action="{{ route('teacher.modules.attendance.update', [$module, $session]) }}" data-daily-wizard data-autosave-url="{{ route('teacher.modules.daily-record.autosave', [$module, $session]) }}" data-confirm-action data-confirm-title="¿Finalizar esta clase?" data-confirm-text="Las notas y observaciones quedarán registradas y la clase ya no podrá modificarse." data-confirm-button="Sí, finalizar clase">
+<form method="POST" action="{{ module_workspace_route('teacher.modules.attendance.update', [$module, $session]) }}" data-daily-wizard data-autosave-url="{{ module_workspace_route('teacher.modules.daily-record.autosave', [$module, $session]) }}" data-confirm-action data-confirm-title="¿Finalizar esta clase?" data-confirm-text="Las notas y observaciones quedarán registradas y la clase ya no podrá modificarse." data-confirm-button="Sí, finalizar clase">
     @csrf @method('PUT')
     <nav class="card mb-3" aria-label="Progreso del registro diario"><div class="card-body py-3"><div class="daily-wizard-steps">
         @foreach([1 => ['ti-checkbox', 'Habilidades'], 2 => ['ti-users', 'Estudiantes'], 3 => ['ti-clipboard-check', 'Resumen']] as $number => [$icon, $label])
@@ -18,7 +18,7 @@
         <x-ui.card title="Habilidades trabajadas hoy"><div class="card-body">
             @if($dailyComponents->isEmpty())<div class="alert alert-info mb-0"><i class="ti ti-info-circle me-2"></i>No hay otras habilidades diarias para seleccionar. Puedes continuar al registro de estudiantes.</div>
             @else<p class="text-secondary mb-2">Selecciona las habilidades evaluadas durante esta clase.</p><div class="row g-2">@foreach($dailyComponents as $component)<div class="col-12 col-md-6"><fieldset class="border rounded p-2 h-100"><legend class="float-none w-auto px-2 h4 mb-1">{{ $component->name }} <span class="badge bg-azure-lt text-azure">{{ $component->weight }}%</span></legend><div class="vstack gap-1">@foreach($component->skills as $skill)@php($isSelected = collect(old('selected_skills', $selectedSkillIds->all()))->contains(fn($id) => (int)$id === $skill->id))<label class="form-check daily-skill-option"><input class="form-check-input" type="checkbox" name="selected_skills[]" value="{{ $skill->id }}" data-daily-skill="{{ $skill->id }}" data-skill-name="{{ $skill->name }}" @checked($isSelected)><span class="form-check-label">{{ $skill->name }} @if($component->skills->count() > 1)<span class="text-secondary">· {{ $skill->weight }}%</span>@endif</span></label>@endforeach</div></fieldset></div>@endforeach</div>@endif
-        </div><x-slot:footer><div class="d-flex justify-content-between"><a class="btn btn-outline-secondary" href="{{ route('teacher.modules.index') }}">Cancelar</a><button class="btn btn-primary" type="button" data-next-step="2">Continuar <i class="ti ti-arrow-right ms-1"></i></button></div></x-slot:footer></x-ui.card>
+        </div><x-slot:footer><div class="d-flex justify-content-between"><a class="btn btn-outline-secondary" href="{{ module_workspace_route('teacher.modules.index') }}">Cancelar</a><button class="btn btn-primary" type="button" data-next-step="2">Continuar <i class="ti ti-arrow-right ms-1"></i></button></div></x-slot:footer></x-ui.card>
     </section>
 
     <section class="d-none" data-wizard-panel="2">

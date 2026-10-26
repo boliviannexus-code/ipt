@@ -4,7 +4,7 @@
 @section('page-subtitle', $module->name.' · '.$module->program->title)
 @section('content')
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <a class="btn btn-outline-secondary" href="{{ route('teacher.modules.index') }}"><i class="ti ti-arrow-left me-1"></i>Volver a mis módulos</a>
+    <a class="btn btn-outline-secondary" href="{{ module_workspace_route('teacher.modules.index') }}"><i class="ti ti-arrow-left me-1"></i>{{ request()->routeIs('all-modules.*') ? 'Volver a todos los módulos' : 'Volver a mis módulos' }}</a>
     @if($scheme)<span class="badge bg-azure-lt text-azure">Configuración v{{ $scheme->version }}</span>@endif
 </div>
 
@@ -13,7 +13,7 @@
 @elseif($module->studentAssignments->isEmpty())
     <div class="alert alert-warning" role="alert"><i class="ti ti-users-minus me-2"></i>El módulo no tiene estudiantes asignados.</div>
 @else
-    <form method="POST" action="{{ route('teacher.modules.single-grades.update', $module) }}">
+    <form method="POST" action="{{ module_workspace_route('teacher.modules.single-grades.update', $module) }}">
         @csrf @method('PUT')
         <div class="vstack gap-3">
             @foreach($components as $gradingComponent)

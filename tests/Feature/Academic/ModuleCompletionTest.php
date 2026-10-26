@@ -272,6 +272,23 @@ class ModuleCompletionTest extends TestCase
             ->assertViewHas('modules', fn ($modules) => $modules->contains('id', $module->id));
     }
 
+    public function test_all_modules_manager_can_close_another_teachers_module_and_view_history(): void
+    {
+        [$teacher, $module, $student, $contract] = $this->context();
+        $this->finalGrade($module, $student, $teacher, 90);
+        Permission::findOrCreate('all-modules.manage', 'web');
+        $manager = User::factory()->create(['company_id' => $teacher->company_id, 'personnel_id' => null]);
+        $manager->givePermissionTo('all-modules.manage');
+        $this->actingAs($manager)->get(route('all-modules.modules.results.edit', $module))->assertOk()
+            ->assertSee(route('all-modules.modules.results.update', $module));
+        $this->put(route('all-modules.modules.results.update', $module))->assertSessionHasNoErrors()
+            ->assertRedirect(route('all-modules.modules.index'));
+        $this->assertSame($manager->id, $module->fresh()->closed_by);
+        $this->assertSame(2, $contract->fresh()->currentProgramLevel->position);
+        $this->get(route('all-modules.modules.history'))->assertOk()->assertSee($module->name);
+        $this->post(route('all-modules.modules.sessions.start', $module))->assertSessionHasErrors('class_date');
+    }
+
     private function finalGrade(AcademicModule $module, Student $student, User $user, float $score): void
     {
         $scheme = $module->level->gradingScheme;
