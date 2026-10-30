@@ -2759,3 +2759,53 @@ body {
         min-height: 44px;
     }
 }
+
+/* Personal modules use independent cards while the shared workspace keeps its list. */
+.teacher-course-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: stretch;
+}
+.teacher-course-grid > .teacher-course {
+    min-width: 0;
+    border: 1px solid var(--tblr-border-color);
+}
+.teacher-course-grid .teacher-course-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: .75rem;
+}
+.teacher-course-grid .teacher-course-title {
+    grid-column: 1 / -1;
+}
+.teacher-course-grid .teacher-course-meta:last-child {
+    flex-direction: column;
+    align-items: start;
+}
+.teacher-course-grid .teacher-course-actions {
+    margin-top: auto;
+    padding-top: 1rem;
+}
+.teacher-course-grid .teacher-course-actions > div,
+.teacher-course-grid .teacher-course-start {
+    width: 100%;
+}
+.teacher-course-grid .teacher-course-start {
+    padding-top: .75rem;
+    border-top: 1px solid var(--tblr-border-color);
+}
+.teacher-course-grid .teacher-course-start label {
+    width: 100%;
+}
+.teacher-course-grid .teacher-course-start input[type="date"] {
+    flex: 1;
+}
+.teacher-course-grid .teacher-course-empty {
+    grid-column: 1 / -1;
+}
+@media (max-width: 991.98px) {
+    .teacher-course-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

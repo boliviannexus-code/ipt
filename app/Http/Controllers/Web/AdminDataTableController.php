@@ -192,12 +192,20 @@ class AdminDataTableController extends Controller
             ->toJson();
     }
 
-    public function academicModules(): JsonResponse
+    public function academicModules(Request $request): JsonResponse
     {
         abort_unless(auth()->user()?->can('academic-modules.view'), 403);
 
+        $filters = $request->validate([
+            'program_id' => ['nullable', 'integer', 'min:1'],
+            'program_level_id' => ['nullable', 'integer', 'min:1'],
+            'personnel_id' => ['nullable', 'integer', 'min:1'],
+        ]);
         $query = AcademicModule::query()
             ->with(['program', 'level', 'currentTeacherAssignment.personnel'])
+            ->when($filters['program_id'] ?? null, fn ($query, $id) => $query->where('program_id', $id))
+            ->when($filters['program_level_id'] ?? null, fn ($query, $id) => $query->where('program_level_id', $id))
+            ->when($filters['personnel_id'] ?? null, fn ($query, $id) => $query->whereHas('currentTeacherAssignment', fn ($assignment) => $assignment->where('personnel_id', $id)))
             ->select('academic_modules.*');
 
         return DataTables::eloquent($query)
@@ -676,9 +684,9 @@ class AdminDataTableController extends Controller
         return $html.'</div>';
     }
 
-    private function deleteForm(string $url, string $confirmation): string
+    private function deleteForm(string $url, string $confirmation, ?string $description = null): string
     {
-        return '<form method="POST" action="'.e($url).'" data-confirm-delete="'.e($confirmation).'">'.csrf_field().method_field('DELETE').'<button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button></form>';
+        return '<form method="POST" action="'.e($url).'" data-confirm-delete="'.e($confirmation).'" data-confirm-text="'.e($description ?? 'Esta acción no se puede deshacer fácilmente.').'">'.csrf_field().method_field('DELETE').'<button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button></form>';
     }
 
     private function academicModuleActions(AcademicModule $module): string
@@ -689,7 +697,7 @@ class AdminDataTableController extends Controller
         $teacher = route('academic.modules.teacher.edit', $module);
         $edit = route('academic.modules.edit', $module);
 
-        return '<div class="d-inline-flex gap-1"><a class="btn btn-outline-success btn-sm" href="'.e($teacher).'" data-modal-url="'.e($teacher).'" data-modal-title="Asignar docente" data-modal-size="lg"><i class="ti ti-user-check me-1"></i>Docente</a><a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar módulo" data-modal-size="lg">Editar</a>'.$this->deleteForm(route('academic.modules.destroy', $module), '¿Eliminar el módulo '.$module->name.'?').'</div>';
+        return '<div class="d-inline-flex flex-wrap gap-1"><a class="btn btn-outline-success btn-sm" href="'.e($teacher).'" data-modal-url="'.e($teacher).'" data-modal-title="Asignar docente" data-modal-size="lg"><i class="ti ti-user-check me-1"></i>Docente</a><a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar módulo" data-modal-size="lg">Editar</a>'.$this->deleteForm(route('academic.modules.destroy', $module), '¿Eliminar el módulo '.$module->name.'?', 'Los estudiantes quedarán sin este módulo y podrán ser asignados nuevamente. Se eliminarán las clases, asistencias y notas de este módulo. Esta acción no se puede deshacer.').'</div>';
     }
 
     private function enrollmentProgress(RectorateApplication $application): string

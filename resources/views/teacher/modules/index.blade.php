@@ -22,25 +22,30 @@
     <div class="d-flex gap-2"><input id="all-modules-search" class="form-control" type="search" name="q" maxlength="100" value="{{ $search ?? '' }}"><button class="btn btn-primary" type="submit">Buscar</button></div>
 </form>
 @endif
-<div class="card teacher-course-list">
+<div class="{{ request()->routeIs('all-modules.*') ? 'card teacher-course-list' : 'teacher-course-grid' }}">
     @forelse($modules as $module)
         @php
             $todaySession = $module->classSessions->first(fn ($session) => $session->class_date->isToday());
             $pendingSessions = $module->classSessions->whereNull('ended_at');
             $defaultClassDate = today()->lt($module->start_date) ? $module->start_date : (today()->gt($module->end_date) ? $module->end_date : today());
         @endphp
-        <article class="teacher-course" aria-labelledby="course-title-{{ $module->id }}">
+        <article class="teacher-course {{ request()->routeIs('all-modules.*') ? '' : 'card' }}" aria-labelledby="course-title-{{ $module->id }}">
             <div class="teacher-course-overview">
                 <div class="teacher-course-title">
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
                         <h3 id="course-title-{{ $module->id }}" class="mb-0">{{ $module->name }}</h3>
                         <span class="badge {{ $module->modality === 'virtual' ? 'bg-azure-lt' : 'bg-green-lt' }}">{{ $module->modality === 'virtual' ? 'Virtual' : 'Presencial' }}</span>
+                        @unless(request()->routeIs('all-modules.*'))
+                            <span class="badge bg-secondary-lt" aria-label="{{ $module->student_assignments_count }} estudiantes" title="Estudiantes asignados"><i class="ti ti-users me-1" aria-hidden="true"></i>{{ $module->student_assignments_count }}</span>
+                        @endunless
                     </div>
                     <div class="text-secondary">{{ $module->program->title }} · {{ $module->level->name }}</div>@if(request()->routeIs('all-modules.*'))<small class="d-block text-secondary">Docente: {{ $module->currentTeacherAssignment?->personnel?->full_name ?? 'Sin docente asignado' }}</small>@endif
                 </div>
                 <div class="teacher-course-meta"><span class="text-secondary small">Horario</span><strong class="teacher-course-time">{{ substr($module->starts_at, 0, 5) }}–{{ substr($module->ends_at, 0, 5) }}</strong></div>
                 <div class="teacher-course-meta"><span class="text-secondary small">Vigencia</span><span>{{ $module->start_date->format('d/m/Y') }}–{{ $module->end_date->format('d/m/Y') }}</span></div>
+                @if(request()->routeIs('all-modules.*'))
                 <div class="teacher-course-meta"><span class="text-secondary small">Estudiantes</span><strong>{{ $module->student_assignments_count }}</strong></div>
+                @endif
             </div>
             @if($todaySession || today()->lt($module->start_date) || today()->gt($module->end_date) || ($pendingSessions->isNotEmpty() && module_workspace_can_manage()))
             <div class="teacher-course-status d-flex flex-wrap align-items-center gap-2">
@@ -82,7 +87,7 @@
             </div>
         </article>
     @empty
-        <div class="card-body text-center text-secondary py-5"><i class="ti ti-books-off fs-1 d-block mb-2" aria-hidden="true"></i>{{ request()->routeIs('all-modules.*') ? 'No se encontraron módulos activos.' : 'No tiene módulos activos asignados.' }}<a class="d-block mt-2" href="{{ module_workspace_route('teacher.modules.history') }}">Consultar módulos finalizados</a></div>
+        <div class="card card-body text-center text-secondary py-5 teacher-course-empty"><i class="ti ti-books-off fs-1 d-block mb-2" aria-hidden="true"></i>{{ request()->routeIs('all-modules.*') ? 'No se encontraron módulos activos.' : 'No tiene módulos activos asignados.' }}<a class="d-block mt-2" href="{{ module_workspace_route('teacher.modules.history') }}">Consultar módulos finalizados</a></div>
     @endforelse
 </div>
 @if(request()->routeIs('all-modules.*'))<div class="mt-3">{{ $modules->links() }}</div>@endif

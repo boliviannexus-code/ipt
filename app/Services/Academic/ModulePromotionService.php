@@ -23,6 +23,7 @@ final class ModulePromotionService
     public function context(AcademicModule $module): array
     {
         abort_if($module->closed_at === null, 409, 'Solo se pueden promover módulos cerrados.');
+        abort_if($module->promoted_at !== null, 409, 'Este módulo ya fue promovido. Solo puede promoverse una vez.');
         $module->loadMissing(['program', 'level', 'currentTeacherAssignment.personnel', 'studentAssignments.student']);
         $targetLevel = ProgramLevel::query()
             ->where('program_id', $module->program_id)
@@ -104,6 +105,9 @@ final class ModulePromotionService
                 $this->contracts->generateMonthlyCharge($contract, $period, 'Mensualidad - '.$newModule->name);
             }
 
+            $source->studentAssignments()->whereNull('released_at')->update(['released_at' => now()]);
+            $source->update(['promoted_at' => now()]);
+
             return $newModule;
         });
     }
@@ -111,7 +115,7 @@ final class ModulePromotionService
     private function studentOptions(AcademicModule $module, ProgramLevel $targetLevel): Collection
     {
         $studentIds = $module->studentAssignments->pluck('student_id');
-        $activeStudentIds = AcademicModuleStudentAssignment::query()->whereIn('student_id', $studentIds)->whereNull('released_at')->pluck('student_id');
+        $activeStudentIds = AcademicModuleStudentAssignment::query()->whereIn('student_id', $studentIds)->where('academic_module_id', '!=', $module->id)->whereNull('released_at')->pluck('student_id');
         $contracts = EnrollmentContract::query()
             ->whereIn('student_id', $studentIds)
             ->where('program_id', $module->program_id)

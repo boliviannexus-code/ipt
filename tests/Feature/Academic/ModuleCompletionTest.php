@@ -289,6 +289,60 @@ class ModuleCompletionTest extends TestCase
         $this->post(route('all-modules.modules.sessions.start', $module))->assertSessionHasErrors('class_date');
     }
 
+    public function test_promotion_is_allowed_once_and_releases_unselected_students(): void
+    {
+        [$user, $module, $student, $contract] = $this->context();
+        $this->actingAs($user);
+        $target = ProgramLevel::where('program_id', $module->program_id)->where('position', 2)->firstOrFail();
+        $module->update(['closed_at' => now(), 'closed_by' => $user->id]);
+        $contract->update(['current_program_level_id' => $target->id]);
+
+        $selected = $student->replicate();
+        $selected->identity_document = '3102';
+        $selected->save();
+        $application = RectorateApplication::findOrFail($contract->rectorate_application_id)->replicate();
+        $application->student_id = $selected->id;
+        $application->save();
+        $selectedContract = $contract->replicate();
+        $selectedContract->student_id = $selected->id;
+        $selectedContract->rectorate_application_id = $application->id;
+        $selectedContract->contract_number = 2;
+        $selectedContract->save();
+        $module->studentAssignments()->create([
+            'company_id' => $module->company_id, 'student_id' => $selected->id,
+            'assigned_by' => $user->id, 'assigned_at' => now(),
+        ]);
+        $payload = [
+            'start_date' => today()->toDateString(),
+            'end_date' => today()->addMonth()->toDateString(),
+            'student_ids' => [$selected->id],
+        ];
+
+        $this->post(route('academic.promotions.store', $module), $payload)
+            ->assertSessionHasNoErrors()->assertRedirect(route('academic.modules.index'));
+        $this->assertNotNull($module->fresh()->promoted_at);
+        $this->assertNotNull($student->moduleAssignments()->where('academic_module_id', $module->id)->firstOrFail()->released_at);
+        $this->assertNull($student->fresh()->currentModuleAssignment);
+        $this->assertSame(1, $contract->charges()->count());
+        $this->get(route('academic.promotions.index'))->assertOk()
+            ->assertSee('Promovido')->assertDontSee(route('academic.promotions.create', $module), false);
+        $this->get(route('academic.promotions.create', $module))->assertStatus(409);
+        $this->post(route('academic.promotions.students', $module), $payload)->assertStatus(409);
+        $this->post(route('academic.promotions.store', $module), $payload)->assertStatus(409);
+        $this->assertDatabaseCount('academic_modules', 2);
+        $this->assertSame(1, $selectedContract->charges()->count());
+
+        $destination = AcademicModule::where('id', '!=', $module->id)->sole();
+        Permission::findOrCreate('students.manage');
+        $user->givePermissionTo('students.manage');
+        $this->postJson(route('students.modules.store', $student), ['academic_module_id' => $destination->id])
+            ->assertOk()->assertJsonPath('success', true);
+        $this->deleteJson(route('academic.modules.destroy', $destination))->assertOk();
+        $this->post(route('academic.promotions.store', $module), $payload)->assertStatus(409);
+        $this->assertDatabaseCount('academic_modules', 1);
+        $this->assertSame(1, $selectedContract->charges()->count());
+    }
+
     private function finalGrade(AcademicModule $module, Student $student, User $user, float $score): void
     {
         $scheme = $module->level->gradingScheme;

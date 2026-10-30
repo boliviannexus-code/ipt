@@ -212,7 +212,7 @@ function confirmDelete(form) {
     Swal.fire({
         icon: 'warning',
         title: form.dataset.confirmDelete ?? 'Confirmar eliminacion',
-        text: 'Esta accion no se puede deshacer facilmente.',
+        text: form.dataset.confirmText ?? 'Esta accion no se puede deshacer facilmente.',
         showCancelButton: true,
         confirmButtonText: 'Si, eliminar',
         cancelButtonText: 'Cancelar',

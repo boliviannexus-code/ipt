@@ -13,11 +13,11 @@ class AcademicModule extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'program_id', 'program_level_id', 'name', 'modality', 'starts_at', 'ends_at', 'start_date', 'end_date', 'closed_at', 'closed_by'];
+    protected $fillable = ['company_id', 'program_id', 'program_level_id', 'name', 'modality', 'starts_at', 'ends_at', 'start_date', 'end_date', 'closed_at', 'closed_by', 'promoted_at'];
 
     protected function casts(): array
     {
-        return ['start_date' => 'date', 'end_date' => 'date', 'closed_at' => 'immutable_datetime'];
+        return ['start_date' => 'date', 'end_date' => 'date', 'closed_at' => 'immutable_datetime', 'promoted_at' => 'immutable_datetime'];
     }
 
     public function configuredGradingScheme(): ?ProgramGradingScheme

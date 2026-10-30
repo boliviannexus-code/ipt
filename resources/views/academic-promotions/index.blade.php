@@ -23,7 +23,7 @@
                         <td class="text-center"><span class="badge text-bg-secondary">{{ $module->student_results_count }} / {{ $module->student_assignments_count }}</span></td>
                         <td><span class="d-block">{{ $module->closed_at->format('d/m/Y') }}</span><small class="text-secondary">{{ $module->closed_at->format('H:i') }}</small></td>
                         <td>{{ $module->closedBy?->name ?? 'Sistema' }}</td>
-                        <td class="text-end">@if($nextLevel)<a class="btn btn-outline-primary btn-sm" href="{{ route('academic.promotions.create', $module) }}"><i class="ti ti-arrow-big-up-lines me-1" aria-hidden="true"></i>Promover</a>@else<span class="badge text-bg-secondary">Último nivel</span>@endif</td>
+                        <td class="text-end">@if($module->promoted_at)<span class="badge text-bg-success">Promovido</span>@elseif($nextLevel)<a class="btn btn-outline-primary btn-sm" href="{{ route('academic.promotions.create', $module) }}"><i class="ti ti-arrow-big-up-lines me-1" aria-hidden="true"></i>Promover</a>@else<span class="badge text-bg-secondary">Último nivel</span>@endif</td>
                     </tr>
                 @empty
                     <x-ui.empty-row colspan="7" message="Todavía no existen módulos cerrados para promover." />

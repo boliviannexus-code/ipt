@@ -3,7 +3,7 @@
 @section('page-title', 'Promover módulo')
 @section('page-subtitle', 'Paso 2 de 2 · Selección de estudiantes')
 @section('content')
-<form method="POST" action="{{ route('academic.promotions.store', $module) }}" data-confirm-action data-confirm-title="¿Crear y asignar el nuevo módulo?" data-confirm-text="Se asignarán los estudiantes seleccionados y se generará un nuevo cargo para cada uno." data-confirm-button="Sí, crear módulo">
+<form method="POST" action="{{ route('academic.promotions.store', $module) }}" data-confirm-action data-confirm-title="¿Crear y asignar el nuevo módulo?" data-confirm-text="Esta promoción solo puede realizarse una vez. Se asignarán los estudiantes seleccionados y se generará un nuevo cargo para cada uno. Los demás quedarán disponibles para asignación manual." data-confirm-button="Sí, crear módulo">
     @csrf
     <input type="hidden" name="start_date" value="{{ $dates['start_date'] }}">
     <input type="hidden" name="end_date" value="{{ $dates['end_date'] }}">

@@ -107,6 +107,27 @@ class AcademicModuleTest extends TestCase
         $this->actingAs($user)->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $secondTeacher->id])
             ->assertOk()->assertJsonPath('success', true);
 
+        $this->actingAs($user)->get(route('academic.modules.index'))
+            ->assertOk()->assertSee('academic-module-filters')->assertSee('Luis Rojas');
+        foreach ([
+            ['program_id' => $program->id],
+            ['program_level_id' => $level->id],
+            ['personnel_id' => $secondTeacher->id],
+            ['program_id' => $program->id, 'program_level_id' => $level->id, 'personnel_id' => $secondTeacher->id],
+        ] as $filters) {
+            $this->getJson(route('datatables.academic-modules', [...$filters, 'draw' => 1, 'start' => 0, 'length' => 10]))
+                ->assertOk()->assertJsonPath('recordsFiltered', 1)->assertJsonPath('data.0.id', $module->id);
+        }
+        foreach ([
+            ['personnel_id' => $firstTeacher->id],
+            ['program_id' => 999999],
+            ['program_level_id' => 999999],
+            ['program_id' => 999999, 'personnel_id' => $secondTeacher->id],
+        ] as $filters) {
+            $this->getJson(route('datatables.academic-modules', [...$filters, 'draw' => 1, 'start' => 0, 'length' => 10]))
+                ->assertOk()->assertJsonPath('recordsFiltered', 0);
+        }
+
         $this->assertSame(2, AcademicModuleTeacherAssignment::withoutGlobalScope('company')->count());
         $this->assertDatabaseHas('academic_module_teacher_assignments', ['academic_module_id' => $module->id, 'personnel_id' => $firstTeacher->id]);
         $this->assertDatabaseHas('academic_module_teacher_assignments', ['academic_module_id' => $module->id, 'personnel_id' => $secondTeacher->id, 'unassigned_at' => null]);
