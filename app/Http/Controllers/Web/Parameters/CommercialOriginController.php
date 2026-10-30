@@ -15,9 +15,7 @@ class CommercialOriginController extends Controller
 {
     public function index(): View
     {
-        return view('parameters.commercial-origins.index', [
-            'commercialOrigins' => CommercialOrigin::query()->orderBy('name')->paginate(15),
-        ]);
+        return view('parameters.commercial-origins.index');
     }
 
     public function create(Request $request): View

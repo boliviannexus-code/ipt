@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,11 +19,11 @@ class Personnel extends Model
 
     protected $table = 'personnel';
 
-    protected $fillable = ['company_id', 'position_id', 'campus_id', 'first_name', 'paternal_surname', 'maternal_surname', 'identity_document', 'birth_date', 'phone', 'email', 'is_active'];
+    protected $fillable = ['company_id', 'position_id', 'campus_id', 'first_name', 'paternal_surname', 'maternal_surname', 'identity_document', 'birth_date', 'phone', 'email', 'is_active', 'is_sales_enabled'];
 
     protected function casts(): array
     {
-        return ['birth_date' => 'date', 'is_active' => 'boolean'];
+        return ['birth_date' => 'date', 'is_active' => 'boolean', 'is_sales_enabled' => 'boolean'];
     }
 
     protected function fullName(): Attribute
@@ -48,6 +49,22 @@ class Personnel extends Model
     private function normalizeName(string $value): string
     {
         return Str::of($value)->squish()->lower()->title()->toString();
+    }
+
+    public function scopeAvailableForTeaching(Builder $query, int $companyId): Builder
+    {
+        return $query->where('company_id', $companyId)->where('is_active', true)
+            ->whereHas('position', fn ($position) => $position->where('company_id', $companyId)->where('is_active', true)
+                ->where(fn ($eligibility) => $eligibility->where('is_academic', true)
+                    ->orWhereHas('area', fn ($area) => $area->where('company_id', $companyId)->where('is_active', true)
+                        ->whereRaw("LOWER(TRANSLATE(TRIM(name), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')) IN (?, ?, ?, ?)",
+                            ['academico', 'academica', 'area academica', 'area academico']))));
+    }
+
+    public function scopeAssignmentFilters(Builder $query, array $filters): Builder
+    {
+        return $query->when($filters['area_id'] ?? null, fn ($query, $areaId) => $query->whereHas('position', fn ($position) => $position->where('area_id', $areaId)))
+            ->when($filters['position_id'] ?? null, fn ($query, $positionId) => $query->where('position_id', $positionId));
     }
 
     public function company(): BelongsTo

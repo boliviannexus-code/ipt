@@ -11,7 +11,7 @@ class AccountCharge extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'enrollment_contract_id', 'plan_id', 'concept', 'period', 'due_date', 'amount', 'paid_amount', 'status'];
+    protected $fillable = ['company_id', 'enrollment_contract_id', 'plan_id', 'concept', 'period', 'due_date', 'amount', 'paid_amount', 'status', 'charge_type', 'additional_service_id', 'detail', 'created_by', 'submission_token', 'placement_exam_id'];
 
     protected function casts(): array
     {

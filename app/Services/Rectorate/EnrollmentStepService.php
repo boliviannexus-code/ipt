@@ -3,10 +3,12 @@
 namespace App\Services\Rectorate;
 
 use App\Models\RectorateApplication;
+use App\Models\Program;
 use App\Models\Student;
 use App\Services\Enrollment\ContractService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class EnrollmentStepService
 {
@@ -14,15 +16,54 @@ class EnrollmentStepService
 
     public function assignPlan(RectorateApplication $application, int $programId, int $planId, int $commercialOriginId, int $salesExecutiveId): RectorateApplication
     {
-        $application->update([
-            'program_id' => $programId,
-            'plan_id' => $planId,
-            'commercial_origin_id' => $commercialOriginId,
-            'sales_executive_id' => $salesExecutiveId,
-            'current_step' => 3,
-        ]);
+        return DB::transaction(function () use ($application, $programId, $planId, $commercialOriginId, $salesExecutiveId): RectorateApplication {
+            $application = RectorateApplication::query()->lockForUpdate()->findOrFail($application->id);
+            $program = Program::withoutGlobalScope('company')->where('company_id', $application->company_id)->findOrFail($programId);
+            $code = strtoupper((string) $program->enrollment_code);
 
-        return $application->refresh();
+            if (! preg_match('/^[A-Z]{3}$/', $code)) {
+                throw ValidationException::withMessages(['program_id' => 'Configura el código de matrícula de tres letras para este programa.']);
+            }
+
+            if ($application->program_id !== $programId || blank($application->account_number) || ! str_starts_with($application->account_number, $code)) {
+                $application->account_number = $this->nextEnrollmentNumber($program->id, (int) $application->campus_id, $code, $application->campus->code);
+            }
+
+            $application->fill([
+                'program_id' => $programId,
+                'plan_id' => $planId,
+                'commercial_origin_id' => $commercialOriginId,
+                'sales_executive_id' => $salesExecutiveId,
+                'current_step' => 3,
+            ])->save();
+
+            return $application->refresh();
+        });
+    }
+
+    private function nextEnrollmentNumber(int $programId, int $campusId, string $programCode, string $campusCode): string
+    {
+        DB::table('program_campus_enrollment_sequences')->insertOrIgnore([
+            'program_id' => $programId,
+            'campus_id' => $campusId,
+            'last_number' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $sequence = DB::table('program_campus_enrollment_sequences')
+            ->where(['program_id' => $programId, 'campus_id' => $campusId])
+            ->lockForUpdate()->first();
+        $number = ((int) $sequence->last_number) + 1;
+
+        if ($number > 9999) {
+            throw ValidationException::withMessages(['program_id' => 'Este programa alcanzó el límite de 9.999 matrículas en la sede.']);
+        }
+
+        DB::table('program_campus_enrollment_sequences')
+            ->where(['program_id' => $programId, 'campus_id' => $campusId])
+            ->update(['last_number' => $number, 'updated_at' => now()]);
+
+        return $programCode.$campusCode.str_pad((string) $number, 4, '0', STR_PAD_LEFT);
     }
 
     public function saveStudent(RectorateApplication $application, array $data): RectorateApplication

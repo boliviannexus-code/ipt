@@ -16,6 +16,19 @@ class SiatIdentityDocumentTypes
     public const NIT_CODE = '5';
 
     /**
+     * Tipos admitidos en la matriculación, independientes del catálogo SIAT.
+     *
+     * @return Collection<int, array{code: string, description: string}>
+     */
+    public static function enrollmentOptions(): Collection
+    {
+        return collect([
+            ['code' => self::IDENTITY_CARD_CODE, 'description' => 'CI'],
+            ['code' => self::NIT_CODE, 'description' => 'NIT'],
+        ]);
+    }
+
+    /**
      * @return Collection<int, array{code: string, description: string, is_active: bool}>
      */
     public static function options(?Customer $customer = null): Collection

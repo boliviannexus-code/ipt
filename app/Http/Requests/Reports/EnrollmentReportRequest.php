@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Reports;
 
+use App\Enums\AccountPaymentMethod;
 use App\Support\CompanyContext;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -26,6 +27,7 @@ class EnrollmentReportRequest extends FormRequest
             'sales_executive_id' => ['nullable', 'integer', Rule::exists('personnel', 'id')->where('company_id', $companyId)],
             'commercial_origin_id' => ['nullable', 'integer', Rule::exists('commercial_origins', 'id')->where('company_id', $companyId)],
             'status' => ['nullable', Rule::in(['draft', 'completed'])],
+            'payment_method_code' => ['nullable', 'integer', Rule::in(AccountPaymentMethod::values())],
         ];
     }
 

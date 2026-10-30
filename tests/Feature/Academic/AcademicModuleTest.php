@@ -40,7 +40,10 @@ class AcademicModuleTest extends TestCase
         $module = AcademicModule::withoutGlobalScope('company')->sole();
         $this->assertSame('Módulo Básico 1', $module->name);
         $this->actingAs($user)->get(route('academic.modules.index'))
-            ->assertOk()->assertSee('Módulo Básico 1')->assertSee('Virtual')->assertSee('01/09/2026')->assertSee('31/10/2026');
+            ->assertOk()->assertSee('data-datatable', false)->assertSee(route('datatables.academic-modules'), false);
+        $this->actingAs($user)->getJson(route('datatables.academic-modules', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertJsonFragment(['name' => 'Módulo Básico 1']);
 
         $this->actingAs($user)->putJson(route('academic.modules.update', $module), [
             'program_id' => $program->id,
@@ -104,6 +107,27 @@ class AcademicModuleTest extends TestCase
         $this->actingAs($user)->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $secondTeacher->id])
             ->assertOk()->assertJsonPath('success', true);
 
+        $this->actingAs($user)->get(route('academic.modules.index'))
+            ->assertOk()->assertSee('academic-module-filters')->assertSee('Luis Rojas');
+        foreach ([
+            ['program_id' => $program->id],
+            ['program_level_id' => $level->id],
+            ['personnel_id' => $secondTeacher->id],
+            ['program_id' => $program->id, 'program_level_id' => $level->id, 'personnel_id' => $secondTeacher->id],
+        ] as $filters) {
+            $this->getJson(route('datatables.academic-modules', [...$filters, 'draw' => 1, 'start' => 0, 'length' => 10]))
+                ->assertOk()->assertJsonPath('recordsFiltered', 1)->assertJsonPath('data.0.id', $module->id);
+        }
+        foreach ([
+            ['personnel_id' => $firstTeacher->id],
+            ['program_id' => 999999],
+            ['program_level_id' => 999999],
+            ['program_id' => 999999, 'personnel_id' => $secondTeacher->id],
+        ] as $filters) {
+            $this->getJson(route('datatables.academic-modules', [...$filters, 'draw' => 1, 'start' => 0, 'length' => 10]))
+                ->assertOk()->assertJsonPath('recordsFiltered', 0);
+        }
+
         $this->assertSame(2, AcademicModuleTeacherAssignment::withoutGlobalScope('company')->count());
         $this->assertDatabaseHas('academic_module_teacher_assignments', ['academic_module_id' => $module->id, 'personnel_id' => $firstTeacher->id]);
         $this->assertDatabaseHas('academic_module_teacher_assignments', ['academic_module_id' => $module->id, 'personnel_id' => $secondTeacher->id, 'unassigned_at' => null]);
@@ -125,6 +149,27 @@ class AcademicModuleTest extends TestCase
         $this->actingAs($user)->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $person->id])
             ->assertUnprocessable()->assertJsonValidationErrors('personnel_id');
         $this->assertDatabaseCount('academic_module_teacher_assignments', 0);
+    }
+
+    public function test_all_active_academic_area_personnel_are_assignable_even_when_the_position_flag_is_false(): void
+    {
+        [$user, $program, $level] = $this->context();
+        $module = AcademicModule::create([
+            'company_id' => $program->company_id, 'program_id' => $program->id, 'program_level_id' => $level->id,
+            'name' => 'Módulo Beginner', 'modality' => 'virtual', 'starts_at' => '18:00', 'ends_at' => '20:00',
+            'start_date' => today(), 'end_date' => today()->addMonth(),
+        ]);
+        $area = Area::create(['company_id' => $program->company_id, 'name' => 'Académica', 'is_active' => true]);
+        $position = Position::create(['company_id' => $program->company_id, 'area_id' => $area->id, 'name' => 'Docente Beginner', 'is_academic' => false, 'is_active' => true]);
+        $teacher = Personnel::create(['company_id' => $program->company_id, 'position_id' => $position->id,
+            'first_name' => 'Docente', 'paternal_surname' => 'Beginner', 'identity_document' => 'BEGINNER',
+            'phone' => '70000001', 'email' => 'beginner@example.com', 'is_active' => true]);
+        $this->actingAs($user)->get(route('academic.modules.teacher.edit', $module), ['X-Requested-With' => 'XMLHttpRequest'])
+            ->assertOk()->assertSee('Docente Beginner')->assertSee('data-tom-select');
+        $this->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $teacher->id])->assertOk()->assertJsonPath('success', true);
+        $this->assertDatabaseHas('academic_module_teacher_assignments', ['academic_module_id' => $module->id, 'personnel_id' => $teacher->id, 'unassigned_at' => null]);
+        $teacher->update(['is_active' => false]);
+        $this->putJson(route('academic.modules.teacher.update', $module), ['personnel_id' => $teacher->id])->assertUnprocessable();
     }
 
     private function context(): array

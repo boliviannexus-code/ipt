@@ -10,10 +10,11 @@ use App\Models\EnrollmentContract;
 use App\Models\Plan;
 use App\Models\Program;
 use App\Models\RectorateApplication;
-use App\Models\SinCatalogItem;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\Enrollment\AccountPaymentService;
+use App\Services\Enrollment\ContractService;
+use App\Services\Rectorate\EnrollmentContractDisablingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
@@ -23,7 +24,44 @@ class AccountPaymentServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_partial_payment_keeps_pre_enrollment_and_full_initial_payment_enrolls_student(): void
+    public function test_contract_can_change_to_a_free_plan_and_generate_paid_zero_amount_charges(): void
+    {
+        [$user, $contract] = $this->contract();
+        $this->actingAs($user);
+        $freePlan = Plan::create(['company_id' => $user->company_id, 'name' => 'Gratuito', 'monthly_cost' => 0]);
+        $contract->program->plans()->attach($freePlan);
+        $service = app(ContractService::class);
+        $period = today()->addMonth()->startOfMonth();
+        $service->changePlan($contract, $freePlan, $period);
+        $charge = $service->generateMonthlyCharge($contract->fresh(), $period);
+        $this->assertSame('0.00', $contract->fresh()->monthly_amount);
+        $this->assertSame('0.00', $charge->amount);
+        $this->assertSame('0.00', $charge->paid_amount);
+        $this->assertSame('paid', $charge->status);
+        $this->assertDatabaseHas('contract_plan_histories', ['enrollment_contract_id' => $contract->id,
+            'plan_id' => $freePlan->id, 'monthly_amount' => 0]);
+        $this->assertSame($charge->id, $service->generateMonthlyCharge($contract->fresh(), $period)->id);
+        $this->assertSame(0, $contract->payments()->count());
+        $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'amount' => 250, 'status' => 'pending']);
+    }
+
+    public function test_negative_plan_cost_is_rejected_without_changing_the_contract(): void
+    {
+        [$user, $contract] = $this->contract();
+        $this->actingAs($user);
+        $negativePlan = Plan::create(['company_id' => $user->company_id, 'name' => 'Inválido', 'monthly_cost' => -1]);
+        $contract->program->plans()->attach($negativePlan);
+        try {
+            app(ContractService::class)->changePlan($contract, $negativePlan, today());
+            $this->fail('A negative plan must be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('plan_id', $exception->errors());
+        }
+        $this->assertSame('250.00', $contract->fresh()->monthly_amount);
+        $this->assertDatabaseMissing('contract_plan_histories', ['plan_id' => $negativePlan->id]);
+    }
+
+    public function test_first_partial_payment_activates_enrollment_and_later_payments_preserve_activation_student(): void
     {
         [$user, $contract] = $this->contract();
         CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
@@ -39,7 +77,7 @@ class AccountPaymentServiceTest extends TestCase
         $this->actingAs($user)
             ->get(route('rectorate.contracts.account.show', $contract))
             ->assertOk()
-            ->assertSee('Cobro de mensualidad')
+            ->assertSee('Estado de cuenta y cobros')
             ->assertSee('Estudiante')
             ->assertSee('Titular')
             ->assertSee('María Pérez')
@@ -48,19 +86,24 @@ class AccountPaymentServiceTest extends TestCase
             ->assertSee('Plan')
             ->assertSee('Monto a pagar')
             ->assertSee('Método de pago')
-            ->assertSee('1 · EFECTIVO')
+            ->assertSee('Efectivo')
+            ->assertSee('QR')
+            ->assertSee('Transferencia')
             ->assertSee('Historial de pagos');
 
         $service = app(AccountPaymentService::class);
 
         $firstPayment = $service->record($user, $contract, '100.00', ['payment_method_code' => 1]);
         $this->assertSame('100.00', $firstPayment->amount);
-        $this->assertSame('pre_enrolled', $contract->refresh()->status);
+        $this->assertSame('enrolled', $contract->refresh()->status);
+        $activatedAt = $contract->enrolled_at;
+        $this->assertTrue($activatedAt->equalTo($firstPayment->paid_at));
         $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'paid_amount' => 100, 'status' => 'partial']);
 
         $service->record($user, $contract, '150.00', ['payment_method_code' => 1]);
         $this->assertSame('enrolled', $contract->refresh()->status);
         $this->assertNotNull($contract->enrolled_at);
+        $this->assertTrue($activatedAt->equalTo($contract->enrolled_at));
         $this->assertDatabaseHas('account_charges', ['enrollment_contract_id' => $contract->id, 'paid_amount' => 250, 'status' => 'paid']);
         $this->assertDatabaseCount('account_payments', 2);
         $this->assertDatabaseCount('payment_allocations', 2);
@@ -72,16 +115,53 @@ class AccountPaymentServiceTest extends TestCase
             ->assertOk()
             ->assertSee('Total cobrado')
             ->assertSee('Movimientos de la caja activa')
-            ->assertSee('PAGO-000001')
+            ->assertSee('PAGO-'.str_pad((string) $firstPayment->id, 6, '0', STR_PAD_LEFT))
             ->assertSee('Ana Pérez')
             ->assertSee('Bs 250.00');
 
         $this->actingAs($user)
             ->get(route('rectorate.contracts.account.show', $contract))
             ->assertOk()
-            ->assertSee('Cobro de mensualidad')
-            ->assertSee('Inscrito')
+            ->assertSee('Estado de cuenta y cobros')
+            ->assertSee('ACTIVO')
             ->assertSee('Historial de pagos');
+    }
+
+    public function test_qr_and_transfer_require_a_reference_without_the_siat_catalog(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+
+        foreach ([2, 3] as $methodCode) {
+            try {
+                $service->record($user, $contract, '25.00', ['payment_method_code' => $methodCode]);
+                $this->fail('Se esperaba una validación por referencia obligatoria.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('reference', $exception->errors());
+            }
+        }
+
+        $payment = $service->record($user, $contract, '25.00', [
+            'payment_method_code' => 2,
+            'reference' => 'QR-123456',
+        ]);
+
+        $this->assertSame(2, $payment->payment_method_code);
+        $this->assertSame('QR-123456', $payment->reference);
+    }
+
+    public function test_cash_discards_an_unneeded_reference(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+
+        $payment = app(AccountPaymentService::class)->record($user, $contract, '25.00', [
+            'payment_method_code' => 1,
+            'reference' => 'NO-DEBE-GUARDARSE',
+        ]);
+
+        $this->assertNull($payment->reference);
     }
 
     public function test_payment_requires_an_open_cash_register(): void
@@ -98,15 +178,142 @@ class AccountPaymentServiceTest extends TestCase
         $this->assertDatabaseCount('account_payments', 0);
     }
 
+    public function test_contract_with_a_recorded_payment_cannot_be_deleted(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        app(AccountPaymentService::class)->record($user, $contract, '25.00', ['payment_method_code' => 1]);
+
+        try {
+            app(EnrollmentContractDisablingService::class)->disable($contract);
+            $this->fail('Se esperaba una validación por cobros registrados.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('contract', $exception->errors());
+        }
+
+        $this->assertDatabaseHas('enrollment_contracts', ['id' => $contract->id]);
+        $this->assertDatabaseCount('account_payments', 1);
+    }
+
+    public function test_next_payment_automatically_uses_credit_and_only_records_new_money(): void
+    {
+        [$user, $contract] = $this->contract();
+        $register = CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $first = $service->record($user, $contract, '350.00', ['payment_method_code' => 1]);
+        $this->assertSame('100.00', $first->credit_amount);
+        $future = $this->futureCharge($contract);
+        foreach (['accounts.collect', 'cash-registers.view'] as $permission) {
+            Permission::findOrCreate($permission);
+            $user->givePermissionTo($permission);
+        }
+        $this->actingAs($user)->get(route('rectorate.contracts.account.show', $contract))
+            ->assertOk()->assertSee('value="150.00"', false)->assertDontSee('Destino del cobro')->assertDontSee('Aplicar saldo a favor');
+        $this->actingAs($user)->post(route('rectorate.contracts.payments.store', $contract), ['amount' => '150.00', 'payment_method_code' => 1])->assertSessionHasNoErrors();
+        $this->assertSame('250.00', $future->refresh()->paid_amount);
+        $this->assertSame('paid', $future->status);
+        $this->assertDatabaseCount('account_payments', 2);
+        $this->assertEquals(500, $register->accountPayments()->sum('amount'));
+        $this->assertEquals(100, $register->creditApplications()->sum('amount'));
+        $this->actingAs($user)->get(route('cash-registers.index'))->assertOk()->assertSee('Resumen de cobros realizados');
+    }
+
+    public function test_credit_can_cover_the_entire_next_payment_without_a_new_cash_receipt(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $payment = $service->record($user, $contract, '550.00', ['payment_method_code' => 1]);
+        $future = $this->futureCharge($contract);
+        Permission::findOrCreate('accounts.collect');
+        $user->givePermissionTo('accounts.collect');
+        $this->actingAs($user)->post(route('rectorate.contracts.payments.store', $contract), ['amount' => '0.00'])->assertSessionHasNoErrors();
+        $this->assertSame('paid', $future->refresh()->status);
+        $this->assertEquals(500, $payment->allocations()->sum('amount'));
+        $this->assertDatabaseCount('account_payments', 1);
+        $this->assertDatabaseHas('account_credit_applications', ['amount' => 250]);
+    }
+
+    public function test_partial_payment_and_new_excess_keep_the_correct_available_balance(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $service->record($user, $contract, '350.00', ['payment_method_code' => 1]);
+        $future = $this->futureCharge($contract);
+        $service->record($user, $contract, '50.00', ['payment_method_code' => 1]);
+        $this->assertSame('150.00', $future->refresh()->paid_amount);
+        $last = $service->record($user, $contract, '125.01', ['payment_method_code' => 1]);
+        $this->assertSame('25.01', $last->credit_amount);
+        $this->assertSame('paid', $future->refresh()->status);
+        $this->assertDatabaseCount('account_credit_applications', 1);
+    }
+
+    public function test_destination_cannot_bypass_paying_pending_charges(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $payment = app(AccountPaymentService::class)->record($user, $contract, '100.00', ['payment_method_code' => 1, 'destination' => 'credit']);
+        $this->assertSame('100.00', $contract->charges()->first()->paid_amount);
+        $this->assertSame('0.00', $payment->credit_amount);
+    }
+
+    public function test_invalid_payment_does_not_consume_the_existing_credit(): void
+    {
+        [$user, $contract] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $service = app(AccountPaymentService::class);
+        $service->record($user, $contract, '350.00', ['payment_method_code' => 1]);
+        $future = $this->futureCharge($contract);
+        foreach ([['0.00', 1], ['150.00', 2]] as [$amount, $method]) {
+            try {
+                $service->record($user, $contract, $amount, ['payment_method_code' => $method]);
+                $this->fail('Invalid payment must be rejected.');
+            } catch (ValidationException $exception) {
+                $this->assertNotEmpty($exception->errors());
+            }
+        }
+        $this->assertSame('0.00', $future->refresh()->paid_amount);
+        $this->assertDatabaseCount('account_credit_applications', 0);
+        $this->assertDatabaseCount('account_payments', 1);
+    }
+
+    public function test_existing_partial_payments_are_backfilled_without_activating_unpaid_or_cancelled_contracts(): void
+    {
+        [$user, $paid] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $user->company_id, 'user_id' => $user->id]);
+        $payment = app(AccountPaymentService::class)->record($user, $paid, '1.00', ['payment_method_code' => 1]);
+        $paid->refresh()->update(['status' => 'pre_enrolled', 'enrolled_at' => null]);
+        [, $unpaid] = $this->contract();
+        [$otherUser, $cancelled] = $this->contract();
+        CashRegister::factory()->create(['company_id' => $otherUser->company_id, 'user_id' => $otherUser->id]);
+        app(AccountPaymentService::class)->record($otherUser, $cancelled, '1.00', ['payment_method_code' => 1]);
+        $cancelled->update(['status' => 'cancelled']);
+
+        $migration = require database_path('migrations/2026_10_21_010000_activate_enrollments_with_existing_payments.php');
+        $migration->up();
+        $migration->up();
+
+        $this->assertSame('enrolled', $paid->refresh()->status);
+        $this->assertTrue($paid->enrolled_at->equalTo($payment->paid_at));
+        $this->assertSame('pre_enrolled', $unpaid->refresh()->status);
+        $this->assertNull($unpaid->enrolled_at);
+        $this->assertSame('cancelled', $cancelled->refresh()->status);
+    }
+
+    private function futureCharge(EnrollmentContract $contract): AccountCharge
+    {
+        return AccountCharge::create([
+            'company_id' => $contract->company_id, 'enrollment_contract_id' => $contract->id, 'plan_id' => $contract->plan_id,
+            'period' => today()->addMonth()->startOfMonth(), 'due_date' => today()->addMonth(),
+            'amount' => 250, 'paid_amount' => 0, 'status' => 'pending',
+        ]);
+    }
+
     private function contract(): array
     {
         $company = Company::factory()->create();
         $user = User::factory()->create(['company_id' => $company->id]);
-        SinCatalogItem::withoutGlobalScope('company')->create([
-            'company_id' => $company->id, 'catalog_key' => 'tipos_metodo_pago', 'item_key' => '1',
-            'classifier_code' => '1', 'description' => 'EFECTIVO', 'is_active' => true,
-            'raw_data' => [], 'synced_at' => now(),
-        ]);
         $customer = Customer::factory()->create(['company_id' => $company->id]);
         $plan = Plan::withoutGlobalScope('company')->create(['company_id' => $company->id, 'name' => 'Mensual', 'monthly_cost' => 250]);
         $program = Program::withoutGlobalScope('company')->create(['company_id' => $company->id, 'title' => 'Inglés', 'duration_months' => 12]);

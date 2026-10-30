@@ -5,6 +5,15 @@ namespace App\Http\Controllers\Web;
 use App\Enums\InvoiceEmissionMode;
 use App\Enums\InvoiceFiscalStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PersonnelFilterRequest;
+use App\Models\AcademicModule;
+use App\Models\Area;
+use App\Models\Campus;
+use App\Models\CommercialOrigin;
+use App\Models\Company;
+use App\Models\Personnel;
+use App\Models\Program;
+use App\Models\RectorateApplication;
 use App\Models\SinCatalogItem;
 use App\Models\SinInvoiceIssue;
 use App\Models\User;
@@ -12,9 +21,12 @@ use App\Services\Billing\InvoiceDocumentSector;
 use App\Services\Billing\PurchaseSaleInvoicePdfService;
 use App\Services\Siat\SiatCatalogRegistry;
 use App\Support\CompanyContext;
+use App\Support\PermissionCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Yajra\DataTables\Facades\DataTables;
 
 class AdminDataTableController extends Controller
@@ -22,6 +34,218 @@ class AdminDataTableController extends Controller
     public function __construct(
         private readonly PurchaseSaleInvoicePdfService $invoicePdf,
     ) {}
+
+    public function personnel(PersonnelFilterRequest $request): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('personnel.view'), 403);
+
+        return DataTables::eloquent(Personnel::query()->assignmentFilters($request->validated())->select('personnel.*')->with(['position.area', 'campus', 'user']))
+            ->addColumn('full_name', fn (Personnel $person): string => $person->full_name)
+            ->addColumn('position_label', fn (Personnel $person): string => '<span class="d-block">'.e($person->position?->area?->name ?? '-').'</span><small class="text-body-secondary">'.e($person->position?->name ?? '-').'</small>')
+            ->addColumn('campus_label', fn (Personnel $person): string => $person->campus
+                ? e($person->campus->short ?: '—')
+                : '<span class="text-body-secondary">Sin asignar</span>')
+            ->addColumn('contact', fn (Personnel $person): string => e($person->phone ?: '—'))
+            ->addColumn('user_label', fn (Personnel $person): string => $person->user
+                ? '<span class="badge text-bg-success table-email" title="'.e($person->user->email).'">'.e($person->user->email).'</span>'
+                : '<span class="badge text-bg-secondary">Sin usuario</span>')
+            ->addColumn('sales', fn (Personnel $person): string => view('personnel.partials.datatable-sales', compact('person'))->render())
+            ->addColumn('actions', fn (Personnel $person): string => view('personnel.partials.datatable-actions', compact('person'))->render())
+            ->filterColumn('full_name', fn ($query, string $keyword) => $query->whereRaw("concat_ws(' ', personnel.first_name, personnel.paternal_surname, personnel.maternal_surname) ilike ?", ["%{$keyword}%"]))
+            ->orderColumn('full_name', fn ($query, string $direction) => $query->orderBy('personnel.first_name', $direction)->orderBy('personnel.paternal_surname', $direction)->orderBy('personnel.maternal_surname', $direction))
+            ->filterColumn('position_label', fn ($query, string $keyword) => $query->whereHas('position', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhereHas('area', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%"))))
+            ->filterColumn('campus_label', fn ($query, string $keyword) => $query->whereHas('campus', fn ($query) => $query->where(fn ($query) => $query->where('short', 'ilike', "%{$keyword}%"))))
+            ->filterColumn('contact', fn ($query, string $keyword) => $query->where('personnel.phone', 'ilike', "%{$keyword}%"))
+            ->filterColumn('user_label', fn ($query, string $keyword) => $query->whereHas('user', fn ($query) => $query->where('email', 'ilike', "%{$keyword}%")))
+            ->rawColumns(['position_label', 'campus_label', 'contact', 'user_label', 'sales', 'actions'])
+            ->toJson();
+    }
+
+    public function areas(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('areas.view'), 403);
+
+        return DataTables::eloquent(Area::query()->select('areas.*')->withCount('positions'))
+            ->editColumn('is_active', fn (Area $area): string => $this->activeBadge($area->is_active, 'Activa', 'Inactiva'))
+            ->addColumn('actions', fn (Area $area): string => auth()->user()?->can('areas.manage') ? $this->crudActions(
+                editUrl: route('areas.edit', $area),
+                deleteUrl: route('areas.destroy', $area),
+                label: $area->name,
+                modalTitle: 'Editar área',
+            ) : '')
+            ->rawColumns(['is_active', 'actions'])
+            ->toJson();
+    }
+
+    public function campuses(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('campuses.view'), 403);
+
+        return DataTables::eloquent(Campus::query()->select('campuses.*'))
+            ->editColumn('code', fn (Campus $campus): string => '<span class="badge text-bg-secondary">'.e($campus->code).'</span>')
+            ->addColumn('actions', fn (Campus $campus): string => auth()->user()?->can('campuses.manage')
+                ? $this->crudActions(route('campuses.edit', $campus), route('campuses.destroy', $campus), $campus->name, 'Editar sede')
+                : '')
+            ->rawColumns(['code', 'actions'])
+            ->toJson();
+    }
+
+    public function companies(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('companies.view'), 403);
+
+        return DataTables::eloquent(Company::query()->select('companies.*')->withCount('users'))
+            ->addColumn('logo', fn (Company $company): string => $company->logo_url
+                ? '<img class="avatar" src="'.e($company->logo_url).'" alt="'.e($company->name).'">'
+                : '<span class="avatar bg-primary-lt text-primary"><i class="ti ti-building"></i></span>')
+            ->addColumn('display_name', fn (Company $company): string => '<div class="fw-semibold">'.e($company->name).'</div><div class="text-body-secondary small">'.e($company->legal_name ?: '-').'</div>')
+            ->addColumn('contact', fn (Company $company): string => '<div>'.e($company->phone ?: '-').'</div><div class="text-body-secondary small">'.e($company->email ?: '-').'</div>')
+            ->editColumn('is_active', fn (Company $company): string => $this->activeBadge($company->is_active))
+            ->addColumn('actions', fn (Company $company): string => $this->companyActions($company))
+            ->rawColumns(['logo', 'display_name', 'contact', 'is_active', 'actions'])
+            ->toJson();
+    }
+
+    public function commercialOrigins(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('commercial-origins.view'), 403);
+
+        return DataTables::eloquent(CommercialOrigin::query()->select('commercial_origins.*'))
+            ->editColumn('created_at', fn (CommercialOrigin $origin): string => $origin->created_at?->format('d/m/Y') ?? '-')
+            ->addColumn('actions', fn (CommercialOrigin $origin): string => $this->crudActions(
+                auth()->user()?->can('commercial-origins.edit') ? route('parameters.commercial-origins.edit', $origin) : null,
+                auth()->user()?->can('commercial-origins.delete') ? route('parameters.commercial-origins.destroy', $origin) : null,
+                $origin->name,
+                'Editar origen comercial',
+            ))
+            ->rawColumns(['actions'])
+            ->toJson();
+    }
+
+    public function programs(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('programs.view'), 403);
+
+        return DataTables::eloquent(Program::query()->select('programs.*')->withCount(['plans', 'levels']))
+            ->editColumn('enrollment_code', fn (Program $program): string => '<span class="badge text-bg-secondary">'.e($program->enrollment_code ?: 'Pendiente').'</span>')
+            ->editColumn('duration_months', fn (Program $program): string => $program->duration_months.' meses')
+            ->addColumn('actions', fn (Program $program): string => auth()->user()?->can('programs.edit')
+                ? '<div class="d-inline-flex gap-1"><a class="btn btn-outline-secondary btn-sm" href="'.e(route('parameters.programs.levels.index', $program)).'"><i class="ti ti-list-numbers me-1"></i>Configurar niveles</a><a class="btn btn-outline-primary btn-sm" href="'.e(route('parameters.programs.edit', $program)).'">Editar</a></div>'
+                : '')
+            ->rawColumns(['enrollment_code', 'actions'])
+            ->toJson();
+    }
+
+    public function permissions(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('permissions.view'), 403);
+
+        return DataTables::eloquent(Permission::query()->select('permissions.*'))
+            ->editColumn('name', fn (Permission $permission): string => permission_label($permission->name))
+            ->filterColumn('name', function ($query, string $keyword): void {
+                $matchingNames = array_values(array_filter(PermissionCatalog::NAMES, fn (string $name): bool => mb_stripos(permission_label($name).' '.PermissionCatalog::menuLabel($name), $keyword) !== false
+                ));
+                $query->where(fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")->orWhereIn('name', $matchingNames));
+            })
+            ->editColumn('created_at', fn (Permission $permission): string => $permission->created_at?->format('Y-m-d') ?? '-')
+            ->addColumn('actions', fn (Permission $permission): string => $this->permissionActions($permission))
+            ->rawColumns(['actions'])
+            ->toJson();
+    }
+
+    public function roles(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('roles.view'), 403);
+
+        return DataTables::eloquent(Role::query()->select('roles.*')->withCount(['users', 'permissions']))
+            ->editColumn('name', fn (Role $role): string => role_label($role->name))
+            ->editColumn('created_at', fn (Role $role): string => $role->created_at?->format('Y-m-d') ?? '-')
+            ->addColumn('actions', fn (Role $role): string => $this->roleActions($role))
+            ->rawColumns(['actions'])
+            ->toJson();
+    }
+
+    public function users(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('users.view'), 403);
+
+        $query = User::query()->withTrashed()->with(['company', 'personnel', 'roles'])->select('users.*');
+
+        return DataTables::eloquent($query)
+            ->editColumn('email', fn (User $user): string => '<span class="table-email" title="'.e($user->email).'">'.e($user->email).'</span>')
+            ->addColumn('display_name', fn (User $user): string => e($user->personnel?->full_name ?? $user->name))
+            ->addColumn('company_name', fn (User $user): string => e($user->company?->name ?? 'Sin empresa'))
+            ->addColumn('roles_list', fn (User $user): string => $user->roles->isEmpty()
+                ? '<span class="text-body-secondary">Sin roles</span>'
+                : $user->roles->map(fn (Role $role): string => '<span class="badge text-bg-primary">'.e(role_label($role->name)).'</span>')->implode(' '))
+            ->addColumn('status', fn (User $user): string => $this->activeBadge($user->is_active).($user->trashed() ? ' <span class="badge text-bg-danger">Eliminado</span>' : ''))
+            ->editColumn('created_at', fn (User $user): string => $user->created_at?->format('Y-m-d') ?? '-')
+            ->addColumn('actions', fn (User $user): string => $this->userActions($user))
+            ->filterColumn('display_name', function ($query, string $keyword): void {
+                $query->where(function ($query) use ($keyword): void {
+                    $query->where('users.name', 'ilike', "%{$keyword}%")
+                        ->orWhereHas('personnel', fn ($query) => $query->whereRaw("concat_ws(' ', first_name, paternal_surname, maternal_surname) ilike ?", ["%{$keyword}%"]));
+                });
+            })
+            ->filterColumn('company_name', fn ($query, string $keyword) => $query->whereHas('company', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")))
+            ->rawColumns(['email', 'roles_list', 'status', 'actions'])
+            ->toJson();
+    }
+
+    public function academicModules(Request $request): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('academic-modules.view'), 403);
+
+        $filters = $request->validate([
+            'program_id' => ['nullable', 'integer', 'min:1'],
+            'program_level_id' => ['nullable', 'integer', 'min:1'],
+            'personnel_id' => ['nullable', 'integer', 'min:1'],
+        ]);
+        $query = AcademicModule::query()
+            ->with(['program', 'level', 'currentTeacherAssignment.personnel'])
+            ->when($filters['program_id'] ?? null, fn ($query, $id) => $query->where('program_id', $id))
+            ->when($filters['program_level_id'] ?? null, fn ($query, $id) => $query->where('program_level_id', $id))
+            ->when($filters['personnel_id'] ?? null, fn ($query, $id) => $query->whereHas('currentTeacherAssignment', fn ($assignment) => $assignment->where('personnel_id', $id)))
+            ->select('academic_modules.*');
+
+        return DataTables::eloquent($query)
+            ->addColumn('program_name', fn (AcademicModule $module): string => e($module->program?->title ?? '-'))
+            ->addColumn('level_name', fn (AcademicModule $module): string => e($module->level?->name ?? '-'))
+            ->addColumn('teacher_name', fn (AcademicModule $module): string => e($module->currentTeacherAssignment?->personnel?->full_name ?? 'Sin asignar'))
+            ->editColumn('modality', fn (AcademicModule $module): string => '<span class="badge '.($module->modality === 'virtual' ? 'text-bg-azure' : 'text-bg-green').'">'.($module->modality === 'virtual' ? 'Virtual' : 'Presencial').'</span>')
+            ->addColumn('schedule', fn (AcademicModule $module): string => e(substr((string) $module->starts_at, 0, 5).'–'.substr((string) $module->ends_at, 0, 5)))
+            ->addColumn('dates', fn (AcademicModule $module): string => e($module->start_date?->format('d/m/Y').'–'.$module->end_date?->format('d/m/Y')))
+            ->addColumn('actions', fn (AcademicModule $module): string => $this->academicModuleActions($module))
+            ->filterColumn('program_name', fn ($query, string $keyword) => $query->whereHas('program', fn ($query) => $query->where('title', 'ilike', "%{$keyword}%")))
+            ->filterColumn('level_name', fn ($query, string $keyword) => $query->whereHas('level', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%")))
+            ->filterColumn('teacher_name', fn ($query, string $keyword) => $query->whereHas('currentTeacherAssignment.personnel', fn ($query) => $query->whereRaw("concat_ws(' ', first_name, paternal_surname, maternal_surname) ilike ?", ["%{$keyword}%"])))
+            ->rawColumns(['modality', 'actions'])
+            ->toJson();
+    }
+
+    public function enrollments(): JsonResponse
+    {
+        abort_unless(auth()->user()?->can('rectorate.create'), 403);
+
+        $query = RectorateApplication::query()
+            ->with(['campus', 'program', 'plan', 'contract' => fn ($query) => $query->withCount('payments')->withSum('charges', 'paid_amount')])
+            ->select('rectorate_applications.*');
+
+        return DataTables::eloquent($query)
+            ->setRowClass(fn (RectorateApplication $application): string => $application->contract?->status === 'inactive' ? 'student-attendance-inactive' : '')
+            ->addColumn('enrollment', fn (RectorateApplication $application): string => '<span class="fw-semibold d-block">'.e($application->account_number ?: 'Pendiente').'</span><small class="text-body-secondary">'.e($application->campus?->name ?? 'Sin sede').'</small>')
+            ->addColumn('holder', fn (RectorateApplication $application): string => '<span class="fw-semibold d-block">'.e(trim("{$application->first_name} {$application->paternal_surname} {$application->maternal_surname}")).'</span><small class="text-body-secondary">Inscripción #'.$application->id.'</small>')
+            ->addColumn('contact', fn (RectorateApplication $application): string => '<span class="table-email" title="'.e($application->email ?: '—').'">'.e($application->email ?: '—').'</span><small class="text-body-secondary">'.e($application->phone ?: '—').'</small>')
+            ->addColumn('program_plan', fn (RectorateApplication $application): string => '<span class="d-block">'.e($application->program?->title ?? 'Pendiente').'</span>'.($application->plan ? '<small class="text-body-secondary">'.e($application->plan->name).'</small>' : ''))
+            ->addColumn('progress', fn (RectorateApplication $application): string => $this->enrollmentProgress($application))
+            ->editColumn('created_at', fn (RectorateApplication $application): string => $application->created_at?->format('d/m/Y H:i') ?? '-')
+            ->addColumn('actions', fn (RectorateApplication $application): string => $this->enrollmentActions($application))
+            ->filterColumn('enrollment', fn ($query, string $keyword) => $query->where('account_number', 'ilike', "%{$keyword}%"))
+            ->filterColumn('holder', fn ($query, string $keyword) => $query->whereRaw("concat_ws(' ', first_name, paternal_surname, maternal_surname) ilike ?", ["%{$keyword}%"]))
+            ->filterColumn('program_plan', fn ($query, string $keyword) => $query->where(fn ($query) => $query->whereHas('program', fn ($query) => $query->where('title', 'ilike', "%{$keyword}%"))->orWhereHas('plan', fn ($query) => $query->where('name', 'ilike', "%{$keyword}%"))))
+            ->rawColumns(['enrollment', 'holder', 'contact', 'program_plan', 'progress', 'actions'])
+            ->toJson();
+    }
 
     public function audits(Request $request): JsonResponse
     {
@@ -358,5 +582,175 @@ class AdminDataTableController extends Controller
         return '<details><summary class="text-primary">Ver</summary><pre class="mt-2 mb-0 p-2 bg-muted-lt rounded text-secondary small">'
             .e((string) $json)
             .'</pre></details>';
+    }
+
+    private function activeBadge(bool $active, string $activeLabel = 'Activo', string $inactiveLabel = 'Inactivo'): string
+    {
+        return '<span class="badge text-bg-'.($active ? 'success' : 'secondary').'">'
+            .($active ? $activeLabel : $inactiveLabel).'</span>';
+    }
+
+    private function crudActions(?string $editUrl, ?string $deleteUrl, string $label, string $modalTitle): string
+    {
+        $actions = '<div class="d-inline-flex gap-1">';
+
+        if ($editUrl) {
+            $actions .= '<a class="btn btn-outline-primary btn-sm" href="'.e($editUrl).'" data-modal-url="'.e($editUrl).'" data-modal-title="'.e($modalTitle).'">Editar</a>';
+        }
+
+        if ($deleteUrl) {
+            $actions .= '<form method="POST" action="'.e($deleteUrl).'" data-confirm-delete="¿Eliminar '.e($label).'?">'
+                .csrf_field().method_field('DELETE')
+                .'<button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Eliminar '.e($label).'"><i class="ti ti-trash" aria-hidden="true"></i></button></form>';
+        }
+
+        return $actions.'</div>';
+    }
+
+    private function companyActions(Company $company): string
+    {
+        $showUrl = route('companies.show', $company);
+        $actions = '<div class="d-inline-flex gap-1"><a class="btn btn-outline-secondary btn-sm" href="'.e($showUrl).'" data-modal-url="'.e($showUrl).'" data-modal-title="Detalle de empresa">Ver</a>';
+
+        if (auth()->user()?->can('companies.update')) {
+            $editUrl = route('companies.edit', $company);
+            $actions .= '<a class="btn btn-outline-primary btn-sm" href="'.e($editUrl).'" data-modal-url="'.e($editUrl).'" data-modal-title="Editar empresa">Editar</a>';
+        }
+
+        if (auth()->user()?->can('companies.delete')) {
+            $actions .= '<form method="POST" action="'.e(route('companies.destroy', $company)).'" data-confirm-delete="¿Eliminar empresa?">'.csrf_field().method_field('DELETE').'<button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button></form>';
+        }
+
+        return $actions.'</div>';
+    }
+
+    private function permissionActions(Permission $permission): string
+    {
+        $show = route('permissions.show', $permission);
+        $html = '<div class="d-inline-flex gap-1"><a class="btn btn-outline-secondary btn-sm" href="'.e($show).'" data-modal-url="'.e($show).'" data-modal-title="Detalle de permiso">Ver</a>';
+        if (auth()->user()?->can('permissions.edit')) {
+            $edit = route('permissions.edit', $permission);
+            $html .= '<a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar permiso">Editar</a>';
+        }
+        if (auth()->user()?->can('permissions.delete') && ! in_array($permission->name, PermissionCatalog::NAMES, true)) {
+            $html .= $this->deleteForm(route('permissions.destroy', $permission), '¿Eliminar permiso?');
+        }
+
+        return $html.'</div>';
+    }
+
+    private function roleActions(Role $role): string
+    {
+        $show = route('roles.show', $role);
+        $html = '<div class="d-inline-flex gap-1"><a class="btn btn-outline-secondary btn-sm" href="'.e($show).'" data-modal-url="'.e($show).'" data-modal-title="Detalle de rol">Ver</a>';
+        if (auth()->user()?->can('roles.edit')) {
+            $edit = route('roles.edit', $role);
+            $html .= '<a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar rol" data-modal-size="xl">Editar</a>';
+        }
+        if (auth()->user()?->can('roles.assign-permissions')) {
+            $url = route('roles.permissions.form', $role);
+            $html .= '<a class="btn btn-outline-info btn-sm" href="'.e($url).'" data-modal-url="'.e($url).'" data-modal-title="Configurar permisos" data-modal-size="xl">Configurar acceso</a>';
+        }
+        if (auth()->user()?->can('roles.delete')) {
+            $html .= $this->deleteForm(route('roles.destroy', $role), '¿Eliminar rol?');
+        }
+
+        return $html.'</div>';
+    }
+
+    private function userActions(User $user): string
+    {
+        $show = route('users.show', $user);
+        $html = '<div class="d-inline-flex gap-1"><a class="btn btn-outline-secondary btn-sm" href="'.e($show).'" data-modal-url="'.e($show).'" data-modal-title="Detalle de usuario">Ver</a>';
+        if (! $user->trashed()) {
+            if (auth()->user()?->can('users.edit')) {
+                $edit = route('users.edit', $user);
+                $html .= '<a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar usuario">Editar</a>';
+            }
+            if (auth()->user()?->can('users.assign-roles')) {
+                $roles = route('users.roles.form', $user);
+                $html .= '<a class="btn btn-outline-info btn-sm" href="'.e($roles).'" data-modal-url="'.e($roles).'" data-modal-title="Asignar roles">Roles</a>';
+            }
+            if (auth()->user()?->can('users.edit')) {
+                $html .= '<form method="POST" action="'.e(route('users.toggle-status', $user)).'">'.csrf_field().method_field('PATCH').'<button class="btn btn-outline-secondary btn-sm" type="submit">'.($user->is_active ? 'Desactivar' : 'Activar').'</button></form>';
+            }
+            if (auth()->user()?->can('users.delete')) {
+                $html .= $this->deleteForm(route('users.destroy', $user), '¿Eliminar usuario?');
+            }
+        } elseif (auth()->user()?->can('users.restore')) {
+            $html .= '<form method="POST" action="'.e(route('users.restore', $user->id)).'">'.csrf_field().method_field('PATCH').'<button class="btn btn-outline-success btn-sm" type="submit">Restaurar</button></form>';
+        }
+
+        return $html.'</div>';
+    }
+
+    private function deleteForm(string $url, string $confirmation, ?string $description = null): string
+    {
+        return '<form method="POST" action="'.e($url).'" data-confirm-delete="'.e($confirmation).'" data-confirm-text="'.e($description ?? 'Esta acción no se puede deshacer fácilmente.').'">'.csrf_field().method_field('DELETE').'<button class="btn btn-outline-danger btn-sm" type="submit">Eliminar</button></form>';
+    }
+
+    private function academicModuleActions(AcademicModule $module): string
+    {
+        if (! auth()->user()?->can('academic-modules.manage')) {
+            return '';
+        }
+        $teacher = route('academic.modules.teacher.edit', $module);
+        $edit = route('academic.modules.edit', $module);
+
+        return '<div class="d-inline-flex flex-wrap gap-1"><a class="btn btn-outline-success btn-sm" href="'.e($teacher).'" data-modal-url="'.e($teacher).'" data-modal-title="Asignar docente" data-modal-size="lg"><i class="ti ti-user-check me-1"></i>Docente</a><a class="btn btn-outline-primary btn-sm" href="'.e($edit).'" data-modal-url="'.e($edit).'" data-modal-title="Editar módulo" data-modal-size="lg">Editar</a>'.$this->deleteForm(route('academic.modules.destroy', $module), '¿Eliminar el módulo '.$module->name.'?', 'Los estudiantes quedarán sin este módulo y podrán ser asignados nuevamente. Se eliminarán las clases, asistencias y notas de este módulo. Esta acción no se puede deshacer.').'</div>';
+    }
+
+    private function enrollmentProgress(RectorateApplication $application): string
+    {
+        if (in_array($application->contract?->status, ['suspended', 'abandoned', 'withdrawn', 'finished'], true)) {
+            return '<span class="badge text-bg-secondary">'.e($application->contract->statusLabel()).'</span>';
+        }
+        if ($application->contract?->status === 'inactive') {
+            return '<span class="badge bg-orange-lt text-orange">INACTIVO · Asistencia irregular</span>';
+        }
+        if ($application->contract?->status === 'cancelled') {
+            return '<span class="badge text-bg-secondary"><i class="ti ti-ban me-1"></i>Inhabilitada</span>';
+        }
+        if ($application->status === 'completed') {
+            return '<span class="badge text-bg-success">Completada</span>';
+        }
+        $step = max(1, min(4, (int) $application->current_step));
+        $label = match ($step) {
+            1 => 'Titular', 2 => 'Programa', 3 => 'Estudiante', default => 'Confirmación'
+        };
+
+        return '<span class="badge text-bg-azure">Paso '.$step.' de 4 · '.$label.'</span>';
+    }
+
+    private function enrollmentActions(RectorateApplication $application): string
+    {
+        $step = max(1, min(4, (int) $application->current_step));
+        $continueUrl = match ($step) {
+            1, 2 => route('rectorate.applications.plan.edit', $application),
+            3 => route('rectorate.applications.student.edit', $application),
+            default => route('rectorate.applications.confirmation.show', $application),
+        };
+        $label = match (true) {
+            $application->status === 'completed' => 'Ver resumen',
+            $step === 2 => 'Continuar programa',
+            $step === 3 => 'Continuar estudiante',
+            $step === 4 => 'Confirmar',
+            default => 'Continuar',
+        };
+        $html = '<div class="d-inline-flex gap-1"><a class="btn btn-outline-primary btn-sm" href="'.e($continueUrl).'"><i class="ti ti-player-play me-1"></i>'.$label.'</a>';
+        if ($application->contract) {
+            $html .= '<a class="btn btn-outline-dark btn-sm" href="'.e(route('rectorate.contracts.print', $application->contract)).'" target="_blank" rel="noopener"><i class="ti ti-printer me-1"></i>Contrato</a>';
+            if ($application->contract->status !== 'cancelled') {
+                $html .= '<a class="btn btn-outline-success btn-sm" href="'.e(route('rectorate.contracts.account.show', $application->contract)).'"><i class="ti ti-cash me-1"></i>Estado de cuenta</a>';
+            }
+            if (auth()->user()?->can('rectorate.delete') && $application->status === 'completed' && $application->contract->status !== 'cancelled' && $application->contract->payments_count === 0 && (float) $application->contract->charges_sum_paid_amount === 0.0) {
+                $html .= '<form method="POST" action="'.e(route('rectorate.contracts.disable', $application->contract)).'" data-confirm-action data-confirm-title="¿Inhabilitar el contrato de la matrícula '.e($application->account_number).'?" data-confirm-text="El contrato quedará en el historial; se eliminarán el estudiante y los cargos pendientes para que no afecten los reportes económicos." data-confirm-button="Sí, inhabilitar contrato">'.csrf_field().method_field('PATCH').'<button class="btn btn-outline-danger btn-sm" type="submit"><i class="ti ti-ban me-1"></i>Inhabilitar contrato</button></form>';
+            }
+        }
+        if (auth()->user()?->can('rectorate.delete') && $application->status !== 'completed') {
+            $html .= $this->deleteForm(route('rectorate.applications.destroy', $application), '¿Eliminar la inscripción #'.$application->id.'?');
+        }
+
+        return $html.'</div>';
     }
 }

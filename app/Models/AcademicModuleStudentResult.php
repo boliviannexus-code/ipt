@@ -10,11 +10,11 @@ class AcademicModuleStudentResult extends Model
 {
     use BelongsToCompany;
 
-    protected $fillable = ['company_id', 'academic_module_id', 'student_id', 'status', 'account_charge_id', 'finalized_by', 'finalized_at'];
+    protected $fillable = ['company_id', 'academic_module_id', 'student_id', 'program_grading_scheme_id', 'status', 'final_score', 'passing_score', 'grading_details', 'account_charge_id', 'finalized_by', 'finalized_at'];
 
     protected function casts(): array
     {
-        return ['finalized_at' => 'datetime'];
+        return ['final_score' => 'decimal:2', 'passing_score' => 'decimal:2', 'grading_details' => 'array', 'finalized_at' => 'datetime'];
     }
 
     public function module(): BelongsTo
@@ -30,5 +30,10 @@ class AcademicModuleStudentResult extends Model
     public function charge(): BelongsTo
     {
         return $this->belongsTo(AccountCharge::class, 'account_charge_id');
+    }
+
+    public function gradingScheme(): BelongsTo
+    {
+        return $this->belongsTo(ProgramGradingScheme::class, 'program_grading_scheme_id');
     }
 }

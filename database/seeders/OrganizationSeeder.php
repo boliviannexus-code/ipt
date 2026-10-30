@@ -26,7 +26,11 @@ class OrganizationSeeder extends Seeder
                 foreach ($positions as $positionName) {
                     Position::withoutGlobalScope('company')->updateOrCreate(
                         ['company_id' => $company->id, 'area_id' => $area->id, 'name' => $positionName],
-                        ['is_academic' => $areaName === 'Académico', 'is_active' => true],
+                        [
+                            'is_academic' => $areaName === 'Académico',
+                            'is_sales_executive' => $positionName === 'Ejecutivo de Ventas',
+                            'is_active' => true,
+                        ],
                     );
                 }
             }

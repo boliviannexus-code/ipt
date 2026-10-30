@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\AcademicModule;
+use App\Models\Personnel;
 use App\Models\Program;
 use App\Models\ProgramLevel;
 use App\Support\CompanyContext;
@@ -20,7 +21,11 @@ class AcademicModuleController extends Controller
     public function index(): View
     {
         return view('academic-modules.index', [
-            'modules' => AcademicModule::query()->with(['program', 'level', 'currentTeacherAssignment.personnel'])->orderBy('name')->paginate(15),
+            'programs' => Program::query()->orderBy('title')->get(),
+            'levels' => ProgramLevel::query()->with('program')->orderBy('position')->get(),
+            'teachers' => Personnel::query()
+                ->whereHas('moduleTeacherAssignments', fn ($query) => $query->whereNull('unassigned_at'))
+                ->orderBy('first_name')->orderBy('paternal_surname')->get(),
         ]);
     }
 
@@ -56,10 +61,10 @@ class AcademicModuleController extends Controller
         $module->delete();
 
         if ($request->ajax() || $request->expectsJson()) {
-            return response()->json(['success' => true, 'message' => 'Módulo eliminado correctamente.', 'refresh_url' => route('academic.modules.index')]);
+            return response()->json(['success' => true, 'message' => 'Módulo eliminado correctamente. Sus estudiantes quedaron disponibles para una nueva asignación.', 'refresh_url' => route('academic.modules.index')]);
         }
 
-        return redirect()->route('academic.modules.index')->with('success', 'Módulo eliminado correctamente.');
+        return redirect()->route('academic.modules.index')->with('success', 'Módulo eliminado correctamente. Sus estudiantes quedaron disponibles para una nueva asignación.');
     }
 
     private function formView(Request $request, ?AcademicModule $module): View

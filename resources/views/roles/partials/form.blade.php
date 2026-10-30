@@ -10,8 +10,10 @@
         <div class="form-text">Identificador técnico usado para autenticar el acceso.</div>
         <div class="invalid-feedback" data-error-for="guard_name">{{ ($errors ?? null)?->first('guard_name') }}</div>
     </div>
+    @can('roles.assign-permissions')
     <div class="col-12">
         <label class="form-label">Permisos</label>
         @include('roles.partials.permission-checkboxes')
     </div>
+    @endcan
 </div>

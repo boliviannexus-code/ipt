@@ -27,24 +27,44 @@ class CampusTest extends TestCase
         $this->actingAs($user)->postJson(route('campuses.store'), [
             'name' => 'Sede Central',
             'code' => '1',
+            'short' => ' lpz ',
             'address' => 'Av. Principal 123',
         ])->assertOk()->assertJsonPath('success', true);
 
         $campus = Campus::query()->sole();
         $this->assertSame('1', $campus->code);
+        $this->assertSame('LPZ', $campus->short);
         $this->assertSame($company->id, $campus->company_id);
 
         $this->actingAs($user)->putJson(route('campuses.update', $campus), [
             'name' => 'Sede Centro',
             'code' => '2',
+            'short' => 'SCZ',
             'address' => 'Calle Central 456',
         ])->assertOk()->assertJsonPath('success', true);
 
         $this->actingAs($user)->get(route('campuses.index'))
-            ->assertOk()->assertSee('Sede Centro')->assertSee('2')->assertSee('Calle Central 456');
+            ->assertOk()->assertSee('data-datatable', false)->assertSee(route('datatables.campuses'), false);
+        $this->actingAs($user)->getJson(route('datatables.campuses', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertJsonFragment(['name' => 'Sede Centro', 'short' => 'SCZ', 'address' => 'Calle Central 456']);
 
         $this->actingAs($user)->deleteJson(route('campuses.destroy', $campus))->assertOk();
         $this->assertDatabaseMissing('campuses', ['id' => $campus->id]);
+    }
+
+    public function test_short_must_have_exactly_three_letters(): void
+    {
+        $company = Company::factory()->create();
+        $user = User::factory()->create(['company_id' => $company->id]);
+        Permission::findOrCreate('campuses.manage');
+        $user->givePermissionTo('campuses.manage');
+
+        foreach (['', 'LP', 'LPZZ', 'L12'] as $short) {
+            $this->actingAs($user)->postJson(route('campuses.store'), [
+                'name' => 'Central', 'code' => '1', 'short' => $short, 'address' => 'Dirección',
+            ])->assertUnprocessable()->assertJsonValidationErrors('short');
+        }
     }
 
     public function test_campuses_are_isolated_by_company_and_code_is_unique_per_company(): void
@@ -60,7 +80,9 @@ class CampusTest extends TestCase
         Campus::withoutGlobalScope('company')->create(['company_id' => $otherCompany->id, 'name' => 'Sede ajena', 'code' => '1', 'address' => 'Dirección ajena']);
 
         $this->actingAs($user)->post(route('campuses.store'), ['name' => 'Otra', 'code' => '1', 'address' => 'Nueva dirección'])->assertSessionHasErrors('code');
-        $this->actingAs($user)->get(route('campuses.index'))->assertOk()->assertDontSee('Sede ajena');
+        $this->actingAs($user)->getJson(route('datatables.campuses', [
+            'draw' => 1, 'start' => 0, 'length' => 10,
+        ]))->assertOk()->assertDontSee('Sede ajena', false);
     }
 
     public function test_code_must_be_exactly_one_numeric_digit_on_create_and_update(): void

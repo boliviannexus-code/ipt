@@ -13,8 +13,9 @@ class EnrollmentContract extends Model
     use BelongsToCompany, HasFactory;
 
     protected $fillable = [
-        'company_id', 'campus_id', 'account_number', 'rectorate_application_id', 'student_id', 'program_id', 'plan_id',
+        'company_id', 'campus_id', 'account_number', 'rectorate_application_id', 'student_id', 'program_id', 'current_program_level_id', 'plan_id',
         'contract_number', 'monthly_amount', 'status', 'confirmed_at', 'enrolled_at',
+        'attendance_inactive_at', 'attendance_inactive_module_id', 'status_registered_on', 'reactivation_date', 'completed_at',
     ];
 
     protected function casts(): array
@@ -23,8 +24,26 @@ class EnrollmentContract extends Model
             'contract_number' => 'integer',
             'monthly_amount' => 'decimal:2',
             'confirmed_at' => 'immutable_datetime',
-            'enrolled_at' => 'immutable_datetime',
+            'enrolled_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime',
+            'attendance_inactive_at' => 'immutable_datetime',
+            'status_registered_on' => 'date', 'reactivation_date' => 'date',
         ];
+    }
+
+    public static function statusLabels(): array
+    {
+        return ['pre_enrolled' => 'PREINSCRITO', 'enrolled' => 'ACTIVO', 'inactive' => 'INACTIVO',
+            'suspended' => 'SUSPENDIDO', 'abandoned' => 'ABANDONO', 'withdrawn' => 'BAJA', 'finished' => 'FINALIZADO', 'cancelled' => 'CANCELADO'];
+    }
+
+    public function statusLabel(): string
+    {
+        return self::statusLabels()[$this->status] ?? $this->status;
+    }
+
+    public function statusChanges(): HasMany
+    {
+        return $this->hasMany(EnrollmentStatusChange::class)->latest('id');
     }
 
     public function application(): BelongsTo
@@ -39,12 +58,17 @@ class EnrollmentContract extends Model
 
     public function student(): BelongsTo
     {
-        return $this->belongsTo(Student::class);
+        return $this->belongsTo(Student::class)->withTrashed();
     }
 
     public function program(): BelongsTo
     {
         return $this->belongsTo(Program::class);
+    }
+
+    public function currentProgramLevel(): BelongsTo
+    {
+        return $this->belongsTo(ProgramLevel::class, 'current_program_level_id');
     }
 
     public function plan(): BelongsTo
@@ -65,5 +89,15 @@ class EnrollmentContract extends Model
     public function planHistory(): HasMany
     {
         return $this->hasMany(ContractPlanHistory::class);
+    }
+
+    public function placementExams(): HasMany
+    {
+        return $this->hasMany(PlacementExam::class);
+    }
+
+    public function creditApplications(): HasMany
+    {
+        return $this->hasMany(AccountCreditApplication::class);
     }
 }

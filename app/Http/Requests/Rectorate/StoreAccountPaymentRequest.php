@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests\Rectorate;
 
-use App\Support\CompanyContext;
+use App\Enums\AccountPaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -16,16 +16,19 @@ class StoreAccountPaymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gte:0', 'max:9999999999.99'],
             'payment_method_code' => [
-                'required',
+                Rule::requiredIf(fn (): bool => (float) $this->input('amount') > 0),
+                'nullable',
                 'integer',
-                Rule::exists('sin_catalog_items', 'classifier_code')
-                    ->where('company_id', CompanyContext::id($this->user()))
-                    ->where('catalog_key', 'tipos_metodo_pago')
-                    ->where('is_active', true),
+                Rule::in(AccountPaymentMethod::values()),
             ],
-            'reference' => ['nullable', 'string', 'max:100'],
+            'reference' => [
+                Rule::requiredIf(fn (): bool => (float) $this->input('amount') > 0 && (AccountPaymentMethod::tryFrom((int) $this->input('payment_method_code'))?->requiresReference() ?? false)),
+                'nullable',
+                'string',
+                'max:100',
+            ],
         ];
     }
 
@@ -33,7 +36,8 @@ class StoreAccountPaymentRequest extends FormRequest
     {
         return [
             'payment_method_code.required' => 'Selecciona un método de pago.',
-            'payment_method_code.exists' => 'Selecciona un método de pago vigente del catálogo del SIN.',
+            'payment_method_code.in' => 'Selecciona Efectivo, QR o Transferencia.',
+            'reference.required' => 'Ingresa la referencia del pago.',
         ];
     }
 }

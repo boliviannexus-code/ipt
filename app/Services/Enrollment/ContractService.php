@@ -6,9 +6,11 @@ use App\Models\AccountCharge;
 use App\Models\ContractPlanHistory;
 use App\Models\EnrollmentContract;
 use App\Models\Plan;
+use App\Models\ProgramLevel;
 use App\Models\RectorateApplication;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ContractService
 {
@@ -23,21 +25,12 @@ class ContractService
         }
 
         $plan = Plan::withoutGlobalScope('company')->findOrFail($application->plan_id);
-        DB::table('program_contract_sequences')->insertOrIgnore([
-            'program_id' => $application->program_id,
-            'last_number' => 0,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $sequence = DB::table('program_contract_sequences')
+        $this->ensureValidMonthlyCost($plan);
+        $isFree = (float) $plan->monthly_cost === 0.0;
+        $initialLevelId = ProgramLevel::withoutGlobalScope('company')
             ->where('program_id', $application->program_id)
-            ->lockForUpdate()
-            ->first();
-        $number = ((int) $sequence->last_number) + 1;
-        DB::table('program_contract_sequences')
-            ->where('program_id', $application->program_id)
-            ->update(['last_number' => $number, 'updated_at' => now()]);
-
+            ->where('position', 1)
+            ->value('id');
         $contract = EnrollmentContract::withoutGlobalScope('company')->create([
             'company_id' => $application->company_id,
             'campus_id' => $application->campus_id,
@@ -45,11 +38,14 @@ class ContractService
             'rectorate_application_id' => $application->id,
             'student_id' => $application->student_id,
             'program_id' => $application->program_id,
+            'current_program_level_id' => $initialLevelId,
             'plan_id' => $plan->id,
-            'contract_number' => $number,
+            // Campo legado: la matrícula es la única referencia pública.
+            'contract_number' => (int) substr($application->account_number, -5),
             'monthly_amount' => $plan->monthly_cost,
-            'status' => 'pre_enrolled',
+            'status' => $isFree ? 'enrolled' : 'pre_enrolled',
             'confirmed_at' => now(),
+            'enrolled_at' => $isFree ? now() : null,
         ]);
 
         ContractPlanHistory::create([
@@ -70,6 +66,8 @@ class ContractService
             throw new \LogicException('El plan no pertenece a la empresa y programa del contrato.');
         }
 
+        $this->ensureValidMonthlyCost($plan);
+
         return DB::transaction(function () use ($contract, $plan, $effectiveFrom): EnrollmentContract {
             $contract = EnrollmentContract::query()->lockForUpdate()->findOrFail($contract->id);
             $contract->update(['plan_id' => $plan->id, 'monthly_amount' => $plan->monthly_cost]);
@@ -87,7 +85,7 @@ class ContractService
         $period = $period->copy()->startOfMonth();
 
         return AccountCharge::withoutGlobalScope('company')->firstOrCreate(
-            ['enrollment_contract_id' => $contract->id, 'period' => $period->toDateString()],
+            ['enrollment_contract_id' => $contract->id, 'period' => $period->toDateString(), 'charge_type' => 'monthly'],
             [
                 'company_id' => $contract->company_id,
                 'plan_id' => $contract->plan_id,
@@ -95,8 +93,15 @@ class ContractService
                 'due_date' => $period->toDateString(),
                 'amount' => $contract->monthly_amount,
                 'paid_amount' => 0,
-                'status' => 'pending',
+                'status' => (float) $contract->monthly_amount === 0.0 ? 'paid' : 'pending',
             ],
         );
+    }
+
+    private function ensureValidMonthlyCost(Plan $plan): void
+    {
+        if ((float) $plan->monthly_cost < 0) {
+            throw ValidationException::withMessages(['plan_id' => 'El costo mensual del plan no puede ser negativo.']);
+        }
     }
 }

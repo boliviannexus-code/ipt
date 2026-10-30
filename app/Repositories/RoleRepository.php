@@ -3,11 +3,21 @@
 namespace App\Repositories;
 
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 class RoleRepository
 {
+    public function availableToCopy(?Role $excludedRole = null): Collection
+    {
+        return Role::query()
+            ->when($excludedRole, fn ($query) => $query->whereKeyNot($excludedRole->id))
+            ->with(['permissions:id,name'])
+            ->orderBy('name')
+            ->get();
+    }
+
     public function paginate(int $perPage = 20): LengthAwarePaginator
     {
         return Role::query()

@@ -14,7 +14,11 @@
         @endforeach
     </select>
     @error('academic_module_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
-    @if($modules->isEmpty())<div class="form-text text-danger">No hay módulos vigentes disponibles para los programas del estudiante.</div>@endif
+    @if($openAssignment)
+        <div class="form-text text-danger">El estudiante ya está asignado a {{ $openAssignment->module->name }}. Ese módulo debe cerrarse antes de realizar una nueva asignación.</div>
+    @elseif($modules->isEmpty())
+        <div class="form-text text-danger">No hay módulos vigentes disponibles para los programas del estudiante.</div>
+    @endif
 </div>
 @if($student->moduleAssignments->isNotEmpty())
     <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Módulos asignados</th><th>Programa</th><th>Nivel</th><th>Asignado</th></tr></thead><tbody>@foreach($student->moduleAssignments as $assignment)<tr><td>{{ $assignment->module->name }}</td><td>{{ $assignment->module->program->title }}</td><td>{{ $assignment->module->level->name }}</td><td>{{ $assignment->assigned_at->format('d/m/Y') }}</td></tr>@endforeach</tbody></table></div>
