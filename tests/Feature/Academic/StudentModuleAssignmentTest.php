@@ -130,6 +130,56 @@ class StudentModuleAssignmentTest extends TestCase
         }
     }
 
+    public function test_unlink_requires_its_own_permission_and_preserves_the_assignment_history(): void
+    {
+        [$user, $student, $program] = $this->context();
+        $level = ProgramLevel::create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Inicial', 'position' => 1]);
+        $module = $this->module($program, $level, 'Módulo actual');
+        $replacement = $this->module($program, $level, 'Módulo siguiente');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $module->id])->assertOk();
+        $assignment = $student->moduleAssignments()->firstOrFail();
+        $url = route('students.modules.destroy', [$student, $assignment]);
+
+        $this->get(route('students.index'))->assertOk()->assertDontSee('Desvincular módulo');
+        $this->deleteJson($url)->assertForbidden();
+        $this->assertNull($assignment->fresh()->released_at);
+
+        Permission::findOrCreate('students.unlink-module');
+        $user->givePermissionTo('students.unlink-module');
+        $user->revokePermissionTo('students.manage');
+        $this->get(route('students.index'))->assertOk()->assertSee('Desvincular módulo')->assertSee($url, false);
+        $this->deleteJson($url)->assertOk()->assertJsonPath('success', true);
+        $this->assertNotNull($assignment->fresh()->released_at);
+        $this->assertNull($student->fresh()->currentModuleAssignment);
+        $this->assertDatabaseHas('students', ['id' => $student->id, 'is_active' => true]);
+        $this->assertDatabaseHas('enrollment_contracts', ['student_id' => $student->id, 'status' => 'enrolled']);
+        $this->deleteJson($url)->assertUnprocessable();
+
+        $user->givePermissionTo('students.manage');
+        $this->postJson(route('students.modules.store', $student), ['academic_module_id' => $replacement->id])->assertOk();
+        // A stale confirmation cannot unlink the new assignment.
+        $this->deleteJson($url)->assertUnprocessable();
+        $this->assertEquals($replacement->id, $student->fresh()->currentModuleAssignment->academic_module_id);
+    }
+
+    public function test_unlink_rejects_an_assignment_of_another_student_or_company(): void
+    {
+        [$user, $student, $program, $plan] = $this->context();
+        Permission::findOrCreate('students.unlink-module');
+        $user->givePermissionTo('students.unlink-module');
+        $level = ProgramLevel::create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Inicial', 'position' => 1]);
+        $module = $this->module($program, $level, 'Módulo actual');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $module->id])->assertOk();
+        $assignment = $student->moduleAssignments()->firstOrFail();
+        $otherStudent = $this->studentWithContract($program, $plan, 'enrolled', '2004', 'María');
+        $this->deleteJson(route('students.modules.destroy', [$otherStudent, $assignment]))->assertNotFound();
+
+        $otherCompany = Company::factory()->create();
+        $assignment->update(['company_id' => $otherCompany->id]);
+        $this->deleteJson(route('students.modules.destroy', [$student, $assignment]))->assertNotFound();
+        $this->assertNull($assignment->fresh()->released_at);
+    }
+
     private function context(): array
     {
         $company = Company::factory()->create();

@@ -128,6 +128,7 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::post('{student}/status', [\App\Http\Controllers\Web\StudentStatusController::class, 'update'])->whereNumber('student')->middleware('permission:students.manage')->name('status.update');
         Route::get('{student}/modules/create', [StudentModuleAssignmentController::class, 'create'])->whereNumber('student')->middleware('permission:students.manage')->name('modules.create');
         Route::post('{student}/modules', [StudentModuleAssignmentController::class, 'store'])->whereNumber('student')->middleware('permission:students.manage')->name('modules.store');
+        Route::delete('{student}/modules/{assignment}', [StudentModuleAssignmentController::class, 'destroy'])->whereNumber(['student', 'assignment'])->middleware('permission:students.unlink-module')->name('modules.destroy');
     });
     Route::prefix('reports')->name('reports.')->middleware(['company_user', 'permission:enrollment-reports.view'])->group(function (): void {
         Route::get('enrollments', [EnrollmentReportController::class, 'index'])->name('enrollments.index');

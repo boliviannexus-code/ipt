@@ -38,6 +38,7 @@ final class PermissionCatalog
         'academic-personal-data.edit',
         'students.view',
         'students.manage',
+        'students.unlink-module',
         'enrollment-reports.view',
         'all-modules.manage',
         'teaching.view',
