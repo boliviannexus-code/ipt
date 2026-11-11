@@ -21,10 +21,22 @@ class ContractService
             ->first();
 
         if ($existing !== null) {
+            foreach (['company_id', 'campus_id', 'student_id', 'program_id', 'account_number'] as $field) {
+                if ((string) $existing->$field !== (string) $application->$field) {
+                    throw ValidationException::withMessages(['application' => 'El contrato no coincide con la inscripción. Revise estudiante, programa y matrícula antes de continuar.']);
+                }
+            }
+
             return $existing;
         }
 
-        $plan = Plan::withoutGlobalScope('company')->findOrFail($application->plan_id);
+        if ($application->status === 'completed' && $application->student_id === null) {
+            throw ValidationException::withMessages(['application' => 'La inscripción confirmada no tiene estudiante.']);
+        }
+        $plan = Plan::withoutGlobalScope('company')->where('company_id', $application->company_id)->findOrFail($application->plan_id);
+        if (! $plan->programs()->whereKey($application->program_id)->exists()) {
+            throw ValidationException::withMessages(['plan_id' => 'El plan no pertenece al programa de la inscripción.']);
+        }
         $this->ensureValidMonthlyCost($plan);
         $isFree = (float) $plan->monthly_cost === 0.0;
         $initialLevelId = ProgramLevel::withoutGlobalScope('company')

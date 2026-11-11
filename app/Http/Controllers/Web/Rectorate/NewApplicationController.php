@@ -104,6 +104,8 @@ class NewApplicationController extends Controller
 
     public function editPlan(RectorateApplication $application): View
     {
+        abort_if($application->status === 'completed' || $application->contract()->exists(), 409, 'La inscripción ya fue confirmada. No se permite cambiar estudiante, programa o matrícula.');
+
         return view('rectorate.plan', [
             'application' => $application->load('customer'),
             'programs' => Program::query()->with(['plans' => fn ($query) => $query->orderBy('name')])->orderBy('title')->get(),
@@ -133,6 +135,8 @@ class NewApplicationController extends Controller
 
     public function editStudent(RectorateApplication $application): View
     {
+        abort_if($application->status === 'completed' || $application->contract()->exists(), 409, 'La inscripción ya fue confirmada. No se permite cambiar estudiante, programa o matrícula.');
+
         abort_unless($application->program_id !== null && $application->plan_id !== null, 409, 'Primero debes seleccionar un programa y plan.');
 
         return view('rectorate.student', [

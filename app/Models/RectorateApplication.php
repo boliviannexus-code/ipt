@@ -8,10 +8,29 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Validation\ValidationException;
 
 class RectorateApplication extends Model
 {
     use BelongsToCompany, HasFactory, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $application): void {
+            $protected = ['student_id', 'program_id', 'account_number', 'campus_id', 'company_id', 'status'];
+            foreach (array_keys($application->getAttributes()) as $field) {
+                if (str_starts_with($field, 'student_')) {
+                    $protected[] = $field;
+                }
+            }
+            if ($application->isDirty($protected)
+                && self::withoutGlobalScopes()->whereKey($application->id)->where('status', 'completed')->exists()) {
+                throw ValidationException::withMessages([
+                    'application' => 'No se permite cambiar estudiante, programa o matrícula de una inscripción confirmada.',
+                ]);
+            }
+        });
+    }
 
     protected $fillable = [
         'company_id', 'campus_id', 'account_number', 'customer_id', 'program_id', 'plan_id', 'commercial_origin_id', 'sales_executive_id', 'student_id', 'identity_document', 'first_name', 'paternal_surname',

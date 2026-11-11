@@ -17,8 +17,12 @@ use App\Models\RectorateApplication;
 use App\Models\SinCatalogItem;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\Enrollment\ContractService;
+use App\Services\Rectorate\EnrollmentStepService;
 use App\Support\SiatIdentityDocumentTypes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -254,6 +258,48 @@ class HolderStepTest extends TestCase
             ->assertRedirect(route('rectorate.index'));
         $this->assertSame(1, Student::withoutGlobalScope('company')->count());
         $this->assertSame(1, EnrollmentContract::withoutGlobalScope('company')->count());
+
+        foreach (['student_id' => $student->id + 1, 'program_id' => $program->id + 1,
+            'account_number' => 'BAD10001', 'student_first_name' => 'Otra persona'] as $field => $value) {
+            try {
+                $application->fresh()->update([$field => $value]);
+                $this->fail("Se permitió modificar {$field} después de confirmar.");
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('application', $exception->errors());
+            }
+        }
+        try {
+            app(EnrollmentStepService::class)->assignPlan(
+                $application->fresh(), $program->id, $plan->id, $origin->id, 0,
+            );
+            $this->fail('Se permitió volver al paso de programa después de confirmar.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('application', $exception->errors());
+        }
+        try {
+            app(EnrollmentStepService::class)->saveStudent(
+                $application->fresh(), ['student_first_name' => 'Otra persona'],
+            );
+            $this->fail('Se permitió volver al paso de estudiante después de confirmar.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('application', $exception->errors());
+        }
+        foreach (['student_id', 'program_id', 'account_number', 'company_id', 'campus_id'] as $field) {
+            $inconsistent = $application->fresh();
+            $inconsistent->$field = $field === 'account_number' ? 'BAD10001' : $inconsistent->$field + 1;
+            try {
+                app(ContractService::class)->createForApplication($inconsistent);
+                $this->fail("Se aceptó un contrato con {$field} inconsistente.");
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('application', $exception->errors());
+            }
+        }
+        DB::table('enrollment_contracts')->where('id', $contract->id)
+            ->update(['account_number' => 'BAD10001']);
+        $this->actingAs($user)->post(route('rectorate.applications.confirmation.store', $application))
+            ->assertSessionHasErrors('application');
+        DB::table('enrollment_contracts')->where('id', $contract->id)
+            ->update(['account_number' => $contract->account_number]);
 
         $this->actingAs($user)
             ->get(route('rectorate.index'))

@@ -2,8 +2,8 @@
 
 namespace App\Services\Rectorate;
 
-use App\Models\RectorateApplication;
 use App\Models\Program;
+use App\Models\RectorateApplication;
 use App\Models\Student;
 use App\Services\Enrollment\ContractService;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +18,7 @@ class EnrollmentStepService
     {
         return DB::transaction(function () use ($application, $programId, $planId, $commercialOriginId, $salesExecutiveId): RectorateApplication {
             $application = RectorateApplication::query()->lockForUpdate()->findOrFail($application->id);
+            $this->ensureDraft($application);
             $program = Program::withoutGlobalScope('company')->where('company_id', $application->company_id)->findOrFail($programId);
             $code = strtoupper((string) $program->enrollment_code);
 
@@ -39,6 +40,13 @@ class EnrollmentStepService
 
             return $application->refresh();
         });
+    }
+
+    private function ensureDraft(RectorateApplication $application): void
+    {
+        if ($application->status === 'completed' || $application->contract()->exists()) {
+            throw ValidationException::withMessages(['application' => 'La inscripción ya fue confirmada. No se permite cambiar estudiante, programa o matrícula.']);
+        }
     }
 
     private function nextEnrollmentNumber(int $programId, int $campusId, string $programCode, string $campusCode): string
@@ -68,6 +76,7 @@ class EnrollmentStepService
 
     public function saveStudent(RectorateApplication $application, array $data): RectorateApplication
     {
+        $this->ensureDraft($application->fresh());
         if (($data['student_relationship'] ?? null) === 'Titular') {
             $data = [
                 ...$data,
@@ -116,6 +125,8 @@ class EnrollmentStepService
             $application = RectorateApplication::query()->lockForUpdate()->findOrFail($application->id);
 
             if ($application->student_id !== null && $application->status === 'completed') {
+                $this->contracts->createForApplication($application);
+
                 return $application->student()->withTrashed()->firstOrFail();
             }
 
