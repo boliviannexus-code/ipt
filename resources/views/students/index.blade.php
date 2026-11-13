@@ -29,6 +29,15 @@
                     <td class="text-end">
                         <div class="d-flex flex-wrap justify-content-end gap-1">
                             <a class="btn btn-outline-secondary btn-sm" href="{{ route('students.kardex.show', $student) }}"><i class="ti ti-file-description me-1" aria-hidden="true"></i>Kardex</a>
+                            @can('students.unlink-module')
+                                @if($student->currentModuleAssignment)
+                                    <form method="POST" action="{{ route('students.modules.destroy', [$student, $student->currentModuleAssignment]) }}" data-confirm-action data-confirm-title="¿Desvincular estudiante del módulo?" data-confirm-text="Se desvinculará a {{ $student->first_name }} del módulo {{ $student->currentModuleAssignment->module->name }}. Se conservará su historial académico y podrá asignarse a otro módulo." data-confirm-button="Sí, desvincular">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button class="btn btn-outline-danger btn-sm" type="submit"><i class="ti ti-unlink me-1" aria-hidden="true"></i>Desvincular módulo</button>
+                                    </form>
+                                @endif
+                            @endcan
                             @can('students.manage')
                                 <a class="btn btn-outline-warning btn-sm" href="{{ route('students.status.edit', $student) }}" data-modal-url="{{ route('students.status.edit', $student) }}" data-modal-title="Cambiar estado de matrícula" data-modal-size="lg">Cambiar estado</a>
                                 @if(!$student->currentModuleAssignment && $student->contracts->contains('status', 'enrolled'))

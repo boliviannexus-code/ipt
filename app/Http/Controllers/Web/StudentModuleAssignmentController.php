@@ -84,6 +84,27 @@ class StudentModuleAssignmentController extends Controller
         return redirect()->route('students.index')->with('success', $message);
     }
 
+    public function destroy(Request $request, Student $student, int $assignment): JsonResponse|RedirectResponse
+    {
+        DB::transaction(function () use ($student, $assignment): void {
+            Student::query()->whereKey($student->id)->lockForUpdate()->firstOrFail();
+            $assignedModule = $student->moduleAssignments()->whereKey($assignment)->lockForUpdate()->firstOrFail();
+
+            if ($assignedModule->released_at !== null) {
+                throw ValidationException::withMessages(['assignment' => 'El estudiante ya fue desvinculado de este módulo.']);
+            }
+
+            $assignedModule->update(['released_at' => now()]);
+        });
+
+        $message = 'Estudiante desvinculado del módulo correctamente.';
+        if ($request->ajax() || $request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => $message, 'refresh_url' => route('students.index')]);
+        }
+
+        return redirect()->route('students.index')->with('success', $message);
+    }
+
     private function ensureEnabled(Student $student): void
     {
         abort_unless($student->is_active && $student->contracts()->where('status', 'enrolled')->exists(), 404);
