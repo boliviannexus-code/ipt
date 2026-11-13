@@ -24,7 +24,7 @@ final class TeacherTrackingController extends Controller
         $personnel = $request->user()->personnel;
         $modules = AcademicModule::query()
             ->with(['program', 'level'])
-            ->withCount(['studentAssignments', 'classSessions'])
+            ->withCount(['studentAssignments' => fn ($query) => $query->whereNull('released_at'), 'classSessions'])
             ->when(! $request->routeIs('all-modules.*'), fn ($query) => $query
                 ->whereHas('currentTeacherAssignment', fn ($query) => $query->where('personnel_id', $personnel?->id))
                 ->when(! $personnel instanceof Personnel, fn ($query) => $query->whereRaw('1 = 0')))
@@ -70,7 +70,9 @@ final class TeacherTrackingController extends Controller
             : $module->configuredGradingScheme();
         $summary = $this->tracking->summarize($module, $scheme);
 
-        return [...compact('module', 'scheme'), ...$summary];
+        $passingScore = (float) ($module->studentResults->first()?->passing_score ?? $scheme?->passing_score ?? 51);
+
+        return [...compact('module', 'scheme', 'passingScore'), ...$summary];
     }
 
     private function authorizeTeacher(Request $request, AcademicModule $module): void

@@ -130,6 +130,31 @@ class StudentModuleAssignmentTest extends TestCase
         }
     }
 
+    public function test_released_assignment_can_be_reactivated_but_closed_modules_cannot(): void
+    {
+        [$user, $student, $program] = $this->context();
+        $level = ProgramLevel::create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Inicial', 'position' => 1]);
+        $module = $this->module($program, $level, 'Módulo de retorno');
+        $this->actingAs($user)->postJson(route('students.modules.store', $student), ['academic_module_id' => $module->id])->assertOk();
+        $assignment = $student->moduleAssignments()->sole();
+        $assignedAt = $assignment->assigned_at;
+        $assignment->update(['released_at' => now()]);
+
+        $this->get(route('students.modules.create', $student))
+            ->assertOk()->assertSee('value="'.$module->id.'"', false)->assertSee('Desvinculado');
+        $this->postJson(route('students.modules.store', $student), ['academic_module_id' => $module->id])->assertOk();
+        $this->assertNull($assignment->refresh()->released_at);
+        $this->assertTrue($assignedAt->equalTo($assignment->assigned_at));
+        $this->assertSame(1, $student->moduleAssignments()->count());
+
+        $assignment->update(['released_at' => now()]);
+        $module->update(['closed_at' => now()]);
+        $this->get(route('students.modules.create', $student))
+            ->assertOk()->assertDontSee('value="'.$module->id.'"', false);
+        $this->postJson(route('students.modules.store', $student), ['academic_module_id' => $module->id])
+            ->assertUnprocessable()->assertJsonValidationErrors('academic_module_id');
+    }
+
     private function context(): array
     {
         $company = Company::factory()->create();

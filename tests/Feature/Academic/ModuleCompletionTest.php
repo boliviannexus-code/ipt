@@ -34,6 +34,20 @@ class ModuleCompletionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_released_students_remain_in_tracking_but_are_excluded_from_closure(): void
+    {
+        [$user, $module, $student] = $this->context();
+        $assignment = $student->moduleAssignments()->where('academic_module_id', $module->id)->firstOrFail();
+        $assignment->update(['released_at' => now()]);
+        $this->actingAs($user)->get(route('teacher.modules.results.edit', $module))
+            ->assertOk()->assertViewHas('module', fn ($loaded) => $loaded->studentAssignments->isEmpty());
+        $this->get(route('teacher.tracking.show', $module))
+            ->assertOk()->assertSee($student->first_name)->assertSee('Desvinculado')
+            ->assertSee($assignment->released_at->format('d/m/Y'));
+        $this->assertTrue(app(ModuleCompletionService::class)->preview($module->fresh())['students']->isEmpty());
+        $this->assertDatabaseHas('academic_module_student_assignments', ['id' => $assignment->id]);
+    }
+
     public function test_module_results_are_calculated_from_weightings_without_generating_charges(): void
     {
         [$user, $module, $student, $contract] = $this->context();

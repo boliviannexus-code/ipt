@@ -64,7 +64,8 @@
         && auth()->user()?->can('students.view');
     $canPersonalData = \App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('academic-personal-data.edit');
     $canAllModules = \App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('all-modules.manage');
-    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents || $canPersonalData || $canAllModules;
+    $canSecondOpportunities = \App\Support\CompanyContext::id(auth()->user()) !== null && auth()->user()?->can('second-opportunities.manage');
+    $canAcademic = $canAcademicControl || $canAcademicModules || $canStudents || $canPersonalData || $canAllModules || $canSecondOpportunities;
     $canTeacher = auth()->user()?->personnel_id !== null
         && auth()->user()?->can('teaching.view');
     $canReports = \App\Support\CompanyContext::id(auth()->user()) !== null
@@ -169,6 +170,11 @@
                                             <span class="nav-link-icon"><i class="ti ti-arrow-big-up-lines"></i></span>
                                             <span class="nav-link-title">Promover módulo</span>
                                         </a>
+                                    </li>
+                                @endif
+                                @if ($canSecondOpportunities)
+                                    <li class="nav-item {{ request()->routeIs('academic.second-opportunities.*') ? 'active' : '' }}">
+                                        <a class="nav-link" href="{{ route('academic.second-opportunities.index') }}"><span class="nav-link-icon"><i class="ti ti-pencil" aria-hidden="true"></i></span><span class="nav-link-title">2T</span></a>
                                     </li>
                                 @endif
                                 @if ($canAllModules)

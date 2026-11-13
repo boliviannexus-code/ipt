@@ -39,7 +39,7 @@
         <tbody>
         @forelse($students as $row)
             <tr>
-                <td class="tracking-student-cell"><strong>{{ trim("{$row['student']->first_name} {$row['student']->paternal_surname} {$row['student']->maternal_surname}") }}</strong><small class="d-block text-secondary">{{ $row['student']->identity_document }}</small></td>
+                <td class="tracking-student-cell"><strong>{{ trim("{$row['student']->first_name} {$row['student']->paternal_surname} {$row['student']->maternal_surname}") }}</strong><small class="d-block text-secondary">{{ $row['student']->identity_document }}<br><small>{{ $row['assignment_status'] }}@if($row['released_at']) · {{ $row['released_at']->format('d/m/Y') }}@endif</small></small>@include('academic-second-opportunities.note', ['attempt' => $row['second_opportunity']])</td>
                 @foreach($displayComponents as $gradingComponent)
                     @php($tone = $loop->index % 4)
                     @php($hasMultipleSkills = $gradingComponent->skills->count() > 1)
@@ -52,7 +52,8 @@
                         <td class="text-center tracking-component-terminal tracking-group-tone-{{ $tone }}">@if($componentAverage !== null)<strong>{{ number_format($componentAverage, 2, ',', '.') }}</strong>@else<span>—</span>@endif</td>
                     @endif
                 @endforeach
-                <td class="text-center tracking-final-cell">@if($row['overall_score'] !== null)@php($isApproved = $row['overall_score'] >= (float) ($scheme?->passing_score ?? 51))<span class="badge tracking-final-score {{ $isApproved ? 'text-bg-success' : 'text-bg-danger' }}"><strong>{{ number_format($row['overall_score'], 2, ',', '.') }}</strong><small>{{ $isApproved ? 'Aprobado' : 'Reprobado' }}</small></span>@else<span class="text-secondary">—</span>@endif</td>
+                <td class="text-center tracking-final-cell">@if($row['overall_score'] !== null)@php($isApproved = $row['overall_score'] >= $row['passing_score'])<span class="badge tracking-final-score {{ $isApproved ? 'text-bg-success' : 'text-bg-danger' }}"><strong>{{ number_format($row['overall_score'], 2, ',', '.') }}</strong><small>{{ $isApproved ? 'Aprobado' : 'Reprobado' }}</small>@if($row['second_opportunity'])<small>2T</small>@endif</span>@else<span class="text-secondary">—</span>@endif
+                </td>
             </tr>
         @empty
             <x-ui.empty-row :colspan="2 + $skills->count() + $componentAverageColumns" message="Este módulo no tiene estudiantes asignados." />
@@ -60,6 +61,6 @@
         </tbody>
     </table>
     </div>
-    <x-slot:footer><small class="text-secondary">La nota acumulada combina ponderaciones diarias y únicas según su peso configurado. Las habilidades pendientes aportan cero hasta ser evaluadas.</small></x-slot:footer>
+    <x-slot:footer><small class="text-secondary">La nota acumulada combina ponderaciones diarias y únicas según su peso configurado. Las habilidades pendientes aportan cero hasta ser evaluadas. La nota 2T reemplaza la nota final sin alterar las ponderaciones originales.</small></x-slot:footer>
 </x-ui.table-card>
 @endsection

@@ -2,6 +2,7 @@
 
 namespace App\Services\Rectorate;
 
+use App\Models\AcademicSecondOpportunity;
 use App\Models\EnrollmentContract;
 use App\Models\RectorateApplication;
 use App\Models\User;
@@ -28,6 +29,10 @@ class EnrollmentContractDeletionService
                 throw ValidationException::withMessages([
                     'contract' => 'No se puede eliminar el contrato porque tiene cobros registrados.',
                 ]);
+            }
+
+            if (AcademicSecondOpportunity::query()->where('enrollment_contract_id', $contract->id)->exists()) {
+                throw ValidationException::withMessages(['contract' => 'No se puede eliminar una matrícula con evaluaciones 2T registradas.']);
             }
 
             // Only results directly dependent on this contract's charges belong to this deletion.

@@ -31,7 +31,7 @@ class StudentKardexService
             'moduleAssignments.module.classSessions.gradingSkills.skill.component',
             'moduleAssignments.module.classSessions.gradingSkills.grades',
             'moduleAssignments.module.classSessions.academicObservations.student',
-            'moduleResults',
+            'moduleResults.secondOpportunity',
         ]);
 
         $results = $student->moduleResults->keyBy('academic_module_id');
@@ -61,8 +61,8 @@ class StudentKardexService
                     'result' => $results->get($module->id),
                     'grading' => [
                         'scheme_version' => $scheme?->version,
-                        'passing_score' => $scheme === null ? null : (float) $scheme->passing_score,
-                        'overall_score' => $studentSummary['overall_score'] ?? null,
+                        'passing_score' => $results->get($module->id)?->passing_score ?? ($scheme === null ? null : (float) $scheme->passing_score),
+                        'overall_score' => $results->get($module->id)?->final_score ?? ($studentSummary['overall_score'] ?? null),
                         'components' => $summary['displayComponents']->map(fn ($component): array => [
                             'name' => $component->name,
                             'weight' => (float) $component->weight,

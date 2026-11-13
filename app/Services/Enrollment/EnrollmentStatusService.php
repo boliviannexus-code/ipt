@@ -13,7 +13,7 @@ class EnrollmentStatusService
 {
     public const CHANGEABLE = ['enrolled', 'inactive', 'suspended', 'abandoned'];
 
-    public const TARGETS = ['suspended' => 'SUSPENDIDO', 'abandoned' => 'ABANDONO', 'withdrawn' => 'BAJA'];
+    public const TARGETS = ['enrolled' => 'ACTIVO', 'suspended' => 'SUSPENDIDO', 'abandoned' => 'ABANDONO', 'withdrawn' => 'BAJA'];
 
     public function record(User $actor, Student $student, array $data): EnrollmentStatusChange
     {
@@ -30,7 +30,7 @@ class EnrollmentStatusService
                 return $existing;
             }
             if (! in_array($contract->status, self::CHANGEABLE, true)) {
-                throw ValidationException::withMessages(['enrollment_contract_id' => 'Esta matrícula no admite cambios. BAJA es un estado definitivo.']);
+                throw ValidationException::withMessages(['enrollment_contract_id' => 'Esta matrícula no admite cambios. BAJA y FINALIZADO no admiten reactivación.']);
             }
             if (! array_key_exists($data['status'], self::TARGETS) || $contract->status === $data['status']) {
                 throw ValidationException::withMessages(['status' => 'Seleccione un estado diferente al actual.']);
@@ -45,7 +45,12 @@ class EnrollmentStatusService
                 'registered_on' => $data['registered_on'], 'reactivation_date' => $reactivationDate,
                 'recorded_by' => $actor->id, 'submission_token' => $data['submission_token'],
             ]);
-            $contract->update(['status' => $data['status'], 'status_registered_on' => $data['registered_on'], 'reactivation_date' => $reactivationDate]);
+            $updates = ['status' => $data['status'], 'status_registered_on' => $data['registered_on'], 'reactivation_date' => $reactivationDate];
+            if ($data['status'] === 'enrolled') {
+                $updates['attendance_inactive_at'] = null;
+                $updates['attendance_inactive_module_id'] = null;
+            }
+            $contract->update($updates);
             $student->moduleAssignments()->whereNull('released_at')
                 ->whereHas('module', fn ($query) => $query->where('program_id', $contract->program_id))
                 ->update(['released_at' => now()]);

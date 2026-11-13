@@ -122,6 +122,91 @@ class StudentStatusChangeTest extends TestCase
         $this->assertDatabaseCount('academic_modules', 2);
     }
 
+    public function test_suspended_student_can_be_reactivated_once_without_restoring_the_module_or_charging(): void
+    {
+        [$user, $student, $program] = $this->context();
+        $contract = $student->contracts()->sole();
+        $level = ProgramLevel::create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Inicial', 'position' => 1]);
+        $module = $this->module($program, $level, 'Módulo anterior');
+        $contract->update(['current_program_level_id' => $level->id]);
+        $assignment = AcademicModuleStudentAssignment::create(['company_id' => $program->company_id, 'academic_module_id' => $module->id, 'student_id' => $student->id, 'assigned_by' => $user->id, 'assigned_at' => now()]);
+        $enrolledAt = $contract->enrolled_at;
+        $this->actingAs($user)->postJson(route('students.status.update', $student), $this->payload($contract, 'suspended'))->assertOk();
+        $releasedAt = $assignment->refresh()->released_at;
+        $this->get(route('students.status.edit', $student), ['X-Requested-With' => 'XMLHttpRequest'])
+            ->assertOk()->assertSee('value="enrolled"', false)->assertSee('ACTIVO')->assertSee('asignación manual');
+        $payload = $this->payload($contract, 'enrolled');
+        $this->postJson(route('students.status.update', $student), $payload)->assertOk();
+        $this->postJson(route('students.status.update', $student), $payload)->assertOk();
+        $this->assertSame('enrolled', $contract->refresh()->status);
+        $this->assertNull($contract->reactivation_date);
+        $this->assertSame($level->id, $contract->current_program_level_id);
+        $this->assertTrue($enrolledAt->equalTo($contract->enrolled_at));
+        $this->assertTrue($releasedAt->equalTo($assignment->refresh()->released_at));
+        $this->assertNull($student->fresh()->currentModuleAssignment);
+        $this->assertDatabaseCount('account_charges', 0);
+        $this->assertDatabaseCount('enrollment_status_changes', 2);
+        $change = EnrollmentStatusChange::latest('id')->first();
+        $this->assertSame('suspended', $change->previous_status);
+        $this->assertSame('enrolled', $change->status);
+        $this->assertSame($user->id, $change->recorded_by);
+        $this->assertSame($payload['observation'], $change->observation);
+        $this->get(route('students.index'))->assertOk()
+            ->assertViewHas('students', fn ($students) => $students->firstWhere('id', $student->id)->contracts->contains('status', 'enrolled'))
+            ->assertSee(route('students.modules.create', $student), false);
+        $this->get(route('students.status.edit', $student))->assertOk()->assertSee('ACTIVO');
+    }
+
+    public function test_inactive_and_abandoned_students_can_be_reactivated_and_attendance_flags_are_cleared(): void
+    {
+        [$user, $student, $program] = $this->context();
+        $contract = $student->contracts()->sole();
+        $level = ProgramLevel::create(['company_id' => $program->company_id, 'program_id' => $program->id, 'name' => 'Inicial', 'position' => 1]);
+        $module = $this->module($program, $level, 'Módulo inactivo');
+        $assignment = AcademicModuleStudentAssignment::create(['company_id' => $program->company_id, 'academic_module_id' => $module->id, 'student_id' => $student->id, 'assigned_by' => $user->id, 'assigned_at' => now()]);
+        $this->actingAs($user);
+        foreach (['inactive', 'abandoned'] as $status) {
+            $contract->update(['status' => $status, 'current_program_level_id' => $level->id,
+                'attendance_inactive_at' => now(), 'attendance_inactive_module_id' => $module->id]);
+            $payload = $this->payload($contract, 'enrolled');
+            unset($payload['reactivation_date']);
+            $this->postJson(route('students.status.update', $student), $payload)->assertOk();
+            $this->assertSame('enrolled', $contract->refresh()->status);
+            $this->assertNull($contract->attendance_inactive_at);
+            $this->assertNull($contract->attendance_inactive_module_id);
+            $this->assertNull($contract->reactivation_date);
+            $this->assertSame($level->id, $contract->current_program_level_id);
+            $this->assertNull($student->fresh()->currentModuleAssignment);
+            $this->assertSame($status, EnrollmentStatusChange::latest('id')->first()->previous_status);
+        }
+        $this->assertNotNull($assignment->refresh()->released_at);
+        $this->assertDatabaseCount('account_charges', 0);
+    }
+
+    public function test_activation_rejects_terminal_and_already_active_states_and_requires_valid_audit_data(): void
+    {
+        [$user, $student] = $this->context();
+        $contract = $student->contracts()->sole();
+        $this->actingAs($user);
+        $this->postJson(route('students.status.update', $student), $this->payload($contract, 'enrolled'))
+            ->assertUnprocessable()->assertJsonValidationErrors('status');
+        foreach (['withdrawn', 'finished', 'cancelled', 'pre_enrolled'] as $status) {
+            $contract->update(['status' => $status]);
+            $this->postJson(route('students.status.update', $student), $this->payload($contract, 'enrolled'))
+                ->assertUnprocessable()->assertJsonValidationErrors('enrollment_contract_id');
+            $this->assertSame($status, $contract->refresh()->status);
+        }
+        $contract->update(['status' => 'suspended', 'status_registered_on' => today()]);
+        $payload = $this->payload($contract, 'enrolled');
+        $this->postJson(route('students.status.update', $student), [...$payload, 'observation' => '   '])
+            ->assertUnprocessable()->assertJsonValidationErrors('observation');
+        $this->postJson(route('students.status.update', $student), [...$payload, 'registered_on' => today()->addDay()->toDateString()])
+            ->assertUnprocessable()->assertJsonValidationErrors('registered_on');
+        $this->postJson(route('students.status.update', $student), [...$payload, 'registered_on' => today()->subDay()->toDateString()])
+            ->assertUnprocessable()->assertJsonValidationErrors('registered_on');
+        $this->assertDatabaseCount('enrollment_status_changes', 0);
+    }
+
     private function payload(EnrollmentContract $contract, string $status): array
     {
         return ['enrollment_contract_id' => $contract->id, 'status' => $status, 'observation' => 'Motivo del cambio',

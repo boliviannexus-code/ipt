@@ -21,5 +21,5 @@
     @endif
 </div>
 @if($student->moduleAssignments->isNotEmpty())
-    <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Módulos asignados</th><th>Programa</th><th>Nivel</th><th>Asignado</th></tr></thead><tbody>@foreach($student->moduleAssignments as $assignment)<tr><td>{{ $assignment->module->name }}</td><td>{{ $assignment->module->program->title }}</td><td>{{ $assignment->module->level->name }}</td><td>{{ $assignment->assigned_at->format('d/m/Y') }}</td></tr>@endforeach</tbody></table></div>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Módulos asignados</th><th>Programa</th><th>Nivel</th><th>Asignado</th><th>Estado</th></tr></thead><tbody>@foreach($student->moduleAssignments as $assignment)<tr><td>{{ $assignment->module->name }}</td><td>{{ $assignment->module->program->title }}</td><td>{{ $assignment->module->level->name }}</td><td>{{ $assignment->assigned_at->format('d/m/Y') }}</td><td>{{ $assignment->released_at ? ($assignment->module->studentResults->contains('student_id', $student->id) ? 'Finalizado' : 'Desvinculado') : 'Vigente' }}@if($assignment->released_at)<small class="d-block text-secondary">{{ $assignment->released_at->format('d/m/Y') }}</small>@endif</td></tr>@endforeach</tbody></table></div>
 @endif

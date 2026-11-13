@@ -2012,10 +2012,16 @@ function initStudentStatusForms(scope = document) {
         if (form.dataset.statusInitialized) return;
         form.dataset.statusInitialized = '1';
         const select = form.querySelector('[data-status-select]');
+        const contract = form.querySelector('[name="enrollment_contract_id"]');
         const field = form.querySelector('[data-reactivation-field]');
         const date = field.querySelector('input');
         const registered = form.querySelector('[name="registered_on"]');
         const refresh = () => {
+            const currentStatus = contract.selectedOptions[0]?.dataset.currentStatus;
+            Array.from(select.options).forEach((option) => {
+                option.disabled = Boolean(option.value && option.value === currentStatus);
+            });
+            if (select.selectedOptions[0]?.disabled) select.value = '';
             const suspended = select.value === 'suspended';
             field.classList.toggle('d-none', !suspended);
             date.disabled = !suspended;
@@ -2026,6 +2032,7 @@ function initStudentStatusForms(scope = document) {
                 date.min = nextDay.toISOString().slice(0, 10);
             }
         };
+        contract.addEventListener('change', refresh);
         select.addEventListener('change', refresh);
         registered.addEventListener('change', refresh);
         refresh();

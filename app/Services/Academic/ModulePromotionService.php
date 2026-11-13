@@ -9,6 +9,7 @@ use App\Models\AcademicModuleStudentAssignment;
 use App\Models\AcademicModuleTeacherAssignment;
 use App\Models\EnrollmentContract;
 use App\Models\ProgramLevel;
+use App\Models\Student;
 use App\Models\User;
 use App\Services\Enrollment\ContractService;
 use Carbon\CarbonImmutable;
@@ -43,6 +44,7 @@ final class ModulePromotionService
     {
         return DB::transaction(function () use ($dates, $source, $studentIds, $user): AcademicModule {
             $source = AcademicModule::query()->with(['level', 'currentTeacherAssignment'])->lockForUpdate()->findOrFail($source->id);
+            Student::query()->whereIn('id', $studentIds)->orderBy('id')->lockForUpdate()->get();
             $context = $this->context($source);
             $targetLevel = ProgramLevel::query()->lockForUpdate()->findOrFail($context['targetLevel']->id);
             $selectedIds = collect($studentIds)->map(fn ($id): int => (int) $id)->unique()->values();
@@ -109,7 +111,7 @@ final class ModulePromotionService
             $source->update(['promoted_at' => now()]);
 
             return $newModule;
-        });
+        }, 3);
     }
 
     private function studentOptions(AcademicModule $module, ProgramLevel $targetLevel): Collection

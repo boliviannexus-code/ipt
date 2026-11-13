@@ -2,7 +2,7 @@
 <p><strong>Programa:</strong> {{ $module->program->title }}<br>
 <strong>Módulo:</strong> {{ $module->name }} · <strong>Nivel:</strong> {{ $module->level?->name ?? '—' }}<br>
 <strong>Clases:</strong> {{ $module->classSessions->count() }}
-@if($scheme) · <strong>Configuración:</strong> v{{ $scheme->version }} · <strong>Nota de aprobación:</strong> {{ number_format((float) $scheme->passing_score, 2, ',', '.') }}@endif
+@if($scheme) · <strong>Configuración:</strong> v{{ $scheme->version }} · <strong>Nota de aprobación:</strong> {{ number_format($passingScore, 2, ',', '.') }}@endif
 </p>
 @if(!$scheme || $skills->isEmpty())
 <p>Este módulo todavía no tiene ponderaciones configuradas.</p>
@@ -32,7 +32,7 @@
     <tbody>
         @forelse($students as $row)
             <tr nobr="true">
-                <td width="22%">{{ trim("{$row['student']->first_name} {$row['student']->paternal_surname} {$row['student']->maternal_surname}") }}<br>{{ $row['student']->identity_document }}</td>
+                <td width="22%">{{ trim("{$row['student']->first_name} {$row['student']->paternal_surname} {$row['student']->maternal_surname}") }}<br>{{ $row['student']->identity_document }}<br><small>{{ $row['assignment_status'] }}@if($row['released_at']) · {{ $row['released_at']->format('d/m/Y') }}@endif</small>@include('academic-second-opportunities.note', ['attempt' => $row['second_opportunity']])</td>
                 @foreach($displayComponents as $component)
                     @foreach($component->skills as $skill)
                         @php($score = $row['scores']->get($skill->id, ['average' => null, 'count' => 0]))
@@ -43,11 +43,11 @@
                         <td width="{{ $scoreWidth }}%" align="center">{{ $average !== null ? number_format($average, 2, ',', '.') : '—' }}</td>
                     @endif
                 @endforeach
-                <td width="{{ $scoreWidth }}%" align="center">@if($row['overall_score'] !== null)<strong>{{ number_format($row['overall_score'], 2, ',', '.') }}</strong><br>{{ $row['overall_score'] >= (float) ($scheme?->passing_score ?? 51) ? 'Aprobado' : 'Reprobado' }}@else — @endif</td>
+                <td width="{{ $scoreWidth }}%" align="center">@if($row['overall_score'] !== null)<strong>{{ number_format($row['overall_score'], 2, ',', '.') }}</strong>@if($row['second_opportunity'])<br><small>2T</small>@endif<br>{{ $row['overall_score'] >= $row['passing_score'] ? 'Aprobado' : 'Reprobado' }}@else — @endif</td>
             </tr>
         @empty
             <tr><td colspan="{{ $columnCount }}">Este módulo no tiene estudiantes asignados.</td></tr>
         @endforelse
     </tbody>
 </table>
-<p>La nota acumulada combina ponderaciones diarias y únicas según su peso configurado. Las habilidades pendientes aportan cero hasta ser evaluadas.</p>
+<p>La nota acumulada combina ponderaciones diarias y únicas según su peso configurado. Las habilidades pendientes aportan cero hasta ser evaluadas. La nota 2T reemplaza la nota final sin alterar las ponderaciones originales.</p>

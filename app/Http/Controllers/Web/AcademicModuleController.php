@@ -58,6 +58,9 @@ class AcademicModuleController extends Controller
 
     public function destroy(Request $request, AcademicModule $module): JsonResponse|RedirectResponse
     {
+        if ($module->studentResults()->whereHas('secondOpportunity')->exists()) {
+            throw ValidationException::withMessages(['module' => 'No se puede eliminar un módulo con evaluaciones 2T registradas.']);
+        }
         $module->delete();
 
         if ($request->ajax() || $request->expectsJson()) {

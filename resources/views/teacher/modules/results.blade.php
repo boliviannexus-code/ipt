@@ -23,7 +23,7 @@
                     <td class="fw-semibold">{{ trim("{$assignment->student->first_name} {$assignment->student->paternal_surname} {$assignment->student->maternal_surname}") }}</td>
                     <td>{{ $assignment->student->identity_document }}</td>
                     <td>@foreach($details as $detail)<span class="d-block small"><strong>{{ $detail['name'] }}</strong> ({{ number_format((float) $detail['weight'], 2, ',', '.') }}%): {{ $detail['average'] === null ? 'Sin nota' : number_format((float) $detail['average'], 2, ',', '.') }}</span>@endforeach</td>
-                    <td class="text-end fw-bold">{{ $score === null ? '—' : number_format((float) $score, 2, ',', '.') }}</td>
+                    <td class="text-end fw-bold">{{ $score === null ? '—' : number_format((float) $score, 2, ',', '.') }}@include('academic-second-opportunities.note', ['attempt' => $savedResult?->secondOpportunity])</td>
                     <td>@if($status === 'approved')<span class="badge text-bg-success">Aprobado</span>@elseif($status === 'failed')<span class="badge text-bg-danger">Reprobado</span>@else<span class="badge text-bg-warning">Sin calificaciones</span>@endif</td>
                 </tr>
             @empty

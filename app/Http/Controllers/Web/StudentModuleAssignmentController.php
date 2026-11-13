@@ -31,11 +31,12 @@ class StudentModuleAssignmentController extends Controller
                 ->with(['program', 'level', 'currentTeacherAssignment.personnel'])
                 ->whereIn('program_level_id', $eligibleLevelsByProgram->values())
                 ->whereDate('end_date', '>=', today())
-                ->whereDoesntHave('studentAssignments', fn ($query) => $query->where('student_id', $student->id))
+                ->whereNull('closed_at')
+                ->whereDoesntHave('studentAssignments', fn ($query) => $query->where('student_id', $student->id)->whereNull('released_at'))
                 ->orderBy('start_date')
                 ->orderBy('name')
                 ->get();
-        $student->load(['moduleAssignments.module.program', 'moduleAssignments.module.level']);
+        $student->load(['moduleAssignments.module.program', 'moduleAssignments.module.level', 'moduleAssignments.module.studentResults']);
 
         return view($request->ajax() ? 'students.partials.module-form' : 'students.module-form', compact('student', 'modules', 'openAssignment'));
     }
@@ -51,6 +52,7 @@ class StudentModuleAssignmentController extends Controller
                 ->whereKey($data['academic_module_id'])
                 ->whereIn('program_level_id', $eligibleLevelsByProgram->values())
                 ->whereDate('end_date', '>=', today())
+                ->whereNull('closed_at')
                 ->first();
 
             if (! $module) {
@@ -65,10 +67,13 @@ class StudentModuleAssignmentController extends Controller
                 throw ValidationException::withMessages(['academic_module_id' => 'El estudiante ya está asignado a un módulo abierto. Debe cerrar ese módulo antes de realizar una nueva asignación.']);
             }
 
-            AcademicModuleStudentAssignment::firstOrCreate(
+            $assignment = AcademicModuleStudentAssignment::firstOrCreate(
                 ['academic_module_id' => $module->id, 'student_id' => $student->id],
                 ['company_id' => $student->company_id, 'assigned_by' => $request->user()->id, 'assigned_at' => now()],
             );
+            if ($assignment->released_at !== null) {
+                $assignment->update(['released_at' => null]);
+            }
         });
 
         $message = 'Estudiante asignado al módulo correctamente.';

@@ -28,7 +28,7 @@ class DashboardController extends Controller
             'totalPlans' => Plan::query()->count(),
             'currentModules' => AcademicModule::query()->whereDate('start_date', '<=', today())->whereDate('end_date', '>=', today())->count(),
             'totalClassesToday' => ClassSession::query()->whereDate('class_date', today())->count(),
-            'classesToday' => ClassSession::query()->whereDate('class_date', today())->with(['module' => fn ($query) => $query->withCount('studentAssignments'), 'teacher'])->withCount('attendances')->latest('started_at')->limit(6)->get(),
+            'classesToday' => ClassSession::query()->whereDate('class_date', today())->with(['module' => fn ($query) => $query->withCount(['studentAssignments' => fn ($query) => $query->whereNull('released_at')]), 'teacher'])->withCount('attendances')->latest('started_at')->limit(6)->get(),
             'attendanceToday' => StudentAttendance::query()->whereHas('session', fn ($query) => $query->whereDate('class_date', today()))->count(),
             'presentToday' => StudentAttendance::query()->whereIn('status', ['present', 'late'])->whereHas('session', fn ($query) => $query->whereDate('class_date', today()))->count(),
             'programSummary' => Program::query()->withCount([
@@ -38,8 +38,8 @@ class DashboardController extends Controller
             ])->orderByDesc('enrolled_students_count')->limit(6)->get(),
             'upcomingClosures' => AcademicModule::query()->with(['program', 'level'])->whereDate('end_date', '>=', today())->orderBy('end_date')->limit(6)->get(),
             'modulesWithoutTeacher' => AcademicModule::query()->whereDate('end_date', '>=', today())->whereDoesntHave('currentTeacherAssignment')->count(),
-            'modulesWithoutStudents' => AcademicModule::query()->whereDate('end_date', '>=', today())->whereDoesntHave('studentAssignments')->count(),
-            'studentsWithoutModules' => Student::query()->where('is_active', true)->whereHas('contracts', fn ($query) => $query->where('status', 'enrolled'))->whereDoesntHave('moduleAssignments')->count(),
+            'modulesWithoutStudents' => AcademicModule::query()->whereDate('end_date', '>=', today())->whereDoesntHave('studentAssignments', fn ($query) => $query->whereNull('released_at'))->count(),
+            'studentsWithoutModules' => Student::query()->where('is_active', true)->whereHas('contracts', fn ($query) => $query->where('status', 'enrolled'))->whereDoesntHave('moduleAssignments', fn ($query) => $query->whereNull('released_at'))->count(),
         ]);
     }
 }

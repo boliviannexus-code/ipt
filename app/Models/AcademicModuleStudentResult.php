@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class AcademicModuleStudentResult extends Model
 {
@@ -15,6 +16,11 @@ class AcademicModuleStudentResult extends Model
     protected function casts(): array
     {
         return ['final_score' => 'decimal:2', 'passing_score' => 'decimal:2', 'grading_details' => 'array', 'finalized_at' => 'datetime'];
+    }
+
+    public function secondOpportunity(): HasOne
+    {
+        return $this->hasOne(AcademicSecondOpportunity::class);
     }
 
     public function module(): BelongsTo

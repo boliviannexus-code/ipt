@@ -18,7 +18,11 @@ class TeacherModuleResultController extends Controller
     {
         $this->authorizeTeacher($request, $module);
         abort_if(today()->lt($module->end_date), 409, 'El módulo todavía no finalizó.');
-        $module->load(['program', 'level', 'studentAssignments.student', 'studentResults']);
+        $module->load(['program', 'level', 'studentAssignments' => fn ($query) => $query->with('student')->when(
+            $module->closed_at === null,
+            fn ($query) => $query->whereNull('released_at'),
+            fn ($query) => $query->whereIn('student_id', $module->studentResults()->select('student_id')),
+        ), 'studentResults.secondOpportunity']);
         $resultsByStudent = $module->studentResults->keyBy('student_id');
         $grading = $module->closed_at === null ? $this->completion->preview($module) : null;
 

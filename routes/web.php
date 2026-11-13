@@ -5,6 +5,8 @@ use App\Http\Controllers\Web\AcademicModuleController;
 use App\Http\Controllers\Web\AcademicModuleTeacherController;
 use App\Http\Controllers\Web\AcademicPersonalDataController;
 use App\Http\Controllers\Web\ActiveCompanyController;
+use App\Http\Controllers\Web\AdditionalChargeController;
+use App\Http\Controllers\Web\AdditionalServiceController;
 use App\Http\Controllers\Web\AdminDataTableController;
 use App\Http\Controllers\Web\AreaController;
 use App\Http\Controllers\Web\AuditController;
@@ -37,11 +39,13 @@ use App\Http\Controllers\Web\Parameters\ProgramLevelController;
 use App\Http\Controllers\Web\Parameters\SinAuthorizationController;
 use App\Http\Controllers\Web\PermissionController;
 use App\Http\Controllers\Web\PersonnelController;
+use App\Http\Controllers\Web\PlacementExamController;
 use App\Http\Controllers\Web\PositionController;
 use App\Http\Controllers\Web\Rectorate\AccountStatementController;
 use App\Http\Controllers\Web\Rectorate\NewApplicationController;
 use App\Http\Controllers\Web\Reports\EnrollmentReportController;
 use App\Http\Controllers\Web\RoleController;
+use App\Http\Controllers\Web\SecondOpportunityController;
 use App\Http\Controllers\Web\SiatBranchController;
 use App\Http\Controllers\Web\SiatCatalogController;
 use App\Http\Controllers\Web\SiatCommunicationController;
@@ -51,6 +55,8 @@ use App\Http\Controllers\Web\SinApiTokenController;
 use App\Http\Controllers\Web\StudentController;
 use App\Http\Controllers\Web\StudentKardexController;
 use App\Http\Controllers\Web\StudentModuleAssignmentController;
+use App\Http\Controllers\Web\StudentStatusController;
+use App\Http\Controllers\Web\SuperAdminContractController;
 use App\Http\Controllers\Web\TeacherModuleController;
 use App\Http\Controllers\Web\TeacherModuleResultController;
 use App\Http\Controllers\Web\TeacherSingleGradeController;
@@ -71,26 +77,32 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
 
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::prefix('super-admin')->name('super-admin.')->middleware('global_super_admin')->group(function (): void {
-        Route::get('contracts', [\App\Http\Controllers\Web\SuperAdminContractController::class, 'index'])->name('contracts.index');
-        Route::delete('contracts/{contract}', [\App\Http\Controllers\Web\SuperAdminContractController::class, 'destroy'])->whereNumber('contract')->name('contracts.destroy');
+        Route::get('contracts', [SuperAdminContractController::class, 'index'])->name('contracts.index');
+        Route::delete('contracts/{contract}', [SuperAdminContractController::class, 'destroy'])->whereNumber('contract')->name('contracts.destroy');
     });
     Route::middleware('company_user')->group(function (): void {
-        Route::get('additional-services', [\App\Http\Controllers\Web\AdditionalServiceController::class, 'index'])->middleware('permission:additional-services.view')->name('additional-services.index');
-        Route::get('additional-services/create', [\App\Http\Controllers\Web\AdditionalServiceController::class, 'create'])->middleware('permission:additional-services.manage')->name('additional-services.create');
-        Route::post('additional-services', [\App\Http\Controllers\Web\AdditionalServiceController::class, 'store'])->middleware('permission:additional-services.manage')->name('additional-services.store');
-        Route::get('additional-services/{service}/edit', [\App\Http\Controllers\Web\AdditionalServiceController::class, 'edit'])->whereNumber('service')->middleware('permission:additional-services.manage')->name('additional-services.edit');
-        Route::put('additional-services/{service}', [\App\Http\Controllers\Web\AdditionalServiceController::class, 'update'])->whereNumber('service')->middleware('permission:additional-services.manage')->name('additional-services.update');
-        Route::get('additional-charges', [\App\Http\Controllers\Web\AdditionalChargeController::class, 'index'])->middleware('permission:additional-charges.view')->name('additional-charges.index');
-        Route::get('additional-charges/students/{student}', [\App\Http\Controllers\Web\AdditionalChargeController::class, 'show'])->whereNumber('student')->middleware('permission:additional-charges.view')->name('additional-charges.show');
-        Route::post('additional-charges/students/{student}', [\App\Http\Controllers\Web\AdditionalChargeController::class, 'store'])->whereNumber('student')->middleware('permission:additional-charges.manage')->name('additional-charges.store');
+        Route::get('additional-services', [AdditionalServiceController::class, 'index'])->middleware('permission:additional-services.view')->name('additional-services.index');
+        Route::get('additional-services/create', [AdditionalServiceController::class, 'create'])->middleware('permission:additional-services.manage')->name('additional-services.create');
+        Route::post('additional-services', [AdditionalServiceController::class, 'store'])->middleware('permission:additional-services.manage')->name('additional-services.store');
+        Route::get('additional-services/{service}/edit', [AdditionalServiceController::class, 'edit'])->whereNumber('service')->middleware('permission:additional-services.manage')->name('additional-services.edit');
+        Route::put('additional-services/{service}', [AdditionalServiceController::class, 'update'])->whereNumber('service')->middleware('permission:additional-services.manage')->name('additional-services.update');
+        Route::get('additional-charges', [AdditionalChargeController::class, 'index'])->middleware('permission:additional-charges.view')->name('additional-charges.index');
+        Route::get('additional-charges/students/{student}', [AdditionalChargeController::class, 'show'])->whereNumber('student')->middleware('permission:additional-charges.view')->name('additional-charges.show');
+        Route::post('additional-charges/students/{student}', [AdditionalChargeController::class, 'store'])->whereNumber('student')->middleware('permission:additional-charges.manage')->name('additional-charges.store');
     });
     Route::prefix('academic/placement-exams')->name('placement-exams.')->middleware('company_user')->group(function (): void {
-        Route::get('/', [\App\Http\Controllers\Web\PlacementExamController::class, 'index'])->middleware('permission:students.view')->name('index');
-        Route::get('history', [\App\Http\Controllers\Web\PlacementExamController::class, 'history'])->middleware('permission:students.view')->name('history');
-        Route::get('students/{student}', [\App\Http\Controllers\Web\PlacementExamController::class, 'create'])->whereNumber('student')->middleware('permission:students.manage')->name('create');
-        Route::post('students/{student}', [\App\Http\Controllers\Web\PlacementExamController::class, 'store'])->whereNumber('student')->middleware('permission:students.manage')->name('store');
+        Route::get('/', [PlacementExamController::class, 'index'])->middleware('permission:students.view')->name('index');
+        Route::get('history', [PlacementExamController::class, 'history'])->middleware('permission:students.view')->name('history');
+        Route::get('students/{student}', [PlacementExamController::class, 'create'])->whereNumber('student')->middleware('permission:students.manage')->name('create');
+        Route::post('students/{student}', [PlacementExamController::class, 'store'])->whereNumber('student')->middleware('permission:students.manage')->name('store');
     });
     Route::prefix('academic')->name('academic.')->middleware('company_user')->group(function (): void {
+        Route::prefix('2t')->name('second-opportunities.')->middleware('permission:second-opportunities.manage')->group(function (): void {
+            Route::get('/', [SecondOpportunityController::class, 'index'])->name('index');
+            Route::get('{result}/create', [SecondOpportunityController::class, 'create'])->whereNumber('result')->name('create');
+            Route::post('{result}/preview', [SecondOpportunityController::class, 'preview'])->whereNumber('result')->name('preview');
+            Route::post('{result}', [SecondOpportunityController::class, 'store'])->whereNumber('result')->name('store');
+        });
         Route::prefix('personal-data')->name('personal-data.')->middleware('permission:academic-personal-data.edit')->group(function (): void {
             Route::get('/', [AcademicPersonalDataController::class, 'index'])->name('index');
             Route::get('{application}/edit', [AcademicPersonalDataController::class, 'edit'])->whereNumber('application')->name('edit');
@@ -124,8 +136,8 @@ Route::middleware(['auth', 'active_account'])->group(function (): void {
         Route::get('{student}/kardex', [StudentKardexController::class, 'show'])->whereNumber('student')->middleware('permission:students.view')->name('kardex.show');
         Route::get('{student}/kardex/modules/{module}', [StudentKardexController::class, 'details'])->whereNumber(['student', 'module'])->middleware('permission:students.view')->name('kardex.details');
         Route::get('{student}/kardex/pdf', [StudentKardexController::class, 'print'])->whereNumber('student')->middleware('permission:students.view')->name('kardex.pdf');
-        Route::get('{student}/status', [\App\Http\Controllers\Web\StudentStatusController::class, 'edit'])->whereNumber('student')->middleware('permission:students.manage')->name('status.edit');
-        Route::post('{student}/status', [\App\Http\Controllers\Web\StudentStatusController::class, 'update'])->whereNumber('student')->middleware('permission:students.manage')->name('status.update');
+        Route::get('{student}/status', [StudentStatusController::class, 'edit'])->whereNumber('student')->middleware('permission:students.manage')->name('status.edit');
+        Route::post('{student}/status', [StudentStatusController::class, 'update'])->whereNumber('student')->middleware('permission:students.manage')->name('status.update');
         Route::get('{student}/modules/create', [StudentModuleAssignmentController::class, 'create'])->whereNumber('student')->middleware('permission:students.manage')->name('modules.create');
         Route::post('{student}/modules', [StudentModuleAssignmentController::class, 'store'])->whereNumber('student')->middleware('permission:students.manage')->name('modules.store');
     });

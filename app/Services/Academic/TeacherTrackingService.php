@@ -12,6 +12,8 @@ final class TeacherTrackingService
 {
     public function summarize(AcademicModule $module, ?ProgramGradingScheme $scheme): array
     {
+        $module->loadMissing('studentResults.secondOpportunity');
+        $resultStudentIds = $module->studentResults->pluck('student_id');
         $components = $scheme?->components->values() ?? collect();
         $dailyComponents = $components->where('frequency', GradingFrequency::Daily)->values();
         $singleComponents = $components->where('frequency', GradingFrequency::Single)->values();
@@ -24,8 +26,9 @@ final class TeacherTrackingService
             fn ($observation) => $observation->setRelation('session', $session),
         ));
 
-        $students = $module->studentAssignments->map(function ($assignment) use ($components, $dailyComponents, $dailySkills, $module, $observations, $selections, $singleSkills): array {
+        $students = $module->studentAssignments->map(function ($assignment) use ($components, $dailyComponents, $dailySkills, $module, $observations, $selections, $singleSkills, $resultStudentIds): array {
             $studentId = $assignment->student_id;
+            $savedResult = $module->closed_at ? $module->studentResults->firstWhere('student_id', $studentId) : null;
             $dailyScores = $dailySkills->mapWithKeys(function ($skill) use ($selections, $studentId): array {
                 $grades = $selections->where('program_grading_skill_id', $skill->id)
                     ->flatMap->grades
@@ -71,6 +74,8 @@ final class TeacherTrackingService
 
             return [
                 'student' => $assignment->student,
+                'released_at' => $assignment->released_at,
+                'assignment_status' => $resultStudentIds->contains($studentId) ? 'Finalizado' : ($assignment->released_at ? 'Desvinculado' : 'Vigente'),
                 'scores' => $scores,
                 'component_averages' => $componentAverages,
                 'daily_average' => $dailyScores->contains(fn (array $score): bool => $score['count'] > 0) && $dailyWeight > 0
@@ -80,7 +85,9 @@ final class TeacherTrackingService
                         return $componentScore * (float) $component->weight / 100;
                     }) * 100 / $dailyWeight, 2)
                     : null,
-                'overall_score' => $hasGrades ? round($weightedScore, 2) : null,
+                'overall_score' => $savedResult ? (float) $savedResult->final_score : ($hasGrades ? round($weightedScore, 2) : null),
+                'passing_score' => (float) ($savedResult?->passing_score ?? $scheme?->passing_score ?? 51),
+                'second_opportunity' => $savedResult?->secondOpportunity,
                 'latest_observation' => $latestObservation,
                 'observation_count' => $observations->where('student_id', $studentId)->count(),
             ];
